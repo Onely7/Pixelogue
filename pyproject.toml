@@ -1,0 +1,92 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pixelogue"
+version = "0.1.0"
+description = "Build, evaluate, and select image-grounded multi-turn dialogues."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Pixelogue contributors" }]
+dependencies = [
+  "httpx>=0.28.1,<0.29",
+  "pillow>=11.3,<12",
+  "pydantic>=2.11,<3",
+  "pyyaml>=6.0.2,<7",
+  "typer>=0.16,<1",
+]
+
+[project.optional-dependencies]
+cpu = [
+  "numpy>=2.2,<3",
+  "ortools>=9.14,<10",
+]
+visual = [
+  "torch>=2.8,<3",
+]
+
+[dependency-groups]
+dev = [
+  "build>=1.3,<2",
+  "pre-commit>=4.3,<5",
+  "pytest>=8.4,<10",
+  "pytest-asyncio>=1.1,<2",
+  "pytest-cov>=6.2,<8",
+  "respx>=0.22,<1",
+  "ruff>=0.15.2,<0.16",
+  "ty>=0.0.62,<0.1",
+]
+
+[project.scripts]
+pixelogue = "pixelogue.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pixelogue"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/pixelogue",
+  "tests",
+  "configs",
+  "docs",
+  "runtime/vllm/*.yaml",
+  "runtime/vllm/pyproject.toml",
+  "runtime/vllm/uv.lock",
+  "validation/open_images_v7_manifest.jsonl",
+  "README.md",
+  "README_ja.md",
+  "AGENTS.md",
+  "LICENSE",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+  "gpu: requires local model weights and one or more available GPUs",
+  "network: accesses an external service",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["_references", "_docs"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "D"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+include = ["src", "tests"]
+exclude = ["_references", "_docs"]
