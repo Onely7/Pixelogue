@@ -19,7 +19,12 @@ from pixelogue.contracts import (
     SourceRecord,
 )
 from pixelogue.doctor import diagnose
-from pixelogue.errors import CapabilityError, PixelogueError, ShortfallError, SolverUnknownError
+from pixelogue.errors import (
+    CapabilityError,
+    PixelogueError,
+    ShortfallError,
+    SolverUnknownError,
+)
 from pixelogue.export import export_bundle
 from pixelogue.fixtures import FixtureRecord, make_fixtures
 from pixelogue.io import read_json, read_jsonl, write_json, write_jsonl
@@ -31,8 +36,9 @@ from pixelogue.operations import (
     prepare_sources,
     summarize_conversations,
 )
-from pixelogue.pipeline import SynthesisCoordinator
+from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.planner import exact_schedule
+from pixelogue.profiling import profile_database
 from pixelogue.selection import (
     SelectionPolicy,
     audit_selection,
@@ -123,6 +129,18 @@ def doctor(
     typer.echo(report.model_dump_json(indent=2))
     if not report.ready:
         raise CapabilityError("DOCTOR_NOT_READY", "One or more required checks failed")
+
+
+@app.command("profile")
+def profile_command(
+    database: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    output: Annotated[Path | None, typer.Option(dir_okay=False)] = None,
+) -> None:
+    """Summarize model-call latency and token use from a run database."""
+    report = profile_database(database)
+    if output is not None:
+        write_json(output, report)
+    typer.echo(report.model_dump_json(indent=2))
 
 
 @app.command("make-fixtures")
@@ -234,6 +252,15 @@ def synthesize(
     output: Annotated[Path, typer.Option(dir_okay=False)] = Path(
         "artifacts/pilot/conversations.jsonl"
     ),
+    workers: Annotated[
+        int | None,
+        typer.Option(
+            "--workers",
+            min=1,
+            max=32,
+            help="Maximum images processed concurrently; defaults to runtime configuration.",
+        ),
+    ] = None,
 ) -> None:
     """Generate and independently rate bounded multi-turn conversations."""
     config = load_config(config_path)
@@ -266,10 +293,9 @@ def synthesize(
             seed=config.seed,
             namespace="generators",
         )
-        conversations = [
-            coordinator.synthesize_image(
-                image,
-                artifact_root,
+        jobs = (
+            SynthesisJob(
+                image=image,
                 target_language=cast(Literal["en", "ja", "zh-Hans"], language),
                 generator_role=cast(Literal["generator_a", "generator_b"], generator_role),
             )
@@ -279,9 +305,17 @@ def synthesize(
                 generator_schedule,
                 strict=True,
             )
-        ]
-    write_jsonl(output, conversations)
-    write_json(output.with_suffix(".summary.json"), summarize_conversations(conversations))
+        )
+        worker_count = workers or config.runtime.max_concurrent_images
+        conversations: list[ConversationArtifact] = []
+        for conversation in coordinator.synthesize_batch(
+            jobs,
+            artifact_root,
+            max_workers=worker_count,
+        ):
+            conversations.append(conversation)
+            write_jsonl(output, conversations)
+            write_json(output.with_suffix(".summary.json"), summarize_conversations(conversations))
     typer.echo(json.dumps({"conversations": len(conversations), "output": str(output)}))
 
 

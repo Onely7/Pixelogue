@@ -7,6 +7,7 @@ import hashlib
 import os
 import shutil
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -79,7 +80,8 @@ class RunStore:
         self.artifact_dir = self.run_dir / "artifacts"
         self.artifact_dir.mkdir(exist_ok=True)
         self.database_path = self.run_dir / "run.sqlite3"
-        self.connection = sqlite3.connect(self.database_path)
+        self._mutex = threading.RLock()
+        self.connection = sqlite3.connect(self.database_path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         mode = self.connection.execute("PRAGMA journal_mode=WAL").fetchone()[0]
         if mode.lower() != "wal":
@@ -91,10 +93,11 @@ class RunStore:
 
     def close(self) -> None:
         """Checkpoint and close the run database."""
-        self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        self.connection.close()
-        fcntl.flock(self._lock_stream.fileno(), fcntl.LOCK_UN)
-        self._lock_stream.close()
+        with self._mutex:
+            self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self.connection.close()
+            fcntl.flock(self._lock_stream.fileno(), fcntl.LOCK_UN)
+            self._lock_stream.close()
 
     def __enter__(self) -> RunStore:
         """Return the open store for a context manager."""
@@ -133,6 +136,7 @@ class RunStore:
                 response_artifact_hash TEXT REFERENCES artifact(artifact_hash),
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
+                duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
                 status TEXT NOT NULL,
                 UNIQUE(model_lock_hash, stage, request_hash)
             );
@@ -161,24 +165,30 @@ class RunStore:
             INSERT OR IGNORE INTO budget(singleton) VALUES (1);
             """
         )
+        columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(model_call)")}
+        if "duration_ms" not in columns:
+            self.connection.execute(
+                "ALTER TABLE model_call ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0"
+            )
 
     def initialize_run(self, run_id: str, config_hash: str, profile: str) -> None:
         """Create a run or verify that a resumed run has the same configuration."""
-        existing = self.connection.execute(
-            "SELECT config_hash, profile FROM run WHERE run_id = ?", (run_id,)
-        ).fetchone()
-        if existing is not None:
-            if existing["config_hash"] != config_hash or existing["profile"] != profile:
-                raise ExternalInputError(
-                    "RUN_CONFIG_MISMATCH",
-                    "Existing run was created with another configuration",
+        with self._mutex:
+            existing = self.connection.execute(
+                "SELECT config_hash, profile FROM run WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if existing is not None:
+                if existing["config_hash"] != config_hash or existing["profile"] != profile:
+                    raise ExternalInputError(
+                        "RUN_CONFIG_MISMATCH",
+                        "Existing run was created with another configuration",
+                    )
+                return
+            with self.connection:
+                self.connection.execute(
+                    "INSERT INTO run(run_id, config_hash, profile, status) VALUES (?, ?, ?, 'CREATED')",
+                    (run_id, config_hash, profile),
                 )
-            return
-        with self.connection:
-            self.connection.execute(
-                "INSERT INTO run(run_id, config_hash, profile, status) VALUES (?, ?, ?, 'CREATED')",
-                (run_id, config_hash, profile),
-            )
 
     def write_json_artifact(self, kind: str, value: object) -> str:
         """Atomically store canonical JSON and return its SHA-256 identity."""
@@ -186,80 +196,90 @@ class RunStore:
 
     def write_artifact(self, kind: str, payload: bytes) -> str:
         """Atomically store bytes before registering the complete reference."""
-        artifact_hash = hashlib.sha256(payload).hexdigest()
-        relative_path = Path(kind) / artifact_hash[:2] / artifact_hash
-        destination = self.artifact_dir / relative_path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if not destination.exists():
-            temporary = destination.with_name(f".{artifact_hash}.{os.getpid()}.tmp")
-            with temporary.open("xb") as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, destination)
-        with self.connection:
-            self.connection.execute(
-                """INSERT OR IGNORE INTO artifact(artifact_hash, kind, relative_path, complete)
-                   VALUES (?, ?, ?, 1)""",
-                (artifact_hash, kind, relative_path.as_posix()),
-            )
-        return artifact_hash
+        with self._mutex:
+            artifact_hash = hashlib.sha256(payload).hexdigest()
+            relative_path = Path(kind) / artifact_hash[:2] / artifact_hash
+            destination = self.artifact_dir / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if not destination.exists():
+                temporary = destination.with_name(f".{artifact_hash}.{os.getpid()}.tmp")
+                with temporary.open("xb") as stream:
+                    stream.write(payload)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, destination)
+            with self.connection:
+                self.connection.execute(
+                    """INSERT OR IGNORE INTO artifact(artifact_hash, kind, relative_path, complete)
+                       VALUES (?, ?, ?, 1)""",
+                    (artifact_hash, kind, relative_path.as_posix()),
+                )
+            return artifact_hash
 
     def read_artifact(self, artifact_hash: str) -> bytes:
         """Read an artifact after verifying both ledger and bytes."""
-        row = self.connection.execute(
-            "SELECT relative_path, complete FROM artifact WHERE artifact_hash = ?",
-            (artifact_hash,),
-        ).fetchone()
-        if row is None or row["complete"] != 1:
-            raise ExternalInputError("ARTIFACT_NOT_COMPLETE", f"Unknown artifact {artifact_hash}")
-        payload = (self.artifact_dir / row["relative_path"]).read_bytes()
-        if hashlib.sha256(payload).hexdigest() != artifact_hash:
-            raise ExternalInputError("ARTIFACT_HASH_MISMATCH", f"Corrupt artifact {artifact_hash}")
-        return payload
+        with self._mutex:
+            row = self.connection.execute(
+                "SELECT relative_path, complete FROM artifact WHERE artifact_hash = ?",
+                (artifact_hash,),
+            ).fetchone()
+            if row is None or row["complete"] != 1:
+                raise ExternalInputError(
+                    "ARTIFACT_NOT_COMPLETE", f"Unknown artifact {artifact_hash}"
+                )
+            payload = (self.artifact_dir / row["relative_path"]).read_bytes()
+            if hashlib.sha256(payload).hexdigest() != artifact_hash:
+                raise ExternalInputError(
+                    "ARTIFACT_HASH_MISMATCH", f"Corrupt artifact {artifact_hash}"
+                )
+            return payload
 
     def verify(self) -> dict[str, int]:
         """Verify database integrity and every complete artifact hash."""
-        integrity = self.connection.execute("PRAGMA integrity_check").fetchone()[0]
-        if integrity != "ok":
-            raise ExternalInputError("SQLITE_INTEGRITY_FAILED", str(integrity))
-        rows = self.connection.execute(
-            "SELECT artifact_hash FROM artifact WHERE complete = 1 ORDER BY artifact_hash"
-        ).fetchall()
-        for row in rows:
-            self.read_artifact(row["artifact_hash"])
-        missing_responses = self.connection.execute(
-            """SELECT COUNT(*) FROM model_call
-               WHERE status = 'COMPLETE' AND response_artifact_hash IS NULL"""
-        ).fetchone()[0]
-        if missing_responses:
-            raise ExternalInputError(
-                "MODEL_CALL_RESPONSE_MISSING",
-                f"{missing_responses} complete calls lack response artifacts",
-            )
-        return {
-            "artifacts": len(rows),
-            "model_calls": self.connection.execute("SELECT COUNT(*) FROM model_call").fetchone()[0],
-            "turn_commits": self.connection.execute("SELECT COUNT(*) FROM turn_commit").fetchone()[
-                0
-            ],
-        }
+        with self._mutex:
+            integrity = self.connection.execute("PRAGMA integrity_check").fetchone()[0]
+            if integrity != "ok":
+                raise ExternalInputError("SQLITE_INTEGRITY_FAILED", str(integrity))
+            rows = self.connection.execute(
+                "SELECT artifact_hash FROM artifact WHERE complete = 1 ORDER BY artifact_hash"
+            ).fetchall()
+            for row in rows:
+                self.read_artifact(row["artifact_hash"])
+            missing_responses = self.connection.execute(
+                """SELECT COUNT(*) FROM model_call
+                   WHERE status = 'COMPLETE' AND response_artifact_hash IS NULL"""
+            ).fetchone()[0]
+            if missing_responses:
+                raise ExternalInputError(
+                    "MODEL_CALL_RESPONSE_MISSING",
+                    f"{missing_responses} complete calls lack response artifacts",
+                )
+            return {
+                "artifacts": len(rows),
+                "model_calls": self.connection.execute(
+                    "SELECT COUNT(*) FROM model_call"
+                ).fetchone()[0],
+                "turn_commits": self.connection.execute(
+                    "SELECT COUNT(*) FROM turn_commit"
+                ).fetchone()[0],
+            }
 
     def committed_artifact_hashes(self, conversation_id: str) -> tuple[str, ...]:
         """Return a contiguous committed turn prefix for one conversation."""
-        rows = self.connection.execute(
-            """SELECT turn_index, artifact_hash FROM turn_commit
-               WHERE conversation_id = ? AND branch_id = 'main'
-               ORDER BY turn_index""",
-            (conversation_id,),
-        ).fetchall()
-        indices = [row["turn_index"] for row in rows]
-        if indices != list(range(1, len(rows) + 1)):
-            raise ExternalInputError(
-                "TURN_COMMIT_GAP",
-                f"Committed turns are not contiguous for {conversation_id}",
-            )
-        return tuple(row["artifact_hash"] for row in rows)
+        with self._mutex:
+            rows = self.connection.execute(
+                """SELECT turn_index, artifact_hash FROM turn_commit
+                   WHERE conversation_id = ? AND branch_id = 'main'
+                   ORDER BY turn_index""",
+                (conversation_id,),
+            ).fetchall()
+            indices = [row["turn_index"] for row in rows]
+            if indices != list(range(1, len(rows) + 1)):
+                raise ExternalInputError(
+                    "TURN_COMMIT_GAP",
+                    f"Committed turns are not contiguous for {conversation_id}",
+                )
+            return tuple(row["artifact_hash"] for row in rows)
 
     def reserve_model_request(
         self,
@@ -269,7 +289,7 @@ class RunStore:
         output_token_limit: int,
     ) -> None:
         """Atomically reserve one request and its worst-case output budget."""
-        with self.connection:
+        with self._mutex, self.connection:
             row = self.connection.execute(
                 "SELECT request_count, output_tokens, reserved_output_tokens FROM budget WHERE singleton=1"
             ).fetchone()
@@ -292,7 +312,7 @@ class RunStore:
         self, reserved_output_tokens: int, actual_output_tokens: int
     ) -> None:
         """Replace a successful request reservation with measured output tokens."""
-        with self.connection:
+        with self._mutex, self.connection:
             self.connection.execute(
                 """UPDATE budget
                    SET reserved_output_tokens = reserved_output_tokens - ?,
@@ -303,7 +323,7 @@ class RunStore:
 
     def release_model_reservation(self, reserved_output_tokens: int) -> None:
         """Release output capacity after a failed request while retaining its request count."""
-        with self.connection:
+        with self._mutex, self.connection:
             row = self.connection.execute(
                 "SELECT reserved_output_tokens FROM budget WHERE singleton=1"
             ).fetchone()
@@ -326,38 +346,42 @@ class RunStore:
         request_hash: str,
     ) -> tuple[bytes, int, int] | None:
         """Return a verified saved response and usage for an identical complete request."""
-        row = self.connection.execute(
-            """SELECT response_artifact_hash, input_tokens, output_tokens
-               FROM model_call
-               WHERE model_lock_hash = ? AND stage = ? AND request_hash = ?
-                 AND status = 'COMPLETE'""",
-            (model_lock_hash, stage, request_hash),
-        ).fetchone()
-        if row is None or row["response_artifact_hash"] is None:
-            return None
-        return (
-            self.read_artifact(row["response_artifact_hash"]),
-            row["input_tokens"],
-            row["output_tokens"],
-        )
+        with self._mutex:
+            row = self.connection.execute(
+                """SELECT response_artifact_hash, input_tokens, output_tokens
+                   FROM model_call
+                   WHERE model_lock_hash = ? AND stage = ? AND request_hash = ?
+                     AND status = 'COMPLETE'""",
+                (model_lock_hash, stage, request_hash),
+            ).fetchone()
+            if row is None or row["response_artifact_hash"] is None:
+                return None
+            return (
+                self.read_artifact(row["response_artifact_hash"]),
+                row["input_tokens"],
+                row["output_tokens"],
+            )
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         """Expose one short coordinator transaction."""
-        with self.connection:
+        with self._mutex, self.connection:
             yield self.connection
 
     def backup(self, destination: Path) -> Path:
         """Create a consistent SQLite backup and copy immutable artifacts."""
-        destination.mkdir(parents=True, exist_ok=True)
-        database_backup = destination / f"{self.run_dir.name}.sqlite3"
-        with sqlite3.connect(database_backup) as target:
-            self.connection.backup(target)
-        artifact_backup = destination / f"{self.run_dir.name}-artifacts"
-        if artifact_backup.exists():
-            raise ExternalInputError("BACKUP_EXISTS", f"Backup already exists: {artifact_backup}")
-        shutil.copytree(self.artifact_dir, artifact_backup)
-        return database_backup
+        with self._mutex:
+            destination.mkdir(parents=True, exist_ok=True)
+            database_backup = destination / f"{self.run_dir.name}.sqlite3"
+            with sqlite3.connect(database_backup) as target:
+                self.connection.backup(target)
+            artifact_backup = destination / f"{self.run_dir.name}-artifacts"
+            if artifact_backup.exists():
+                raise ExternalInputError(
+                    "BACKUP_EXISTS", f"Backup already exists: {artifact_backup}"
+                )
+            shutil.copytree(self.artifact_dir, artifact_backup)
+            return database_backup
 
     @staticmethod
     def restore(database: Path, artifacts: Path, destination: Path) -> None:

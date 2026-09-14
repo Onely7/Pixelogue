@@ -140,75 +140,87 @@ class EvidenceInventory(StrictModel):
     """Bounded model observation used only to construct candidate instructions."""
 
     image_id: str
-    capabilities: tuple[str, ...]
-    visible_scopes: tuple[str, ...]
+    capabilities: Annotated[tuple[str, ...], Field(max_length=20)]
+    visible_scopes: Annotated[tuple[str, ...], Field(max_length=8)]
     scope_limited: bool
     reason: Annotated[str, Field(min_length=1, max_length=240)]
+
+    @model_validator(mode="after")
+    def validate_capabilities(self) -> EvidenceInventory:
+        """Reject repeated capability keys even outside guided decoding."""
+        if len(self.capabilities) != len(set(self.capabilities)):
+            raise ValueError("capabilities must be unique")
+        return self
 
 
 class InstructionSelection(StrictModel):
     """Validated output from one explicitly configured selector."""
 
-    status: Literal["SELECTED", "NO_SUITABLE_CANDIDATE"]
     candidate_id: str | None
     reason: Annotated[str, Field(min_length=1, max_length=240)]
 
-    @model_validator(mode="after")
-    def validate_status(self) -> InstructionSelection:
-        """Keep selection status and candidate presence consistent."""
-        if (self.status == "SELECTED") != (self.candidate_id is not None):
-            raise ValueError("SELECTED requires candidate_id; rejection forbids it")
-        return self
+    @property
+    def status(self) -> Literal["SELECTED", "NO_SUITABLE_CANDIDATE"]:
+        """Derive the decision so structured output cannot contradict its candidate ID."""
+        return "SELECTED" if self.candidate_id is not None else "NO_SUITABLE_CANDIDATE"
 
 
 class TextPayload(StrictModel):
     """Question or answer text returned by a model."""
 
-    status: Literal["OK", "UNSUPPORTED"]
     text: str | None
     reason: str | None = None
 
     @model_validator(mode="after")
-    def validate_status(self) -> TextPayload:
-        """Require exactly the fields appropriate for the payload status."""
-        if self.status == "OK" and (
-            self.text is None or not self.text.strip() or self.reason is not None
-        ):
-            raise ValueError("OK requires non-empty text and no reason")
-        if self.status == "UNSUPPORTED" and (self.text is not None or not self.reason):
-            raise ValueError("UNSUPPORTED requires a reason and no text")
+    def validate_content(self) -> TextPayload:
+        """Require usable public text or an internal reason for abstaining."""
+        if self.text is not None and not self.text.strip():
+            raise ValueError("text must contain non-whitespace content")
+        if self.text is None and not self.reason:
+            raise ValueError("missing text requires a reason")
         return self
+
+    @property
+    def status(self) -> Literal["OK", "UNSUPPORTED"]:
+        """Derive the status so it cannot contradict the public text."""
+        return "OK" if self.text is not None else "UNSUPPORTED"
 
 
 class QuestionFit(StrictModel):
     """One judge's pre-answer question assessment."""
 
-    local_anchor: GateVerdict
-    operation_coherent: GateVerdict
-    useful_request: GateVerdict
+    local_anchor: Literal["MET", "NOT_MET", "UNKNOWN"]
+    operation_coherent: Literal["MET", "NOT_MET", "UNKNOWN"]
+    useful_request: Literal["MET", "NOT_MET", "UNKNOWN"]
     reason: Annotated[str, Field(min_length=1, max_length=240)]
 
     @property
     def aggregate(self) -> GateVerdict:
         """Reduce required question-fit checks without averaging."""
-        values = {self.local_anchor, self.operation_coherent, self.useful_request}
+        values = {
+            GateVerdict(self.local_anchor),
+            GateVerdict(self.operation_coherent),
+            GateVerdict(self.useful_request),
+        }
         if GateVerdict.NOT_MET in values:
             return GateVerdict.NOT_MET
         if values == {GateVerdict.MET}:
             return GateVerdict.MET
-        if GateVerdict.ERROR in values:
-            return GateVerdict.ERROR
         return GateVerdict.UNKNOWN
 
 
 class AtomicClaim(StrictModel):
     """One factual assertion extracted from an answer."""
 
-    claim_id: str
     text: Annotated[str, Field(min_length=1)]
     source_message_id: str
     start: Annotated[int, Field(ge=0)]
     end: Annotated[int, Field(gt=0)]
+
+    @property
+    def claim_id(self) -> str:
+        """Return a controller-owned identity derived from the exact public span."""
+        return canonical_hash(self.model_dump(mode="json"))
 
     def validate_span(self, message: PublicMessage) -> None:
         """Validate that the claim span points to unchanged public text.
@@ -225,7 +237,7 @@ class AtomicClaim(StrictModel):
 class ClaimInventory(StrictModel):
     """One judge's complete decomposition of an answer."""
 
-    claims: tuple[AtomicClaim, ...]
+    claims: Annotated[tuple[AtomicClaim, ...], Field(max_length=32)]
     coverage: GateVerdict
     reason: Annotated[str, Field(min_length=1, max_length=240)]
 

@@ -107,12 +107,12 @@ def evaluate_capabilities(
                 payload,
                 (model_image,),
                 RubricVerdict,
-                max_tokens=512,
+                max_tokens=256,
                 temperature=0.0,
                 seed=seed + index,
-                bypass_cache=True,
+                bypass_cache=judge_index > 0,
             ).value
-            for judge in judges
+            for judge_index, judge in enumerate(judges)
         ]
         verdict = consensus(
             [GateVerdict(vote.verdict) for vote in votes if isinstance(vote, RubricVerdict)]

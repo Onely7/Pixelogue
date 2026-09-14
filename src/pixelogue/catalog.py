@@ -33,6 +33,18 @@ def load_task_catalog() -> dict[str, Any]:
     ids = [task.get("id") for task in tasks if isinstance(task, dict)]
     if len(ids) != len(set(ids)) or len(ids) != EXPECTED_TASK_COUNT:
         raise ConfigurationError("TASK_CATALOG_MISMATCH", "Task IDs must be unique")
+    required_capabilities = {
+        capability
+        for task in tasks
+        for capability in task.get("required_capabilities", [])
+        if isinstance(capability, str)
+    }
+    capabilities = catalog.get("capabilities")
+    if not isinstance(capabilities, dict) or set(capabilities) != required_capabilities:
+        raise ConfigurationError(
+            "TASK_CATALOG_MISMATCH",
+            "Capability definitions must exactly cover task requirements",
+        )
     return catalog
 
 

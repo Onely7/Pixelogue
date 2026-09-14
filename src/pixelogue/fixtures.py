@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import random
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
 from PIL import Image, ImageDraw, ImageFont
-from pydantic import Field
+from pydantic import Field, HttpUrl
 
 from pixelogue.config import StrictModel
+from pixelogue.contracts import RightsRecord, SourcePurpose, SourceRecord
 from pixelogue.io import write_jsonl
 
 STRATA = (
@@ -87,6 +89,33 @@ def make_fixtures(
                             )
                         )
     write_jsonl(destination / "fixtures.jsonl", records)
+    unique_records = {record.image_path: record for record in records}
+    rights_id = "pixelogue-procedural-fixtures"
+    sources = [
+        SourceRecord(
+            source_id=f"fixture:{Path(image_path).stem}",
+            image_path=record.image_path,
+            source_group_ids=(f"fixture-sha256:{record.image_sha256}",),
+            rights_record_id=rights_id,
+            purpose=SourcePurpose.EVALUATION,
+            dataset="Pixelogue procedural fixtures",
+            dataset_split=record.split,
+            dataset_image_id=Path(image_path).stem,
+        )
+        for image_path, record in sorted(unique_records.items())
+    ]
+    rights = RightsRecord(
+        rights_record_id=rights_id,
+        license_uri=HttpUrl("https://www.apache.org/licenses/LICENSE-2.0"),
+        attribution="Pixelogue procedural fixture generator",
+        processing_allowed=True,
+        qa_redistribution_allowed=False,
+        image_redistribution_allowed=False,
+        training_allowed=False,
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    write_jsonl(destination / "sources.jsonl", sources)
+    write_jsonl(destination / "rights.jsonl", (rights,))
     return records
 
 

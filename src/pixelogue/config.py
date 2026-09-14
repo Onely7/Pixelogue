@@ -7,10 +7,20 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    ValidationError,
+    model_validator,
+)
 
 from pixelogue.errors import ConfigurationError
 from pixelogue.serialization import canonical_hash, canonical_json, load_yaml
+
+PRIMARY_GENERATOR_REPOS = ("Qwen/Qwen3.8-27B", "google/gemma-4-31B-it")
+PILOT_GENERATOR_REPOS = ("Qwen/Qwen3.5-9B", "Qwen/Qwen3.5-9B")
 
 
 def allocate_quotas(total: int, weights: Mapping[str, int | str]) -> dict[str, int]:
@@ -65,6 +75,7 @@ class ModelEndpoint(StrictModel):
     base_url: HttpUrl = HttpUrl("http://127.0.0.1:8000/v1")
     served_name: str | None = None
     tensor_parallel_size: Annotated[int, Field(ge=1)] = 1
+    gpu_memory_utilization: Annotated[float, Field(gt=0, le=0.95)] = 0.9
     dtype: Literal["bfloat16"] = "bfloat16"
     quantization: None = None
     max_model_len: Annotated[int, Field(ge=4096)] = 32768
@@ -91,16 +102,18 @@ class ModelConfig(StrictModel):
 
     @model_validator(mode="after")
     def validate_roles(self) -> ModelConfig:
-        """Require the approved repositories and two different evaluator lineages."""
+        """Require the approved selector and generation repositories."""
         allowed_selectors = {"Qwen/Qwen3.5-2B", "Qwen/Qwen3.6-35B-A3B"}
         if self.selector.repo_id not in allowed_selectors:
             raise ValueError("selector must be an approved Qwen instruction selector")
         if self.selector_alternative.repo_id not in allowed_selectors:
             raise ValueError("selector_alternative must be an approved Qwen selector")
-        if self.generator_a.repo_id != "Qwen/Qwen3.8-27B":
-            raise ValueError("generator_a must use Qwen/Qwen3.8-27B")
-        if self.generator_b.repo_id != "google/gemma-4-31B-it":
-            raise ValueError("generator_b must use google/gemma-4-31B-it")
+        generator_repos = (self.generator_a.repo_id, self.generator_b.repo_id)
+        if generator_repos not in {PRIMARY_GENERATOR_REPOS, PILOT_GENERATOR_REPOS}:
+            raise ValueError(
+                "generators must use the primary Qwen3.8/Gemma pair or the temporary "
+                "Qwen3.5-9B pilot pair"
+            )
         if any(weight <= 0 for weight in self.generation_allocation.values()):
             raise ValueError("generation allocation weights must be positive")
         return self
@@ -190,6 +203,8 @@ class RuntimeConfig(StrictModel):
 
     request_timeout_seconds: Annotated[int, Field(ge=1, le=180)] = 180
     transport_max_attempts: Literal[1, 2, 3] = 3
+    structured_output_max_attempts: Literal[1, 2, 3] = 2
+    max_concurrent_images: Annotated[int, Field(ge=1, le=32)] = 1
     max_total_requests: Annotated[int, Field(ge=1)] = 10_000_000
     max_total_output_tokens: Annotated[int, Field(ge=1)] = 1_000_000_000
     allow_external_inference: Literal[False] = False
@@ -232,6 +247,9 @@ class PixelogueConfig(StrictModel):
             raise ValueError("pilot profile requires data.pilot=true")
         if self.profile == "standard" and self.data.pilot:
             raise ValueError("standard profile cannot enable pilot mode")
+        generator_repos = (self.models.generator_a.repo_id, self.models.generator_b.repo_id)
+        if self.profile == "standard" and generator_repos != PRIMARY_GENERATOR_REPOS:
+            raise ValueError("standard profile requires the primary Qwen3.8/Gemma model pair")
         return self
 
     @property

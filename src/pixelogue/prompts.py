@@ -17,27 +17,43 @@ Return exactly the requested JSON schema. Do not reveal private reasoning.
 
 STAGE_INSTRUCTIONS = {
     "evidence_extraction": """List only capabilities visibly supported by this image. Use the supplied
-capability vocabulary exactly, name bounded visible scopes without adding outside facts, and mark a
-limited scope when the whole image cannot be inventoried reliably.""",
+capability vocabulary keys exactly and apply every supplied definition strictly. Repetition or
+alignment alone is not a visible mapping. Name bounded visible scopes without adding outside facts,
+and mark a limited scope when the whole image cannot be inventoried reliably.""",
     "instruction_selection": """Choose the candidate that yields the most natural, useful request for
-this image and the exact public history. Do not answer the candidate. If none has a supported local
-subject and coherent purpose, return NO_SUITABLE_CANDIDATE.""",
+this image and the exact public history. The candidate list is provisional: verify that every object,
+role, value, region, or pairing needed by an operation is visibly available. Compare all candidates
+and select the strongest fully supported operation. For example, counting does not realize matching,
+and repeated objects alone do not form a visible correspondence. Do not repeat a request already
+answered in the public history. Do not answer the candidate. Set candidate_id to null only when every
+listed candidate lacks a supported new request.""",
     "question_generation": """Write one user question realizing the selected instruction. Keep it in
-the target language and grounded in the visible scope and public history.""",
+the target language and grounded in the visible scope and public history. Realize the selected
+task_id and operation exactly; do not replace it with an easier nearby task or repeat an answered
+request. Return public text, or set text to null and give an internal reason if unsupported.""",
     "question_fit": """Judge whether the current question has a visible or historically grounded local
-anchor, requests a coherent supported operation, and is useful in this conversation.""",
+anchor, realizes the selected instruction's operation coherently, and is useful in this
+conversation. A visible object, region, text, or complete image scope is a local anchor. Every field
+is required: use MET, NOT_MET, or UNKNOWN, never NOT_APPLICABLE. Mark operation_coherent NOT_MET when
+the question changes the exact task_id, even within one family; counting or spatial ordering cannot
+realize correspondence matching. Mark useful_request NOT_MET when the public history already
+contains the same answered request.""",
     "requirement_extraction": """Before seeing any answer, list every explicit public requirement
 that is active for this question. Copy each requirement as an exact code-point span from a user
 message, classify its kind and lifetime, and mark coverage MET only when none is missing. Exclude
-facts that an answer should contain unless the user explicitly required them.""",
+facts that an answer should contain unless the user explicitly required them. Ignore assistant
+messages. An ordinary task request is current_turn; use persistent only for explicit future-turn
+wording such as 'from now on'. Only quote text from user messages or the current question;
+target_language and other input field names are pipeline metadata, not public requirements.""",
     "answer_generation": """Answer the current question using only the image and exact public history.
 Satisfy the supplied active public requirements. Do not mention internal candidates, evaluators, or
-identifiers.""",
+identifiers. Return public text, or set text to null and give an internal reason if unsupported.""",
     "answer_repair": """Replace the candidate answer so it satisfies the listed failed criteria.
 Use only the image, current question, and exact public history. Do not mention the repair process or
 internal identifiers. Satisfy every supplied active public requirement.""",
     "claim_inventory": """Extract every factual assertion from the candidate answer into exact
-code-point spans. Mark coverage MET only when no factual assertion is omitted.""",
+code-point spans. Do not invent identifiers; the controller derives identity from each validated
+span. Mark coverage MET only when no factual assertion is omitted.""",
     "computation_inventory": """If this turn requests arithmetic, extract the allowlisted operation,
 ordered operand values, explicit units, punctuation policy, and reported answer value. Copy numeric
 spellings exactly. Mark coverage MET only for one complete expression; do not perform the quality
@@ -59,7 +75,15 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "question_generation": frozenset(
         {"target_language", "turn_index", "public_history", "selected_instruction", "image_views"}
     ),
-    "question_fit": frozenset({"target_language", "public_history", "question", "image_views"}),
+    "question_fit": frozenset(
+        {
+            "target_language",
+            "public_history",
+            "selected_instruction",
+            "question",
+            "image_views",
+        }
+    ),
     "requirement_extraction": frozenset(
         {"target_language", "public_history", "question", "question_message_id"}
     ),

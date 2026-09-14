@@ -9,7 +9,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from urllib.parse import urlparse
 
 import httpx
@@ -162,6 +162,7 @@ class VllmClient:
             "dtype": self.endpoint.dtype,
             "quantization": self.endpoint.quantization,
             "max_model_len": self.endpoint.max_model_len,
+            "gpu_memory_utilization": self.endpoint.gpu_memory_utilization,
         }
         request_envelope = {"model_lock": model_lock, "request": body}
         request_hash = canonical_hash(request_envelope)
@@ -183,6 +184,8 @@ class VllmClient:
                     completion_tokens=completion_tokens,
                 )
         reserved = False
+        raw_content: bytes | None = None
+        duration_ms = 0
         if self.store is not None:
             self.store.reserve_model_request(
                 max_tokens,
@@ -191,9 +194,12 @@ class VllmClient:
             )
             reserved = True
         try:
+            request_started = time.perf_counter()
             raw_response = self._request(body)
+            duration_ms = round((time.perf_counter() - request_started) * 1000)
+            raw_content = raw_response.content
             typed, response_hash = self._decode_typed_response(
-                raw_response.content,
+                raw_content,
                 response_model,
                 max_tokens=max_tokens,
             )
@@ -205,17 +211,30 @@ class VllmClient:
                 self._record(
                     stage,
                     request_envelope,
-                    raw_response.content,
+                    raw_content,
                     request_hash,
                     response_hash,
                     prompt_tokens,
                     completion_tokens,
+                    duration_ms,
                 )
                 self.store.finalize_model_request(max_tokens, completion_tokens)
                 reserved = False
-        except Exception:
+        except BaseException:
             if self.store is not None and reserved:
                 self.store.release_model_reservation(max_tokens)
+                if raw_content is not None:
+                    self._record(
+                        stage,
+                        request_envelope,
+                        raw_content,
+                        request_hash,
+                        hashlib.sha256(raw_content).hexdigest(),
+                        0,
+                        0,
+                        duration_ms,
+                        status="INVALID",
+                    )
             raise
         return ModelResponse(
             value=typed,
@@ -328,7 +347,10 @@ class VllmClient:
         if not isinstance(choices, list) or len(choices) != 1:
             raise ExecutionError("MODEL_CHOICE_COUNT", "Completion must contain exactly one choice")
         choice = choices[0]
-        if not isinstance(choice, dict) or choice.get("finish_reason") != "stop":
+        if not isinstance(choice, dict):
+            raise ExecutionError("MODEL_FINISH_REASON", "Completion did not finish with stop")
+        finish_reason = choice.get("finish_reason")
+        if finish_reason not in {"stop", "length"}:
             raise ExecutionError("MODEL_FINISH_REASON", "Completion did not finish with stop")
         message = choice.get("message")
         if not isinstance(message, dict) or message.get("tool_calls"):
@@ -336,10 +358,49 @@ class VllmClient:
         content = message.get("content")
         if not isinstance(content, str) or not content.strip():
             raise ExecutionError("MODEL_CONTENT_EMPTY", "Completion content is empty")
+        if finish_reason == "length":
+            completed = VllmClient._close_json_delimiters(content)
+            if completed is None:
+                raise ExecutionError("MODEL_FINISH_REASON", "Completion ended before a JSON value")
+            content = completed
         usage = response.get("usage")
         if not isinstance(usage, dict):
             usage = {}
         return content, usage
+
+    @staticmethod
+    def _close_json_delimiters(content: str) -> str | None:
+        """Close only missing terminal JSON containers in an otherwise complete object."""
+        stripped = content.rstrip()
+        stack: list[str] = []
+        in_string = False
+        escaped = False
+        pairs = {"}": "{", "]": "["}
+        for character in stripped:
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                continue
+            if character == '"':
+                in_string = True
+            elif character in "{[":
+                stack.append(character)
+            elif character in "}]":
+                if not stack or stack.pop() != pairs[character]:
+                    return None
+        if in_string or len(stack) > 8:
+            return None
+        suffix = "".join("}" if opener == "{" else "]" for opener in reversed(stack))
+        candidate = stripped + suffix
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            return None
+        return candidate if isinstance(parsed, dict) else None
 
     def _record(
         self,
@@ -350,6 +411,8 @@ class VllmClient:
         response_hash: str,
         prompt_tokens: int,
         completion_tokens: int,
+        duration_ms: int,
+        status: Literal["COMPLETE", "INVALID"] = "COMPLETE",
     ) -> None:
         assert self.store is not None
         request_artifact = self.store.write_artifact("requests", canonical_json(request))
@@ -361,8 +424,8 @@ class VllmClient:
                 """INSERT OR IGNORE INTO model_call(
                        call_id, stage, model_repo, model_revision, model_lock_hash,
                        request_hash, request_artifact_hash, response_artifact_hash,
-                       input_tokens, output_tokens, status
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'COMPLETE')""",
+                       input_tokens, output_tokens, duration_ms, status
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     call_id,
                     stage,
@@ -374,6 +437,8 @@ class VllmClient:
                     response_artifact,
                     prompt_tokens,
                     completion_tokens,
+                    duration_ms,
+                    status,
                 ),
             )
         if response_artifact != response_hash:

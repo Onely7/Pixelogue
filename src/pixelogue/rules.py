@@ -27,8 +27,8 @@ class SetInventory(StrictModel):
     """One judge's member bindings for an exhaustive question and answer."""
 
     coverage: Literal["MET", "NOT_MET", "UNKNOWN"]
-    expected_members: tuple[str, ...] = ()
-    reported_members: tuple[str, ...] = ()
+    expected_members: tuple[str, ...] = Field(default=(), max_length=256)
+    reported_members: tuple[str, ...] = Field(default=(), max_length=256)
     empty_scope_is_explicit: bool = False
     reason: str = Field(min_length=1, max_length=240)
 
@@ -55,7 +55,7 @@ class ComputationInventory(StrictModel):
 
     coverage: Literal["MET", "NOT_MET", "UNKNOWN"]
     operation: Literal["add", "subtract", "multiply", "divide"] | None = None
-    operands: tuple[NumericValue, ...] = ()
+    operands: tuple[NumericValue, ...] = Field(default=(), max_length=16)
     reported_result: NumericValue | None = None
     reason: str = Field(min_length=1, max_length=240)
 

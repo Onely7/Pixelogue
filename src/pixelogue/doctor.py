@@ -16,6 +16,7 @@ from pixelogue.serving import VllmClient
 PARAMETER_COUNTS = {
     "Qwen/Qwen3.5-2B": 2_000_000_000,
     "Qwen/Qwen3.6-35B-A3B": 35_951_822_704,
+    "Qwen/Qwen3.5-9B": 9_000_000_000,
     "Qwen/Qwen3.8-27B": 27_000_000_000,
     "google/gemma-4-31B-it": 31_000_000_000,
 }
@@ -41,6 +42,7 @@ class ModelCheck(StrictModel):
     required_for_current_run: bool
     revision_pinned: bool
     tensor_parallel_size: int
+    gpu_memory_utilization: float
     estimated_weight_mib: int
     assigned_gpu_indices: tuple[int, ...]
     enough_idle_memory: bool
@@ -153,6 +155,7 @@ def diagnose(config: PixelogueConfig, *, check_servers: bool = False) -> DoctorR
                     endpoint.revision is not None and endpoint.processor_revision is not None
                 ),
                 tensor_parallel_size=endpoint.tensor_parallel_size,
+                gpu_memory_utilization=endpoint.gpu_memory_utilization,
                 estimated_weight_mib=estimate_mib,
                 assigned_gpu_indices=assigned,
                 enough_idle_memory=enough,
@@ -163,8 +166,7 @@ def diagnose(config: PixelogueConfig, *, check_servers: bool = False) -> DoctorR
     ready = all(
         (not check.required_for_current_run)
         or check.revision_pinned
-        and check.enough_idle_memory
-        and (not check_servers or check.server_status == "READY")
+        and (check.server_status == "READY" if check_servers else check.enough_idle_memory)
         for check in checks
     )
     return DoctorReport(
@@ -179,32 +181,52 @@ def _allocate_required_gpus(
     endpoints: Sequence[tuple[str, ModelEndpoint, bool]],
     gpus: Sequence[GpuDevice],
 ) -> dict[str, tuple[int, ...]]:
-    """Allocate distinct idle devices to every concurrently required server."""
-    remaining = {gpu.index: gpu for gpu in gpus if gpu.idle}
+    """Allocate idle GPU fractions to every unique concurrently required server."""
+    idle = {gpu.index: gpu for gpu in gpus if gpu.idle}
+    remaining_fraction = {index: 1.0 for index in idle}
     allocations: dict[str, tuple[int, ...]] = {}
+    grouped: dict[tuple[str, str, str | None], tuple[ModelEndpoint, list[str]]] = {}
+    for role, endpoint, is_required in endpoints:
+        if not is_required:
+            continue
+        key = (str(endpoint.base_url), endpoint.model_name, endpoint.revision)
+        if key not in grouped:
+            grouped[key] = (endpoint, [])
+        grouped[key][1].append(role)
     required = sorted(
-        ((role, endpoint) for role, endpoint, is_required in endpoints if is_required),
-        key=lambda item: PARAMETER_COUNTS[item[1].repo_id],
+        grouped.values(),
+        key=lambda item: PARAMETER_COUNTS[item[0].repo_id],
         reverse=True,
     )
-    for role, endpoint in required:
+    for endpoint, roles in required:
         estimate_mib = int(PARAMETER_COUNTS[endpoint.repo_id] * 2 * 1.1 / (1024 * 1024))
+        per_shard_mib = (estimate_mib + endpoint.tensor_parallel_size - 1) // (
+            endpoint.tensor_parallel_size
+        )
         eligible = [
             group
-            for group in combinations(remaining.values(), endpoint.tensor_parallel_size)
-            if sum(gpu.free_mib for gpu in group) >= estimate_mib
+            for group in combinations(idle.values(), endpoint.tensor_parallel_size)
+            if all(
+                remaining_fraction[gpu.index] >= endpoint.gpu_memory_utilization
+                and gpu.free_mib >= int(gpu.total_mib * endpoint.gpu_memory_utilization)
+                and int(gpu.total_mib * endpoint.gpu_memory_utilization) >= per_shard_mib
+                for gpu in group
+            )
         ]
         if not eligible:
-            allocations[role] = ()
+            for role in roles:
+                allocations[role] = ()
             continue
         selected = min(
             eligible,
             key=lambda group: (
-                sum(gpu.free_mib for gpu in group),
+                sum(remaining_fraction[gpu.index] for gpu in group),
                 tuple(gpu.index for gpu in group),
             ),
         )
-        allocations[role] = tuple(sorted(gpu.index for gpu in selected))
+        assigned = tuple(sorted(gpu.index for gpu in selected))
+        for role in roles:
+            allocations[role] = assigned
         for gpu in selected:
-            del remaining[gpu.index]
+            remaining_fraction[gpu.index] -= endpoint.gpu_memory_utilization
     return allocations

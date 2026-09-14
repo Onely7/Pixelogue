@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections import deque
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypeVar
 
@@ -53,6 +56,15 @@ from pixelogue.store import RunStore
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
 
 
+@dataclass(frozen=True)
+class SynthesisJob:
+    """One deterministically scheduled image synthesis job."""
+
+    image: ImageArtifact
+    target_language: Literal["en", "ja", "zh-Hans"]
+    generator_role: Literal["generator_a", "generator_b"]
+
+
 class InferenceClient(Protocol):
     """Interface implemented by vLLM and scripted contract-test clients."""
 
@@ -91,6 +103,69 @@ class SynthesisCoordinator:
         self.store = store
         self.selector = selector
         self.generators = {"generator_a": generator_a, "generator_b": generator_b}
+
+    def synthesize_batch(
+        self,
+        jobs: Iterable[SynthesisJob],
+        artifact_root: Path,
+        *,
+        max_workers: int,
+    ) -> Iterator[ConversationArtifact]:
+        """Synthesize independent images concurrently and yield input order.
+
+        At most ``max_workers`` jobs are submitted at once. Conversation-local history remains
+        sequential, while independent model requests can be continuously batched by the server.
+
+        Raises:
+            ValueError: If ``max_workers`` is not positive.
+        """
+        if max_workers < 1:
+            raise ValueError("max_workers must be positive")
+        iterator = iter(jobs)
+        if max_workers == 1:
+            for job in iterator:
+                yield self._synthesize_job(job, artifact_root)
+            return
+
+        with ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="pixelogue-image",
+        ) as executor:
+            pending: deque[Future[ConversationArtifact]] = deque()
+            for _ in range(max_workers):
+                try:
+                    job = next(iterator)
+                except StopIteration:
+                    break
+                pending.append(executor.submit(self._synthesize_job, job, artifact_root))
+            while pending:
+                yield pending.popleft().result()
+                try:
+                    job = next(iterator)
+                except StopIteration:
+                    continue
+                pending.append(executor.submit(self._synthesize_job, job, artifact_root))
+
+    def _synthesize_job(
+        self,
+        job: SynthesisJob,
+        artifact_root: Path,
+    ) -> ConversationArtifact:
+        """Run one scheduled job and preserve image-scoped execution failures."""
+        try:
+            return self.synthesize_image(
+                job.image,
+                artifact_root,
+                target_language=job.target_language,
+                generator_role=job.generator_role,
+            )
+        except ExecutionError as error:
+            return self.record_failed_image(
+                job.image,
+                target_language=job.target_language,
+                generator_role=job.generator_role,
+                error=error,
+            )
 
     def synthesize_image(
         self,
@@ -153,7 +228,7 @@ class SynthesisCoordinator:
             },
             (model_image,),
             EvidenceInventory,
-            max_tokens=2048,
+            max_tokens=1024,
             temperature=0.0,
             seed=self.config.seed,
         )
@@ -196,7 +271,7 @@ class SynthesisCoordinator:
                 },
                 (model_image,),
                 TextPayload,
-                max_tokens=1024,
+                max_tokens=256,
                 temperature=0.7,
                 seed=self.config.seed + turn_index,
             )
@@ -213,6 +288,7 @@ class SynthesisCoordinator:
             fit = self._question_fit(
                 snapshot.public_history,
                 question,
+                selected,
                 target_language,
                 image_views,
                 model_image,
@@ -382,6 +458,7 @@ class SynthesisCoordinator:
             fit = self._question_fit(
                 snapshot.public_history,
                 turn.question,
+                turn.instruction,
                 conversation.target_language,
                 image_views,
                 model_image,
@@ -493,11 +570,12 @@ class SynthesisCoordinator:
                 },
                 (),
                 RequirementInventory,
-                max_tokens=2048,
+                max_tokens=1024,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
+                bypass_cache=judge_index > 0,
             )
-            for client in self.generators.values()
+            for judge_index, client in enumerate(self.generators.values())
         ]
         coverage = consensus([GateVerdict(item.coverage) for item in inventories])
         if coverage is not GateVerdict.MET:
@@ -531,7 +609,7 @@ class SynthesisCoordinator:
             },
             (model_image,),
             InstructionSelection,
-            max_tokens=512,
+            max_tokens=256,
             temperature=0.0,
             seed=self.config.seed + turn_index,
         )
@@ -539,13 +617,51 @@ class SynthesisCoordinator:
             return None
         by_id = {candidate.candidate_id: candidate for candidate in candidates}
         if result.candidate_id not in by_id:
-            raise ExecutionError("SELECTOR_UNKNOWN_CANDIDATE", "Selector returned an unknown ID")
+            return None
         return by_id[result.candidate_id]
+
+    def record_failed_image(
+        self,
+        image: ImageArtifact,
+        *,
+        target_language: Literal["en", "ja", "zh-Hans"],
+        generator_role: Literal["generator_a", "generator_b"],
+        error: ExecutionError,
+    ) -> ConversationArtifact:
+        """Persist an image-scoped inference failure without certifying a partial turn."""
+        conversation_id = canonical_hash(
+            {"run": self.run_id, "image": image.image_id, "language": target_language}
+        )
+        generator = self.generators[generator_role]
+        turns = tuple(
+            TurnArtifact.model_validate_json(self.store.read_artifact(artifact_hash))
+            for artifact_hash in self.store.committed_artifact_hashes(conversation_id)
+        )
+        conversation = ConversationArtifact(
+            conversation_id=conversation_id,
+            image=image,
+            target_language=target_language,
+            generation_model=generator.endpoint.repo_id,
+            turns=turns,
+            status="ERROR",
+        )
+        self.store.write_json_artifact(
+            "errors",
+            {
+                "conversation_id": conversation_id,
+                "image_id": image.image_id,
+                "reason": error.reason,
+                "message": str(error),
+            },
+        )
+        self.store.write_json_artifact("conversations", conversation.model_dump(mode="json"))
+        return conversation
 
     def _question_fit(
         self,
         history: Sequence[PublicMessage],
         question: PublicMessage,
+        instruction: InstructionCandidate,
         language: str,
         image_views: list[dict[str, str]],
         model_image: ModelImage,
@@ -558,16 +674,18 @@ class SynthesisCoordinator:
                 {
                     "target_language": language,
                     "public_history": self._history(history),
+                    "selected_instruction": instruction.model_dump(mode="json"),
                     "question": question.content,
                     "image_views": image_views,
                 },
                 (model_image,),
                 QuestionFit,
-                max_tokens=512,
+                max_tokens=256,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
+                bypass_cache=judge_index > 0,
             )
-            for client in self.generators.values()
+            for judge_index, client in enumerate(self.generators.values())
         ]
         return question_fit_consensus(votes)
 
@@ -599,14 +717,18 @@ class SynthesisCoordinator:
                 },
                 (model_image,),
                 ClaimInventory,
-                max_tokens=4096,
+                max_tokens=1024,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
+                bypass_cache=judge_index > 0,
             )
-            for client in self.generators.values()
+            for judge_index, client in enumerate(self.generators.values())
         ]
         coverage = consensus([inventory.coverage for inventory in inventories])
         claims = self._claim_union(inventories, answer)
+        if claims is None:
+            coverage = GateVerdict.UNKNOWN
+            claims = ()
         computation = (
             self._check_computation(
                 history,
@@ -661,7 +783,7 @@ class SynthesisCoordinator:
                 subjects = (None,)
             for subject in subjects:
                 votes: list[RubricVerdict] = []
-                for client in self.generators.values():
+                for judge_index, client in enumerate(self.generators.values()):
                     payload, images = self._rubric_payload(
                         template,
                         history,
@@ -680,9 +802,10 @@ class SynthesisCoordinator:
                             payload,
                             images,
                             RubricVerdict,
-                            max_tokens=512,
+                            max_tokens=256,
                             temperature=0.0,
                             seed=self.config.seed + turn_index,
+                            bypass_cache=judge_index > 0,
                         )
                     )
                 verdict = consensus([GateVerdict(vote.verdict) for vote in votes])
@@ -749,11 +872,12 @@ class SynthesisCoordinator:
                 },
                 (model_image,),
                 SetInventory,
-                max_tokens=4096,
+                max_tokens=2048,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
+                bypass_cache=judge_index > 0,
             )
-            for client in self.generators.values()
+            for judge_index, client in enumerate(self.generators.values())
         ]
         return verify_set_inventories(inventories)
 
@@ -780,11 +904,12 @@ class SynthesisCoordinator:
                 },
                 (model_image,),
                 ComputationInventory,
-                max_tokens=2048,
+                max_tokens=1024,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
+                bypass_cache=judge_index > 0,
             )
-            for client in self.generators.values()
+            for judge_index, client in enumerate(self.generators.values())
         ]
         return verify_computation_inventories(inventories)
 
@@ -792,13 +917,35 @@ class SynthesisCoordinator:
     def _claim_union(
         inventories: Sequence[ClaimInventory],
         answer: PublicMessage,
-    ) -> tuple[AtomicClaim, ...]:
+    ) -> tuple[AtomicClaim, ...] | None:
         claims: dict[tuple[int, int, str], AtomicClaim] = {}
         for inventory in inventories:
             for claim in inventory.claims:
-                claim.validate_span(answer)
-                claims[(claim.start, claim.end, claim.text)] = claim
+                normalized = SynthesisCoordinator._normalize_claim(claim, answer)
+                if normalized is None:
+                    return None
+                claims[(normalized.start, normalized.end, normalized.text)] = normalized
         return tuple(claims[key] for key in sorted(claims))
+
+    @staticmethod
+    def _normalize_claim(claim: AtomicClaim, answer: PublicMessage) -> AtomicClaim | None:
+        """Correct an invalid offset only when the quoted answer span is unique."""
+        if claim.source_message_id != answer.message_id:
+            return None
+        if (
+            claim.end <= len(answer.content)
+            and answer.content[claim.start : claim.end] == claim.text
+        ):
+            return claim
+        starts = [
+            index
+            for index in range(len(answer.content))
+            if answer.content.startswith(claim.text, index)
+        ]
+        if len(starts) != 1:
+            return None
+        start = starts[0]
+        return claim.model_copy(update={"start": start, "end": start + len(claim.text)})
 
     @staticmethod
     def _rubric_payload(
@@ -851,10 +998,29 @@ class SynthesisCoordinator:
         model: type[OutputModel],
         **kwargs: Any,
     ) -> OutputModel:
-        response = client.invoke(stage, payload, images, model, **kwargs)
-        if not isinstance(response.value, model):
-            raise ExecutionError("MODEL_TYPE_MISMATCH", f"{stage} returned another contract")
-        return response.value
+        retryable = {
+            "MODEL_CONTENT_EMPTY",
+            "MODEL_FINISH_REASON",
+            "MODEL_SCHEMA_MISMATCH",
+        }
+        for attempt in range(self.config.runtime.structured_output_max_attempts):
+            call_kwargs = dict(kwargs)
+            if attempt:
+                call_kwargs["seed"] = int(call_kwargs["seed"]) + 100_000 * attempt
+                call_kwargs["bypass_cache"] = True
+            try:
+                response = client.invoke(stage, payload, images, model, **call_kwargs)
+            except ExecutionError as error:
+                if (
+                    error.reason in retryable
+                    and attempt + 1 < self.config.runtime.structured_output_max_attempts
+                ):
+                    continue
+                raise
+            if not isinstance(response.value, model):
+                raise ExecutionError("MODEL_TYPE_MISMATCH", f"{stage} returned another contract")
+            return response.value
+        raise AssertionError("structured output attempt loop did not return")
 
     @staticmethod
     def _history(history: Sequence[PublicMessage]) -> list[dict[str, Any]]:
@@ -877,10 +1043,6 @@ class SynthesisCoordinator:
         )
 
     @staticmethod
-    def _capability_vocabulary() -> list[str]:
-        values = {
-            capability
-            for task in load_task_catalog()["tasks"]
-            for capability in task["required_capabilities"]
-        }
-        return sorted(values)
+    def _capability_vocabulary() -> dict[str, str]:
+        catalog = load_task_catalog()
+        return dict(sorted(catalog["capabilities"].items()))

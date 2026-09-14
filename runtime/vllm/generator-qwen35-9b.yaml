@@ -1,0 +1,14 @@
+model: Qwen/Qwen3.5-9B
+# Temporary one-GPU pilot substitute for both logical generator/evaluator roles.
+revision: c202236235762e1c871ad0ccb60c8ee5ba337b9a
+host: 127.0.0.1
+port: 8002
+dtype: bfloat16
+tensor-parallel-size: 1
+gpu-memory-utilization: 0.68
+max-model-len: 32768
+generation-config: vllm
+default-chat-template-kwargs:
+  enable_thinking: false
+limit-mm-per-prompt:
+  image: 1

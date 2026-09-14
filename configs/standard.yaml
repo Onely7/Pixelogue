@@ -24,6 +24,7 @@ models:
     revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
     processor_revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
     base_url: http://127.0.0.1:8000/v1
+    gpu_memory_utilization: 0.2
   selector_alternative:
     repo_id: Qwen/Qwen3.6-35B-A3B
     revision: 995ad96eacd98c81ed38be0c5b274b04031597b0
@@ -53,6 +54,8 @@ storage:
 runtime:
   request_timeout_seconds: 180
   transport_max_attempts: 3
+  structured_output_max_attempts: 2
+  max_concurrent_images: 4
   max_total_requests: 10000000
   max_total_output_tokens: 1000000000
   allow_external_inference: false

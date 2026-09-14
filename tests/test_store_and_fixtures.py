@@ -2,8 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from pixelogue.contracts import RightsRecord, SourceRecord
 from pixelogue.errors import ExternalInputError
 from pixelogue.fixtures import STRATA, make_fixtures
+from pixelogue.io import read_jsonl
 from pixelogue.store import RunStore
 
 
@@ -45,6 +47,11 @@ def test_fixture_generator_covers_all_strata_and_splits(tmp_path: Path) -> None:
     assert {record.stratum for record in records} == set(STRATA)
     assert {record.split for record in records} == {"development", "confirmation"}
     assert all((tmp_path / record.image_path).is_file() for record in records)
+    sources = read_jsonl(tmp_path / "sources.jsonl", SourceRecord)
+    rights = read_jsonl(tmp_path / "rights.jsonl", RightsRecord)
+    assert len(sources) == len(STRATA) * 2
+    assert len(rights) == 1
+    assert all(source.purpose.value == "evaluation" for source in sources)
 
 
 def test_request_budget_reservations_survive_failure_and_finalize_success(tmp_path: Path) -> None:

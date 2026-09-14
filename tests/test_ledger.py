@@ -79,3 +79,26 @@ def test_requirement_inventory_requires_blind_agreement_and_public_span() -> Non
     assert reconcile_inventories((inventory, disagreement), (message,), 1) is None
     assistant = _Message("q1", "assistant", "Answer briefly")
     assert reconcile_inventories((inventory, inventory), (assistant,), 1) is None
+
+
+def test_requirement_inventory_corrects_only_a_unique_quoted_span() -> None:
+    miscounted = RequirementSpec(
+        kind="content",
+        text="How many squares?",
+        lifetime="current_turn",
+        source_message_id="q1",
+        start=0,
+        end=40,
+    )
+    inventory = RequirementInventory(
+        requirements=(miscounted,),
+        coverage="MET",
+        reason="Complete.",
+    )
+    message = _Message("q1", "user", "How many squares?")
+    requirements = reconcile_inventories((inventory, inventory), (message,), 1)
+    assert requirements is not None
+    assert (requirements[0].start, requirements[0].end) == (0, 17)
+
+    ambiguous = _Message("q1", "user", "How many squares? How many squares?")
+    assert reconcile_inventories((inventory, inventory), (ambiguous,), 1) is None

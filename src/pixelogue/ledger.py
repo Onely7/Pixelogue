@@ -29,7 +29,7 @@ class RequirementSpec(StrictModel):
 class RequirementInventory(StrictModel):
     """A judge's complete inventory of active public constraints."""
 
-    requirements: tuple[RequirementSpec, ...]
+    requirements: tuple[RequirementSpec, ...] = Field(max_length=32)
     coverage: Literal["MET", "NOT_MET", "UNKNOWN"]
     reason: str = Field(min_length=1, max_length=240)
 
@@ -80,40 +80,44 @@ def reconcile_inventories(
     """
     if len(inventories) != 2 or any(item.coverage != "MET" for item in inventories):
         return None
-    normalized = [
-        tuple(
-            sorted(
-                (spec.model_dump(mode="json") for spec in inventory.requirements),
-                key=lambda value: (
-                    value["source_message_id"],
-                    value["start"],
-                    value["end"],
-                    value["kind"],
-                    value["lifetime"],
-                ),
+    normalized: list[tuple[RequirementSpec, ...]] = []
+    for inventory in inventories:
+        values = [_normalize_spec(spec, messages) for spec in inventory.requirements]
+        if any(value is None for value in values):
+            return None
+        normalized.append(
+            tuple(
+                sorted(
+                    (value for value in values if value is not None),
+                    key=lambda value: (
+                        value.source_message_id,
+                        value.start,
+                        value.end,
+                        value.kind,
+                        value.lifetime,
+                    ),
+                )
             )
         )
-        for inventory in inventories
-    ]
     if normalized[0] != normalized[1]:
         return None
     requirements: list[Requirement] = []
     seen: set[str] = set()
     for value in normalized[0]:
-        requirement_id = canonical_hash(value)
+        requirement_id = canonical_hash(value.model_dump(mode="json"))
         if requirement_id in seen:
             return None
         seen.add(requirement_id)
         requirement = Requirement(
             requirement_id=requirement_id,
             template_id="R_REQUIREMENT",
-            kind=value["kind"],
-            description=value["text"],
-            lifetime=value["lifetime"],
+            kind=value.kind,
+            description=value.text,
+            lifetime=value.lifetime,
             introduced_turn=turn_index,
-            source_message_id=value["source_message_id"],
-            start=value["start"],
-            end=value["end"],
+            source_message_id=value.source_message_id,
+            start=value.start,
+            end=value.end,
         )
         try:
             requirement.validate_source(messages)
@@ -121,6 +125,27 @@ def reconcile_inventories(
             return None
         requirements.append(requirement)
     return tuple(requirements)
+
+
+def _normalize_spec(
+    spec: RequirementSpec,
+    messages: Sequence[object],
+) -> RequirementSpec | None:
+    """Correct an invalid offset only when the quoted public span is unique."""
+    for message in messages:
+        if getattr(message, "message_id", None) != spec.source_message_id:
+            continue
+        if getattr(message, "role", None) != "user":
+            return None
+        content = getattr(message, "content", "")
+        if spec.end <= len(content) and content[spec.start : spec.end] == spec.text:
+            return spec
+        starts = [index for index in range(len(content)) if content.startswith(spec.text, index)]
+        if len(starts) != 1:
+            return None
+        start = starts[0]
+        return spec.model_copy(update={"start": start, "end": start + len(spec.text)})
+    return None
 
 
 class RequirementEvent(StrictModel):

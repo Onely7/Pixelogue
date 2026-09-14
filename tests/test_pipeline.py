@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -12,12 +14,13 @@ from pixelogue.contracts import (
     EvidenceInventory,
     GateVerdict,
     InstructionSelection,
+    PublicMessage,
     QuestionFit,
     RubricVerdict,
     TextPayload,
 )
 from pixelogue.ledger import RequirementInventory, RequirementSpec
-from pixelogue.pipeline import SynthesisCoordinator
+from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
 
@@ -30,11 +33,13 @@ class ScriptedClient:
         reject_selection: bool = False,
         fail_first_rating: bool = False,
         requirement_text: str | None = None,
+        concurrency_probe: ConcurrencyProbe | None = None,
     ) -> None:
         self.endpoint = endpoint
         self.reject_selection = reject_selection
         self.fail_first_rating = fail_first_rating
         self.requirement_text = requirement_text
+        self.concurrency_probe = concurrency_probe
         self.rating_failed = False
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
@@ -51,6 +56,10 @@ class ScriptedClient:
         bypass_cache: bool = False,
     ) -> ModelResponse:
         del images, max_tokens, temperature, seed, bypass_cache
+        if self.concurrency_probe is not None:
+            self.concurrency_probe.enter()
+            time.sleep(0.002)
+            self.concurrency_probe.exit()
         self.calls.append((stage, payload))
         value: BaseModel
         if response_model is EvidenceInventory:
@@ -63,7 +72,6 @@ class ScriptedClient:
             )
         elif response_model is InstructionSelection:
             value = InstructionSelection(
-                status="NO_SUITABLE_CANDIDATE" if self.reject_selection else "SELECTED",
                 candidate_id=None
                 if self.reject_selection
                 else payload["candidates"][0]["candidate_id"],
@@ -71,16 +79,15 @@ class ScriptedClient:
             )
         elif response_model is TextPayload:
             value = TextPayload(
-                status="OK",
                 text="What color is the visible region?"
                 if stage == "question_generation"
                 else "Blue.",
             )
         elif response_model is QuestionFit:
             value = QuestionFit(
-                local_anchor=GateVerdict.MET,
-                operation_coherent=GateVerdict.MET,
-                useful_request=GateVerdict.MET,
+                local_anchor="MET",
+                operation_coherent="MET",
+                useful_request="MET",
                 reason="The question is visibly grounded.",
             )
         elif response_model is RequirementInventory:
@@ -107,7 +114,6 @@ class ScriptedClient:
             value = ClaimInventory(
                 claims=(
                     AtomicClaim(
-                        claim_id="claim",
                         text=answer,
                         source_message_id=payload["candidate_answer_message_id"],
                         start=0,
@@ -134,12 +140,33 @@ class ScriptedClient:
         )
 
 
+class ConcurrencyProbe:
+    """Track overlapping scripted model calls across test clients."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def enter(self) -> None:
+        """Record the start of one model call."""
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+
+    def exit(self) -> None:
+        """Record the completion of one model call."""
+        with self._lock:
+            self.active -= 1
+
+
 def _coordinator(
     tmp_path: Path,
     reject_selection: bool = False,
     fail_first_rating: bool = False,
     requirement_text: str | None = None,
     disagree_on_requirements: bool = False,
+    concurrency_probe: ConcurrencyProbe | None = None,
 ):
     config = load_config(Path("configs/pilot.yaml"))
     store = RunStore(tmp_path / "runs", "test", require_local_wal=False)
@@ -147,16 +174,19 @@ def _coordinator(
     selector = ScriptedClient(
         config.models.active_selector_endpoint,
         reject_selection=reject_selection,
+        concurrency_probe=concurrency_probe,
     )
     generator_a = ScriptedClient(
         config.models.generator_a,
         fail_first_rating=fail_first_rating,
         requirement_text=requirement_text,
+        concurrency_probe=concurrency_probe,
     )
     generator_b = ScriptedClient(
         config.models.generator_b,
         fail_first_rating=fail_first_rating,
         requirement_text="visible region" if disagree_on_requirements else requirement_text,
+        concurrency_probe=concurrency_probe,
     )
     coordinator = SynthesisCoordinator(
         config,
@@ -167,6 +197,36 @@ def _coordinator(
         generator_b,
     )
     return coordinator, store, selector, generator_a, generator_b
+
+
+def test_batch_synthesis_overlaps_images_and_preserves_input_order(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    probe = ConcurrencyProbe()
+    coordinator, store, _, _, _ = _coordinator(tmp_path, concurrency_probe=probe)
+    images = tuple(image.model_copy(update={"image_id": f"{index:064x}"}) for index in range(1, 5))
+    jobs = tuple(
+        SynthesisJob(
+            image=item,
+            target_language="en",
+            generator_role="generator_a" if index % 2 else "generator_b",
+        )
+        for index, item in enumerate(images)
+    )
+    try:
+        conversations = tuple(coordinator.synthesize_batch(jobs, root, max_workers=3))
+        verification = store.verify()
+    finally:
+        store.close()
+
+    assert tuple(item.image.image_id for item in conversations) == tuple(
+        item.image_id for item in images
+    )
+    assert probe.peak >= 2
+    assert verification["turn_commits"] == sum(
+        len(item.turns) for item in conversations if item.status == "QUALITY_CANDIDATE"
+    )
 
 
 def test_selection_rejection_stops_before_question_or_answer(
@@ -307,3 +367,24 @@ def test_requirement_disagreement_abstains_before_answer(tmp_path: Path, image_a
         for client in (generator_a, generator_b)
         for stage, _ in client.calls
     )
+
+
+def test_claim_offsets_are_corrected_only_for_a_unique_quoted_span() -> None:
+    answer = PublicMessage(
+        message_id="a1",
+        turn_index=1,
+        role="assistant",
+        content="There are five squares.",
+    )
+    claim = AtomicClaim(
+        text="five squares",
+        source_message_id="a1",
+        start=0,
+        end=99,
+    )
+    normalized = SynthesisCoordinator._normalize_claim(claim, answer)
+    assert normalized is not None
+    assert (normalized.start, normalized.end) == (10, 22)
+
+    repeated = answer.model_copy(update={"content": "five squares and five squares"})
+    assert SynthesisCoordinator._normalize_claim(claim, repeated) is None

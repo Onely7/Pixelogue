@@ -9,6 +9,27 @@ family_weights:
   document_chart: 15
   grounded_calculation: 10
 within_family: equal_weight_over_declared_leaves
+capabilities:
+  bounded_complete_scope: The boundary is explicit and every qualifying instance inside it is visible.
+  bounded_region: A specific image region can be resolved without guessing.
+  comparable_attribute: At least two resolved objects expose the same visible attribute for comparison.
+  comparable_series: At least two chart series can be resolved and compared from visible marks or values.
+  compatible_units: The visible numeric operands have explicit compatible units.
+  countable_entities: Distinct qualifying instances can be enumerated without material occlusion or ambiguity.
+  multiple_entities: At least two entities are individually resolvable.
+  multiple_visible_facts: At least two distinct image-grounded facts are visible.
+  readable_chart: Chart marks, axes, labels, and any needed legend are legible enough for lookup.
+  readable_numbers: Numeric values needed for a task are legible.
+  readable_table: Required row labels, column labels, and cells are legible.
+  readable_text: Task-relevant text can be transcribed without guessing.
+  spatial_relation: Resolved objects have an unambiguous visible positional relation.
+  text_fields: Distinct labeled text fields can be resolved.
+  text_layout: Separate text regions have an unambiguous visible reading order.
+  two_entities: At least two relevant entities are individually resolvable.
+  typed_numeric_operands: Visible numeric operands have enough type or unit context for arithmetic.
+  visible_attribute: A task-relevant color, shape, state, or other attribute is clearly visible.
+  visible_entity: At least one task-relevant object is clearly visible.
+  visible_mapping: An explicit visual association links distinct labels, values, or objects; repetition or alignment alone is insufficient.
 tasks:
 - id: object_identification
   family: observation_attribute
