@@ -1,0 +1,253 @@
+taxonomy_version: '6.0'
+labeling_unit: turn
+primary_dialogue_task: observed_task_of_focal_final_turn
+family_weights:
+  observation_attribute: 25
+  spatial_comparison: 20
+  visible_count: 15
+  ocr_reading: 15
+  document_chart: 15
+  grounded_calculation: 10
+within_family: equal_weight_over_declared_leaves
+tasks:
+- id: object_identification
+  family: observation_attribute
+  label_ja: 物体の特定
+  required_capabilities:
+  - visible_entity
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Identify visible objects in the specified scope.
+  operation_rule_ref: object_identification
+- id: attribute_lookup
+  family: observation_attribute
+  label_ja: 可視属性の取得
+  required_capabilities:
+  - visible_entity
+  - visible_attribute
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Retrieve a visible attribute of a resolved object.
+  operation_rule_ref: attribute_lookup
+- id: region_description
+  family: observation_attribute
+  label_ja: 指定領域の記述
+  required_capabilities:
+  - bounded_region
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Describe visible facts in a bounded region.
+  operation_rule_ref: region_description
+- id: visual_summary
+  family: observation_attribute
+  label_ja: 可視内容の要約
+  required_capabilities:
+  - multiple_visible_facts
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Summarize supported visible facts without outside knowledge.
+  operation_rule_ref: visual_summary
+- id: relation_lookup
+  family: spatial_comparison
+  label_ja: 位置関係の取得
+  required_capabilities:
+  - two_entities
+  - spatial_relation
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Retrieve a supported spatial relation between resolved objects.
+  operation_rule_ref: relation_lookup
+- id: attribute_comparison
+  family: spatial_comparison
+  label_ja: 属性による対象比較
+  required_capabilities:
+  - two_entities
+  - comparable_attribute
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Compare the same visible attribute of resolved objects.
+  operation_rule_ref: attribute_comparison
+- id: spatial_ordering
+  family: spatial_comparison
+  label_ja: 画像上の順序付け
+  required_capabilities:
+  - multiple_entities
+  - spatial_relation
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Order resolved objects by an explicit visible spatial key.
+  operation_rule_ref: spatial_ordering
+- id: correspondence_matching
+  family: spatial_comparison
+  label_ja: 可視対応関係の照合
+  required_capabilities:
+  - visible_mapping
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Match objects or labels using a visible correspondence.
+  operation_rule_ref: correspondence_matching
+- id: visible_count
+  family: visible_count
+  label_ja: 範囲を限定した個数
+  required_capabilities:
+  - bounded_complete_scope
+  - countable_entities
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Count all qualifying visible instances within a complete bounded
+    scope.
+  operation_rule_ref: visible_count
+- id: conditional_selection
+  family: visible_count
+  label_ja: 条件に合う集合の選択
+  required_capabilities:
+  - multiple_entities
+  - visible_attribute
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Select objects satisfying visible predicates.
+  operation_rule_ref: conditional_selection
+- id: exclusion_selection
+  family: visible_count
+  label_ja: 指定集合を除く選択
+  required_capabilities:
+  - multiple_entities
+  - bounded_complete_scope
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Select a visible set after excluding a resolved subset.
+  operation_rule_ref: exclusion_selection
+- id: attribute_grouping
+  family: visible_count
+  label_ja: 可視属性による分類
+  required_capabilities:
+  - multiple_entities
+  - visible_attribute
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Partition visible objects by the specified visible attribute.
+  operation_rule_ref: attribute_grouping
+- id: text_transcription
+  family: ocr_reading
+  label_ja: 見える文字の原文転記
+  required_capabilities:
+  - readable_text
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Copy the visible text verbatim in its source writing system.
+  operation_rule_ref: text_transcription
+- id: text_field_extraction
+  family: ocr_reading
+  label_ja: 指定文字情報の抽出
+  required_capabilities:
+  - readable_text
+  - text_fields
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Extract the specified fields from readable image text.
+  operation_rule_ref: text_field_extraction
+- id: text_reading_order
+  family: ocr_reading
+  label_ja: 文字領域の読み順
+  required_capabilities:
+  - readable_text
+  - text_layout
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Report text regions in a specified or visibly supported reading order.
+  operation_rule_ref: text_reading_order
+- id: label_value_linking
+  family: ocr_reading
+  label_ja: ラベルと値の対応
+  required_capabilities:
+  - readable_text
+  - visible_mapping
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Associate visible labels with their visible values.
+  operation_rule_ref: label_value_linking
+- id: table_lookup
+  family: document_chart
+  label_ja: 表の行列対応による取得
+  required_capabilities:
+  - readable_table
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Retrieve table cells using explicit row/column correspondence.
+  operation_rule_ref: table_lookup
+- id: table_selection
+  family: document_chart
+  label_ja: 表の条件付き行列抽出
+  required_capabilities:
+  - readable_table
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Select table entries using supported predicates.
+  operation_rule_ref: table_selection
+- id: chart_lookup
+  family: document_chart
+  label_ja: 図表の系列・凡例の読取
+  required_capabilities:
+  - readable_chart
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Retrieve an explicitly readable chart value, series or legend entry.
+  operation_rule_ref: chart_lookup
+- id: chart_comparison
+  family: document_chart
+  label_ja: 図表の明示値・大小の比較
+  required_capabilities:
+  - readable_chart
+  - comparable_series
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Compare chart series using legible values or unambiguous ordering.
+  operation_rule_ref: chart_comparison
+- id: grounded_sum
+  family: grounded_calculation
+  label_ja: 可視数値の加算
+  required_capabilities:
+  - readable_numbers
+  - compatible_units
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Add verified compatible image-derived values.
+  operation_rule_ref: grounded_sum
+- id: grounded_difference
+  family: grounded_calculation
+  label_ja: 可視数値の差
+  required_capabilities:
+  - readable_numbers
+  - compatible_units
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Subtract two ordered verified compatible image-derived values.
+  operation_rule_ref: grounded_difference
+- id: grounded_product_quotient
+  family: grounded_calculation
+  label_ja: 可視数値の積・商
+  required_capabilities:
+  - readable_numbers
+  - typed_numeric_operands
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Multiply or divide compatible verified values with explicit units.
+  operation_rule_ref: grounded_product_quotient
+- id: table_aggregation
+  family: grounded_calculation
+  label_ja: 指定表範囲の集計
+  required_capabilities:
+  - readable_table
+  - compatible_units
+  compatibility: all_required_capabilities_and_constraint_validator
+  weight_within_family: 1
+  definition_en: Aggregate an explicit subset of verified table values.
+  operation_rule_ref: table_aggregation
+classification_rules:
+- Use the requested final semantic operation, not the answer format.
+- Arithmetic aggregation of table cells is table_aggregation, not table_lookup.
+- Simple copying of digits without arithmetic is OCR/table/chart lookup.
+- An extra filter/order constraint does not replace the main requested operation.
+- An inherited image-grounded value may be used; its image lineage must be valid.
+- Multiple independent main tasks or ambiguous classification yield UNRESOLVED.
+- Profiles normal/limitation/false_premise are an orthogonal facet, never leaf labels.

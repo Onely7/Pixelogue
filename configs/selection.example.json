@@ -1,0 +1,19 @@
+{
+  "allow_evaluation_sources": false,
+  "family_minimums": {
+    "document_chart": 1,
+    "observation_attribute": 1,
+    "visible_count": 1
+  },
+  "language_quotas": {
+    "en": 4,
+    "ja": 1,
+    "zh-Hans": 1
+  },
+  "max_per_image": 1,
+  "max_per_semantic_family": 1,
+  "max_per_visual_group": 1,
+  "seed": 20260915,
+  "target_count": 6,
+  "time_limit_seconds": 120.0
+}
