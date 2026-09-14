@@ -1,7 +1,6 @@
 # CPU quickstart
 
-This guide confirms the installation without downloading model weights. Run every command from the
-repository root.
+This guide confirms the installation without downloading model weights. Run every command from the repository root.
 
 ## 1. Install the locked environment
 
@@ -22,9 +21,7 @@ uv run --locked pixelogue compile \
   --output artifacts/compiled-plan.json
 ```
 
-Expected output is one JSON line containing `output` and `compiled_hash`. The output file contains
-resolved settings, quotas, catalogs, and schemas. Compilation proves that settings are consistent;
-it does not prove that GPUs or model servers are ready.
+Expected output is one JSON line containing `output` and `compiled_hash`. The output file contains resolved settings, quotas, catalogs, and schemas. Compilation proves that settings are consistent; it does not prove that GPUs or model servers are ready.
 
 ## 3. Make small answer-keyed fixtures
 
@@ -34,9 +31,7 @@ uv run --locked pixelogue make-fixtures \
   --pairs-per-stratum 2
 ```
 
-This creates positive and single-error negative examples for eight capability strata in separate
-development and confirmation splits. A value of 2 is diagnostic. It is not the full capability
-qualification set.
+This creates positive and single-error negative examples for eight capability strata in separate development and confirmation splits. A value of 2 is diagnostic. It is not the full capability qualification set.
 
 ## 4. Run CPU checks
 
@@ -47,5 +42,4 @@ uv run --locked ty check
 uv run --locked pytest
 ```
 
-If `uv sync --locked` reports a stale lock, review the dependency change, run `uv lock`
-intentionally, and commit both `pyproject.toml` and `uv.lock`.
+If `uv sync --locked` reports a stale lock, review the dependency change, run `uv lock` intentionally, and commit both `pyproject.toml` and `uv.lock`.
