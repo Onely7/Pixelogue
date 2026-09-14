@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Build, evaluate, and select image-grounded multi-turn dialogues."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-license = { text = "Apache-2.0" }
+license = "MIT"
 authors = [{ name = "Pixelogue contributors" }]
 dependencies = [
   "httpx>=0.28.1,<0.29",
