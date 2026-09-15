@@ -19,6 +19,7 @@ from pixelogue.contracts import (
     RubricVerdict,
     TextPayload,
 )
+from pixelogue.errors import ExecutionError
 from pixelogue.ledger import RequirementInventory, RequirementSpec
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.serving import ModelImage, ModelResponse
@@ -34,14 +35,18 @@ class ScriptedClient:
         fail_first_rating: bool = False,
         requirement_text: str | None = None,
         concurrency_probe: ConcurrencyProbe | None = None,
+        fail_first_schema: bool = False,
     ) -> None:
         self.endpoint = endpoint
         self.reject_selection = reject_selection
         self.fail_first_rating = fail_first_rating
         self.requirement_text = requirement_text
         self.concurrency_probe = concurrency_probe
+        self.fail_first_schema = fail_first_schema
         self.rating_failed = False
+        self.schema_failed = False
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.retry_feedback: list[str | None] = []
 
     def invoke[OutputModel: BaseModel](
         self,
@@ -54,8 +59,13 @@ class ScriptedClient:
         temperature: float,
         seed: int,
         bypass_cache: bool = False,
+        retry_feedback: str | None = None,
     ) -> ModelResponse:
         del images, max_tokens, temperature, seed, bypass_cache
+        self.retry_feedback.append(retry_feedback)
+        if self.fail_first_schema and not self.schema_failed:
+            self.schema_failed = True
+            raise ExecutionError("MODEL_SCHEMA_MISMATCH", "missing required field")
         if self.concurrency_probe is not None:
             self.concurrency_probe.enter()
             time.sleep(0.002)
@@ -138,6 +148,35 @@ class ScriptedClient:
             prompt_tokens=1,
             completion_tokens=1,
         )
+
+
+def test_structured_retry_receives_bounded_correction_feedback(tmp_path: Path) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a, fail_first_schema=True)
+    coordinator = SynthesisCoordinator(config, "retry", store, client, client, client)
+    try:
+        result = coordinator._invoke(
+            client,
+            "rubric_item",
+            {},
+            (),
+            RubricVerdict,
+            max_tokens=256,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        store.close()
+
+    assert result.verdict == "MET"
+    assert client.retry_feedback == [
+        None,
+        (
+            "The previous response failed schema validation. Return one complete JSON object "
+            "with every required field, unique array items, and a short non-empty reason."
+        ),
+    ]
 
 
 class ConcurrencyProbe:

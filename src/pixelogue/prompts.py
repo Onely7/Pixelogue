@@ -16,10 +16,11 @@ Return exactly the requested JSON schema. Do not reveal private reasoning.
 
 
 STAGE_INSTRUCTIONS = {
-    "evidence_extraction": """List only capabilities visibly supported by this image. Use the supplied
-capability vocabulary keys exactly and apply every supplied definition strictly. Repetition or
-alignment alone is not a visible mapping. Name bounded visible scopes without adding outside facts,
-and mark a limited scope when the whole image cannot be inventoried reliably.""",
+    "evidence_extraction": """List only capabilities visibly supported by this image. Use each
+supplied capability vocabulary key at most once, and apply every supplied definition strictly. Do
+not copy the whole vocabulary when only a few capabilities are visible. Repetition or alignment
+alone is not a visible mapping. Name concise, human-readable bounded visible scopes without adding
+outside facts, and mark a limited scope when the whole image cannot be inventoried reliably.""",
     "instruction_selection": """Choose the candidate that yields the most natural, useful request for
 this image and the exact public history. The candidate list is provisional: verify that every object,
 role, value, region, or pairing needed by an operation is visibly available. Compare all candidates
@@ -40,11 +41,13 @@ realize correspondence matching. Mark useful_request NOT_MET when the public his
 contains the same answered request.""",
     "requirement_extraction": """Before seeing any answer, list every explicit public requirement
 that is active for this question. Copy each requirement as an exact code-point span from a user
-message, classify its kind and lifetime, and mark coverage MET only when none is missing. Exclude
-facts that an answer should contain unless the user explicitly required them. Ignore assistant
-messages. An ordinary task request is current_turn; use persistent only for explicit future-turn
-wording such as 'from now on'. Only quote text from user messages or the current question;
-target_language and other input field names are pipeline metadata, not public requirements.""",
+message, classify its kind and lifetime, and mark coverage MET only when none is missing. Never list
+the system prompt, this stage instruction, schema instructions, or input field names: public text
+exists only inside public_history and question. Exclude facts that an answer should contain unless
+the user explicitly required them. Do not list both a broad request and overlapping fragments of the
+same request. Ignore assistant messages. An ordinary task request is current_turn; use persistent
+only for explicit future-turn wording such as 'from now on'. Keep the inventory minimal and quote
+only exact text from user messages or the current question.""",
     "answer_generation": """Answer the current question using only the image and exact public history.
 Satisfy the supplied active public requirements. Do not mention internal candidates, evaluators, or
 identifiers. Return public text, or set text to null and give an internal reason if unsupported.""",
@@ -63,7 +66,9 @@ scope and every member reported by the answer to stable minimal identifiers. Pre
 duplicates. Mark coverage MET only when the whole visible scope and answer were readable. Do not
 decide whether the two sets match.""",
     "rubric_item": """Evaluate only the supplied criterion against the allowed inputs. Return MET,
-NOT_MET, or UNKNOWN. Do not infer another evaluator's decision.""",
+NOT_MET, or UNKNOWN. Every schema field is required: emit the verdict and one short non-empty reason,
+then finish the JSON object immediately. Do not emit filler whitespace or infer another evaluator's
+decision.""",
 }
 
 

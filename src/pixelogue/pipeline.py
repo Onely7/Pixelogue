@@ -81,6 +81,7 @@ class InferenceClient(Protocol):
         temperature: float,
         seed: int,
         bypass_cache: bool = False,
+        retry_feedback: str | None = None,
     ) -> ModelResponse:
         """Return one schema-validated response."""
 
@@ -1003,11 +1004,13 @@ class SynthesisCoordinator:
             "MODEL_FINISH_REASON",
             "MODEL_SCHEMA_MISMATCH",
         }
+        retry_feedback: str | None = None
         for attempt in range(self.config.runtime.structured_output_max_attempts):
             call_kwargs = dict(kwargs)
             if attempt:
                 call_kwargs["seed"] = int(call_kwargs["seed"]) + 100_000 * attempt
                 call_kwargs["bypass_cache"] = True
+                call_kwargs["retry_feedback"] = retry_feedback
             try:
                 response = client.invoke(stage, payload, images, model, **call_kwargs)
             except ExecutionError as error:
@@ -1015,12 +1018,28 @@ class SynthesisCoordinator:
                     error.reason in retryable
                     and attempt + 1 < self.config.runtime.structured_output_max_attempts
                 ):
+                    retry_feedback = self._structured_retry_feedback(error.reason)
                     continue
                 raise
             if not isinstance(response.value, model):
                 raise ExecutionError("MODEL_TYPE_MISMATCH", f"{stage} returned another contract")
             return response.value
         raise AssertionError("structured output attempt loop did not return")
+
+    @staticmethod
+    def _structured_retry_feedback(reason: str) -> str:
+        """Return bounded correction guidance without copying an invalid model response."""
+        if reason == "MODEL_SCHEMA_MISMATCH":
+            return (
+                "The previous response failed schema validation. Return one complete JSON object "
+                "with every required field, unique array items, and a short non-empty reason."
+            )
+        if reason == "MODEL_FINISH_REASON":
+            return (
+                "The previous response was incomplete. Return a concise, complete JSON object "
+                "within the token limit and finish immediately."
+            )
+        return "The previous response was empty. Return one concise, complete JSON object."
 
     @staticmethod
     def _history(history: Sequence[PublicMessage]) -> list[dict[str, Any]]:

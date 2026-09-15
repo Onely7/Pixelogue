@@ -134,6 +134,7 @@ class VllmClient:
         temperature: float,
         seed: int,
         bypass_cache: bool = False,
+        retry_feedback: str | None = None,
     ) -> ModelResponse:
         """Send and validate one non-streaming structured-output request.
 
@@ -152,6 +153,7 @@ class VllmClient:
             max_tokens=max_tokens,
             temperature=temperature,
             seed=seed,
+            retry_feedback=retry_feedback,
         )
         if bypass_cache:
             body["metadata"] = {"probe_id": canonical_hash(body)}
@@ -276,6 +278,7 @@ class VllmClient:
         max_tokens: int,
         temperature: float,
         seed: int,
+        retry_feedback: str | None = None,
     ) -> dict[str, Any]:
         declared_views = payload.get("image_views", [])
         view_ids = [item["view_id"] for item in declared_views]
@@ -285,12 +288,16 @@ class VllmClient:
                 "IMAGE_PART_MISMATCH",
                 "Declared image views and attached image parts differ in count or order",
             )
+        request_text: dict[str, Any] = {
+            "instruction": STAGE_INSTRUCTIONS[stage],
+            "input": payload,
+        }
+        if retry_feedback is not None:
+            request_text["retry_feedback"] = retry_feedback
         user_content: list[dict[str, Any]] = [
             {
                 "type": "text",
-                "text": canonical_json(
-                    {"instruction": STAGE_INSTRUCTIONS[stage], "input": payload}
-                ).decode(),
+                "text": canonical_json(request_text).decode(),
             }
         ]
         user_content.extend(
