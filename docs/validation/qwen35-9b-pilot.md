@@ -39,15 +39,17 @@ The prompts were clarified to require unique capability keys, minimal public-req
 
 ## Performance result
 
+The detailed setup, stage timings, integrity checks, and reproduction commands are in the separate [throughput validation report](qwen35-9b-throughput.md).
+
 The same eight images were processed once serially and once with four independent images in flight.
 
 | Measurement | One worker | Four workers |
 |---|---:|---:|
-| Wall time | 745 seconds | 286 seconds |
-| Completed model calls | 528 | 529 |
-| Model calls per minute | 42.52 | 110.98 |
+| All-response interval | 745 seconds | 296 seconds |
+| HTTP response artifacts | 550 | 544 |
+| Profiled completed call identities | 528 | 529 |
 
-Bounded image concurrency produced a 2.60× speedup and reduced wall time by 61.6%. It preserved input order and did not cause transport or GPU-memory failures. `rubric_item` still accounted for about three quarters of model calls, so any later request-batching work should group only criteria with the same permitted input scope.
+Bounded image concurrency produced a 2.52× speedup and reduced the all-response interval by 60.3%. It preserved input order and did not cause transport or GPU-memory failures. `rubric_item` still accounted for about three quarters of retained profile rows, so any later request-batching work should group only criteria with the same permitted input scope.
 
 ## Manual quality review
 

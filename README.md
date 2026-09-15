@@ -43,7 +43,8 @@ Read the guides in this order:
 5. [Generation, selection, and outputs](docs/workflow.md)
 6. [Recovery and CI](docs/recovery-and-ci.md)
 7. [Measured Qwen3.5-9B pilot result](docs/validation/qwen35-9b-pilot.md)
-8. [Implementation map](docs/implementation-map.md)
+8. [Qwen3.5-9B throughput validation](docs/validation/qwen35-9b-throughput.md)
+9. [Implementation map](docs/implementation-map.md)
 
 Japanese documentation begins at [README_ja.md](README_ja.md).
 

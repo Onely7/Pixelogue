@@ -41,7 +41,8 @@ uv run --locked pytest
 5. [生成・選抜・出力](docs/workflow_ja.md)
 6. [復旧と CI](docs/recovery-and-ci_ja.md)
 7. [Qwen3.5-9B pilot の実測結果](docs/validation/qwen35-9b-pilot_ja.md)
-8. [実装対応表](docs/implementation-map_ja.md)
+8. [Qwen3.5-9B 処理速度の検証結果](docs/validation/qwen35-9b-throughput_ja.md)
+9. [実装対応表](docs/implementation-map_ja.md)
 
 ## モデルの役割
 

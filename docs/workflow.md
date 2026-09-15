@@ -45,6 +45,8 @@ uv run --locked pixelogue profile \
 
 New runs record each HTTP request duration directly. Older databases use the interval between consecutive saved responses as a serial-run estimate, and the report labels that method `completion_gap_estimate`.
 
+The current ledger retains one `model_call` row for each model-lock, stage, and request-hash identity. Identical repeated requests can therefore share one profile row. Use `budget.request_count` or count response artifacts when you need the actual number of HTTP attempts; use `profile` for latency and stage distribution. The [throughput report](validation/qwen35-9b-throughput.md) shows both measurements in one example.
+
 ## 2. Re-rate immutable dialogue
 
 ```sh

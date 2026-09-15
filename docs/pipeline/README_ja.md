@@ -12,7 +12,7 @@
 4. **[選抜して出力する](selection-and-export_ja.md)。** 候補集合の固定、条件付き選抜、独立監査、4ファイルへの出力を説明します。
 5. **[生成物の実例を確認する](artifact-examples_ja.md)。** Qwen3.5 pilotで得た中間応答を、最終対話と学習用レコードの構造へつなげます。
 
-まずコマンドだけを試したい場合は、[CPUクイックスタート](../quickstart_ja.md)と[ワークフロー早見表](../workflow_ja.md)を参照してください。中断後の確認とバックアップは[復旧ガイド](../recovery-and-ci_ja.md)にまとめています。[Qwen3.5-9B pilotの実測結果](../validation/qwen35-9b-pilot_ja.md)では、動作確認で分かったことと、本番品質について未確認のことを分けて説明しています。
+まずコマンドだけを試したい場合は、[CPUクイックスタート](../quickstart_ja.md)と[ワークフロー早見表](../workflow_ja.md)を参照してください。中断後の確認とバックアップは[復旧ガイド](../recovery-and-ci_ja.md)にまとめています。[Qwen3.5-9B pilotの実測結果](../validation/qwen35-9b-pilot_ja.md)では、動作確認で分かったことと、本番品質について未確認のことを分けて説明しています。[処理速度の検証結果](../validation/qwen35-9b-throughput_ja.md)では、1 workerと4 workersの比較を説明しています。
 
 英語版は [English contents](README.md) から読めます。
 
