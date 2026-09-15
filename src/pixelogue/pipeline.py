@@ -24,6 +24,7 @@ from pixelogue.contracts import (
     InstructionSelection,
     PublicMessage,
     QuestionFit,
+    RubricContext,
     RubricItem,
     RubricVerdict,
     TextPayload,
@@ -36,11 +37,14 @@ from pixelogue.evaluation import (
     aggregate_rating,
     applicable_rubric_items,
     consensus,
+    has_natural_language_content,
     item_id,
     question_fit_consensus,
+    repeated_public_question,
 )
 from pixelogue.ledger import Requirement, RequirementInventory, reconcile_inventories
 from pixelogue.planner import allocated_role, instruction_candidates, planned_turn_count
+from pixelogue.prompts import is_private_prompt_echo
 from pixelogue.rules import (
     ComputationCheck,
     ComputationInventory,
@@ -219,12 +223,13 @@ class SynthesisCoordinator:
             )
             self.store.write_json_artifact("conversations", conversation.model_dump(mode="json"))
             return conversation
+        capability_vocabulary = self._capability_vocabulary()
         inventory = self._invoke(
             generator,
             "evidence_extraction",
             {
                 "image_id": image.image_id,
-                "capability_vocabulary": self._capability_vocabulary(),
+                "capability_vocabulary": capability_vocabulary,
                 "image_views": image_views,
             },
             (model_image,),
@@ -235,6 +240,12 @@ class SynthesisCoordinator:
         )
         if inventory.image_id != image.image_id:
             raise ExecutionError("EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image")
+        unknown_capabilities = sorted(set(inventory.capabilities) - capability_vocabulary.keys())
+        if unknown_capabilities:
+            raise ExecutionError(
+                "EVIDENCE_CAPABILITY_UNKNOWN",
+                f"Unknown evidence capabilities: {unknown_capabilities}",
+            )
 
         terminal_status: Literal["QUALITY_CANDIDATE", "REJECTED", "ABSTAINED", "ERROR"] = (
             "QUALITY_CANDIDATE"
@@ -286,6 +297,26 @@ class SynthesisCoordinator:
                 role="user",
                 content=question_payload.text,
             )
+            if is_private_prompt_echo(question.content):
+                self._record_public_text_rejection(
+                    conversation_id,
+                    turn_index,
+                    field="question",
+                    reason="PRIVATE_PROMPT_ECHO",
+                    content=question.content,
+                )
+                terminal_status = "REJECTED"
+                break
+            if repeated_public_question(question.content, snapshot.public_history):
+                self._record_public_text_rejection(
+                    conversation_id,
+                    turn_index,
+                    field="question",
+                    reason="REPEATED_PUBLIC_QUESTION",
+                    content=question.content,
+                )
+                terminal_status = "REJECTED"
+                break
             fit = self._question_fit(
                 snapshot.public_history,
                 question,
@@ -337,6 +368,16 @@ class SynthesisCoordinator:
                 role="assistant",
                 content=answer_payload.text,
             )
+            if is_private_prompt_echo(answer.content):
+                self._record_public_text_rejection(
+                    conversation_id,
+                    turn_index,
+                    field="answer",
+                    reason="PRIVATE_PROMPT_ECHO",
+                    content=answer.content,
+                )
+                terminal_status = "REJECTED"
+                break
             rating = self._rate_turn(
                 conversation_id,
                 snapshot.history_hash,
@@ -756,20 +797,22 @@ class SynthesisCoordinator:
             if instruction.family == "visible_count"
             else None
         )
-        context = {
-            "turn_index": turn_index,
-            "has_natural_language_answer": True,
-            "has_history_binding": turn_index > 1,
-            "has_computation": instruction.family == "grounded_calculation",
-            "profile": instruction.profile,
-            "strong_dependency": turn_index > 1,
-            "requirements": requirements,
-            "format_requirements": tuple(
-                requirement for requirement in requirements if requirement.kind == "format"
+        context = RubricContext(
+            turn_index=turn_index,
+            profile=instruction.profile,
+            has_natural_language_answer=has_natural_language_content(answer.content),
+            requirements=tuple(requirements),
+            claims=claims,
+            computation_ids=(instruction.candidate_id,) if computation is not None else (),
+            history_binding_ids=tuple(
+                requirement.requirement_id
+                for requirement in requirements
+                if requirement.source_message_id != question.message_id
             ),
-            "exhaustive_request": instruction.family == "visible_count",
-            "claims": claims,
-        }
+            exhaustive_scope_ids=(instruction.candidate_id,)
+            if instruction.family == "visible_count"
+            else (),
+        )
         rubric_items: list[RubricItem] = []
         for template in applicable_rubric_items(context):
             predicate = template["applies_when"]
@@ -779,7 +822,13 @@ class SynthesisCoordinator:
             elif predicate == "each_public_requirement":
                 subjects = requirements
             elif predicate == "public_format_constraint":
-                subjects = context["format_requirements"]
+                subjects = context.format_requirements
+            elif predicate == "has_history_binding":
+                subjects = tuple(
+                    requirement
+                    for requirement in requirements
+                    if requirement.requirement_id in context.history_binding_ids
+                )
             else:
                 subjects = (None,)
             for subject in subjects:
@@ -849,6 +898,27 @@ class SynthesisCoordinator:
                     )
                 )
         return aggregate_rating(rubric_items)
+
+    def _record_public_text_rejection(
+        self,
+        conversation_id: str,
+        turn_index: int,
+        *,
+        field: Literal["question", "answer"],
+        reason: Literal["PRIVATE_PROMPT_ECHO", "REPEATED_PUBLIC_QUESTION"],
+        content: str,
+    ) -> None:
+        """Store a deterministic public-text rejection for replay and diagnosis."""
+        self.store.write_json_artifact(
+            "public-text-rejections",
+            {
+                "conversation_id": conversation_id,
+                "turn_index": turn_index,
+                "field": field,
+                "reason": reason,
+                "content": content,
+            },
+        )
 
     def _check_complete_set(
         self,

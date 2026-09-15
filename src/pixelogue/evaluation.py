@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import unicodedata
+from collections.abc import Sequence
 from typing import Any
 
 from pixelogue.catalog import load_rubric_catalog
-from pixelogue.contracts import GateVerdict, QuestionFit, RubricItem, TurnRating
+from pixelogue.contracts import (
+    GateVerdict,
+    PublicMessage,
+    QuestionFit,
+    RubricContext,
+    RubricItem,
+    TurnRating,
+)
 from pixelogue.serialization import canonical_hash
 
 
@@ -29,7 +37,27 @@ def question_fit_consensus(votes: Sequence[QuestionFit]) -> GateVerdict:
     return consensus([vote.aggregate for vote in votes])
 
 
-def applicable_rubric_items(context: Mapping[str, Any]) -> list[dict[str, Any]]:
+def repeated_public_question(question: str, history: Sequence[PublicMessage]) -> bool:
+    """Return whether a question repeats an earlier user message after surface normalization."""
+    normalized = _normalize_public_question(question)
+    return any(
+        message.role == "user" and _normalize_public_question(message.content) == normalized
+        for message in history
+    )
+
+
+def _normalize_public_question(question: str) -> str:
+    """Normalize harmless Unicode, case, whitespace, and terminal punctuation differences."""
+    normalized = unicodedata.normalize("NFKC", question).casefold()
+    return " ".join(normalized.split()).rstrip(".!?。！？ ")
+
+
+def has_natural_language_content(text: str) -> bool:
+    """Return whether text contains a Unicode letter that needs language evaluation."""
+    return any(character.isalpha() for character in text)
+
+
+def applicable_rubric_items(context: RubricContext) -> list[dict[str, Any]]:
     """Instantiate catalog predicates using controller-owned context fields."""
     catalog = load_rubric_catalog()
     applicable: list[dict[str, Any]] = []
@@ -37,33 +65,33 @@ def applicable_rubric_items(context: Mapping[str, Any]) -> list[dict[str, Any]]:
         predicate = item["applies_when"]
         if predicate == "always":
             applicable.append(item)
-        elif predicate == "natural_language_answer" and context.get("has_natural_language_answer"):
+        elif predicate == "natural_language_answer" and context.has_natural_language_answer:
             applicable.append(item)
-        elif predicate == "answer_has_non_exempt_natural_language" and context.get(
-            "has_natural_language_answer"
+        elif predicate == "answer_has_non_exempt_natural_language" and (
+            context.has_natural_language_answer
         ):
             applicable.append(item)
-        elif predicate == "has_history" and context.get("turn_index", 1) > 1:
+        elif predicate == "has_history" and context.turn_index > 1:
             applicable.append(item)
-        elif predicate == "has_history_binding" and context.get("has_history_binding"):
+        elif predicate == "has_history_binding" and context.history_binding_ids:
             applicable.append(item)
-        elif predicate == "has_computation" and context.get("has_computation"):
+        elif predicate == "has_computation" and context.computation_ids:
             applicable.append(item)
-        elif predicate == "limitation_profile" and context.get("profile") == "limitation":
+        elif predicate == "limitation_profile" and context.profile == "limitation":
             applicable.append(item)
-        elif predicate == "false_premise_profile" and context.get("profile") == "false_premise":
+        elif predicate == "false_premise_profile" and context.profile == "false_premise":
             applicable.append(item)
-        elif predicate == "designated_strong_dependency_turn" and context.get("strong_dependency"):
+        elif predicate == "designated_strong_dependency_turn" and (context.requires_witness_check):
             applicable.append(item)
-        elif predicate == "exhaustive_request" and context.get("exhaustive_request"):
+        elif predicate == "exhaustive_request" and context.exhaustive_scope_ids:
             applicable.append(item)
-        elif predicate == "later_turn" and context.get("turn_index", 1) > 1:
+        elif predicate == "later_turn" and context.turn_index > 1:
             applicable.append(item)
-        elif predicate in {"public_format_constraint", "each_public_requirement"} and context.get(
-            "format_requirements" if predicate == "public_format_constraint" else "requirements"
-        ):
+        elif predicate == "public_format_constraint" and context.format_requirements:
             applicable.append(item)
-        elif predicate == "each_factual_claim" and context.get("claims"):
+        elif predicate == "each_public_requirement" and context.requirements:
+            applicable.append(item)
+        elif predicate == "each_factual_claim" and context.claims:
             applicable.append(item)
     return applicable
 

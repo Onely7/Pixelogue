@@ -242,6 +242,43 @@ class ClaimInventory(StrictModel):
     reason: Annotated[str, Field(min_length=1, max_length=240)]
 
 
+class RubricContext(StrictModel):
+    """Controller-owned facts that determine which rubric items apply."""
+
+    turn_index: Annotated[int, Field(ge=1, le=6)]
+    profile: Literal["normal", "limitation", "false_premise"]
+    has_natural_language_answer: bool
+    requirements: tuple[Requirement, ...] = ()
+    claims: tuple[AtomicClaim, ...] = ()
+    computation_ids: tuple[str, ...] = ()
+    history_binding_ids: tuple[str, ...] = ()
+    exhaustive_scope_ids: tuple[str, ...] = ()
+    requires_witness_check: bool = False
+
+    @property
+    def format_requirements(self) -> tuple[Requirement, ...]:
+        """Return active requirements that impose a public output format."""
+        return tuple(
+            requirement for requirement in self.requirements if requirement.kind == "format"
+        )
+
+    @model_validator(mode="after")
+    def validate_applicability_evidence(self) -> RubricContext:
+        """Require unique evidence IDs and keep history evidence off the first turn."""
+        id_groups = (
+            self.computation_ids,
+            self.history_binding_ids,
+            self.exhaustive_scope_ids,
+        )
+        if any(not item for identifiers in id_groups for item in identifiers):
+            raise ValueError("rubric applicability IDs must be non-empty")
+        if any(len(identifiers) != len(set(identifiers)) for identifiers in id_groups):
+            raise ValueError("rubric applicability IDs must be unique")
+        if self.turn_index == 1 and (self.history_binding_ids or self.requires_witness_check):
+            raise ValueError("first turn cannot contain history dependency evidence")
+        return self
+
+
 class RubricVerdict(StrictModel):
     """One model's output for a single applicable rubric criterion."""
 

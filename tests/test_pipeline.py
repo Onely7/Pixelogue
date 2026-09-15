@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 from pydantic import BaseModel
 
 from pixelogue.config import ModelEndpoint, load_config
@@ -16,12 +17,15 @@ from pixelogue.contracts import (
     InstructionSelection,
     PublicMessage,
     QuestionFit,
+    RubricContext,
     RubricVerdict,
     TextPayload,
 )
 from pixelogue.errors import ExecutionError
+from pixelogue.evaluation import applicable_rubric_items, has_natural_language_content
 from pixelogue.ledger import RequirementInventory, RequirementSpec
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
+from pixelogue.prompts import STAGE_INSTRUCTIONS
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
 
@@ -36,6 +40,10 @@ class ScriptedClient:
         requirement_text: str | None = None,
         concurrency_probe: ConcurrencyProbe | None = None,
         fail_first_schema: bool = False,
+        repeat_question: bool = False,
+        echo_question_prompt: bool = False,
+        echo_answer_prompt: bool = False,
+        unknown_capability: bool = False,
     ) -> None:
         self.endpoint = endpoint
         self.reject_selection = reject_selection
@@ -43,6 +51,10 @@ class ScriptedClient:
         self.requirement_text = requirement_text
         self.concurrency_probe = concurrency_probe
         self.fail_first_schema = fail_first_schema
+        self.repeat_question = repeat_question
+        self.echo_question_prompt = echo_question_prompt
+        self.echo_answer_prompt = echo_answer_prompt
+        self.unknown_capability = unknown_capability
         self.rating_failed = False
         self.schema_failed = False
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -75,7 +87,9 @@ class ScriptedClient:
         if response_model is EvidenceInventory:
             value = EvidenceInventory(
                 image_id=payload["image_id"],
-                capabilities=("visible_entity",),
+                capabilities=("unsupported_capability",)
+                if self.unknown_capability
+                else ("visible_entity",),
                 visible_scopes=("the blue region",),
                 scope_limited=False,
                 reason="A visible entity is available.",
@@ -88,10 +102,22 @@ class ScriptedClient:
                 reason="Scripted selection result.",
             )
         elif response_model is TextPayload:
+            if stage == "question_generation" and self.echo_question_prompt:
+                text = STAGE_INSTRUCTIONS["question_generation"]
+            elif stage == "question_generation" and self.repeat_question:
+                text = (
+                    "What color is the visible region?"
+                    if payload["turn_index"] == 1
+                    else "  WHAT COLOR IS THE VISIBLE REGION？  "
+                )
+            elif stage == "question_generation":
+                text = f"What color is visible region {payload['turn_index']}?"
+            elif stage == "answer_generation" and self.echo_answer_prompt:
+                text = STAGE_INSTRUCTIONS["answer_generation"]
+            else:
+                text = "Blue."
             value = TextPayload(
-                text="What color is the visible region?"
-                if stage == "question_generation"
-                else "Blue.",
+                text=text,
             )
         elif response_model is QuestionFit:
             value = QuestionFit(
@@ -206,6 +232,10 @@ def _coordinator(
     requirement_text: str | None = None,
     disagree_on_requirements: bool = False,
     concurrency_probe: ConcurrencyProbe | None = None,
+    repeat_question: bool = False,
+    echo_question_prompt: bool = False,
+    echo_answer_prompt: bool = False,
+    unknown_capability: bool = False,
 ):
     config = load_config(Path("configs/pilot.yaml"))
     store = RunStore(tmp_path / "runs", "test", require_local_wal=False)
@@ -220,12 +250,20 @@ def _coordinator(
         fail_first_rating=fail_first_rating,
         requirement_text=requirement_text,
         concurrency_probe=concurrency_probe,
+        repeat_question=repeat_question,
+        echo_question_prompt=echo_question_prompt,
+        echo_answer_prompt=echo_answer_prompt,
+        unknown_capability=unknown_capability,
     )
     generator_b = ScriptedClient(
         config.models.generator_b,
         fail_first_rating=fail_first_rating,
         requirement_text="visible region" if disagree_on_requirements else requirement_text,
         concurrency_probe=concurrency_probe,
+        repeat_question=repeat_question,
+        echo_question_prompt=echo_question_prompt,
+        echo_answer_prompt=echo_answer_prompt,
+        unknown_capability=unknown_capability,
     )
     coordinator = SynthesisCoordinator(
         config,
@@ -286,6 +324,132 @@ def test_selection_rejection_stops_before_question_or_answer(
     assert "answer_generation" not in stages
     assert "question_generation" not in stages
     assert [stage for stage, _ in selector.calls] == ["instruction_selection"]
+
+
+def test_normalized_repeated_question_stops_before_second_fit(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path,
+        repeat_question=True,
+    )
+    try:
+        conversation = coordinator.synthesize_image(image, root)
+        rejection_count = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'public-text-rejections'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+
+    assert conversation.status == "REJECTED"
+    assert len(conversation.turns) == 1
+    assert rejection_count == 1
+    assert sum(stage == "question_fit" for stage, _ in generator_a.calls) == 1
+    assert sum(stage == "question_fit" for stage, _ in generator_b.calls) == 1
+
+
+def test_private_prompt_echo_is_rejected_before_question_fit(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path,
+        echo_question_prompt=True,
+    )
+    try:
+        conversation = coordinator.synthesize_image(image, root)
+        rejection_count = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'public-text-rejections'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+
+    assert conversation.status == "REJECTED"
+    assert not conversation.turns
+    assert rejection_count == 1
+    assert all(
+        stage != "question_fit"
+        for client in (generator_a, generator_b)
+        for stage, _ in client.calls
+    )
+
+
+def test_private_prompt_echo_is_rejected_before_answer_rating(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path,
+        echo_answer_prompt=True,
+    )
+    try:
+        conversation = coordinator.synthesize_image(image, root)
+        rejection_count = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'public-text-rejections'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+
+    assert conversation.status == "REJECTED"
+    assert not conversation.turns
+    assert rejection_count == 1
+    assert any(
+        stage == "answer_generation"
+        for client in (generator_a, generator_b)
+        for stage, _ in client.calls
+    )
+    assert all(
+        stage != "claim_inventory"
+        for client in (generator_a, generator_b)
+        for stage, _ in client.calls
+    )
+
+
+def test_unknown_evidence_capability_is_not_silently_ignored(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path, unknown_capability=True)
+    try:
+        with pytest.raises(ExecutionError) as caught:
+            coordinator.synthesize_image(image, root)
+    finally:
+        store.close()
+
+    assert caught.value.reason == "EVIDENCE_CAPABILITY_UNKNOWN"
+
+
+def test_later_turn_does_not_imply_binding_or_strong_dependency() -> None:
+    context = RubricContext(
+        turn_index=2,
+        profile="normal",
+        has_natural_language_answer=True,
+    )
+    templates = {item["template_id"] for item in applicable_rubric_items(context)}
+    assert {"H_CONSISTENCY", "H_TURN_PROGRESS"} <= templates
+    assert "H_BINDING" not in templates
+    assert "H_WITNESS" not in templates
+
+    dependent = context.model_copy(
+        update={"history_binding_ids": ("binding-1",), "requires_witness_check": True}
+    )
+    dependent_templates = {item["template_id"] for item in applicable_rubric_items(dependent)}
+    assert {"H_BINDING", "H_WITNESS"} <= dependent_templates
+
+
+def test_numeric_only_answer_skips_natural_language_criteria() -> None:
+    assert not has_natural_language_content("42")
+    assert has_natural_language_content("42 kg")
+    context = RubricContext(
+        turn_index=1,
+        profile="normal",
+        has_natural_language_answer=False,
+    )
+    templates = {item["template_id"] for item in applicable_rubric_items(context)}
+    assert "F_A_CLEAR" not in templates
+    assert "F_REDUNDANCY" not in templates
+    assert "L_A_TARGET" not in templates
 
 
 def test_successful_generation_uses_full_history_and_dual_blind_judges(

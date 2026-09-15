@@ -164,6 +164,19 @@ FORBIDDEN_MODEL_FIELDS = frozenset(
 )
 
 
+def is_private_prompt_echo(text: str) -> bool:
+    """Return whether public text reproduces a substantial private model instruction."""
+    normalized = " ".join(text.casefold().split())
+    if len(normalized) < 80:
+        return False
+    private_prompts = (SYSTEM_PROMPT, *STAGE_INSTRUCTIONS.values())
+    for prompt in private_prompts:
+        private = " ".join(prompt.casefold().split())
+        if normalized in private or private in normalized:
+            return True
+    return False
+
+
 def validate_stage_payload(stage: str, payload: Mapping[str, Any]) -> None:
     """Reject fields that cross a stage's information boundary.
 

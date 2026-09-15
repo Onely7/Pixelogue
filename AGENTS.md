@@ -32,6 +32,8 @@ Before GPU work, inspect all GPUs with `nvidia-smi`. Use only idle devices and s
 - Keep the training-side `Qwen/Qwen3-VL-8B-Instruct` processor lock independent of every selector.
 - Keep SQLite WAL databases on a local filesystem. Back up complete snapshots to shared storage.
 - Reject unknown configuration and malformed model output; do not coerce it into a passing result.
+- Reject normalized exact question repeats and substantial private-prompt echoes before spending image-aware evaluator calls. Preserve the rejected text and reason as a private run artifact.
+- Apply history binding and witness rubric items only from resolved binding IDs and an explicit witness designation. A later turn index alone is not evidence of either condition.
 - Keep image-level synthesis concurrency bounded by `runtime.max_concurrent_images`. Preserve input order and conversation-local history order, and keep run-store database operations serialized even while model HTTP requests overlap.
 - If a large split and a performance change are both needed, commit the behavior-preserving split first as `refactor:`, verify it, and make the measured performance change separately as `perf:`.
 - Use Conventional Commits. Do not include unrelated refactoring in a feature or fix commit.

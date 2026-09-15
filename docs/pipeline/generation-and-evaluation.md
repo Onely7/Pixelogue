@@ -110,6 +110,8 @@ The assigned generation role turns the selected operation into one public questi
 
 Each role returns `MET`, `NOT_MET`, or `UNKNOWN`. A clear negative rejects the turn. Missing evidence or disagreement causes abstention. An answer is never generated for a question that did not pass.
 
+Before those model calls, the controller applies two narrow checks that do not require visual judgment. It rejects a question that is identical to an earlier user question after Unicode, case, whitespace, and final-punctuation normalization. It also rejects a substantial echo of Pixelogue's private model instructions. The rejected text and reason are stored for diagnosis. Paraphrases and questions with different meaning still go to both image-aware evaluators; the controller does not guess semantic similarity from words alone.
+
 ### Step 5: freeze public requirements before the answer
 
 Both evaluator calls independently list every explicit requirement in public user text. Each item stores its kind, lifetime, source message ID, and exact character offsets. The controller verifies that the cited span exists unchanged.
@@ -127,6 +129,10 @@ The same conversation generator sees the image, exact committed history, current
 Both evaluator roles extract every factual claim as an exact span in the answer. Pixelogue derives claim IDs from validated content rather than asking the model to invent them. If a quoted phrase occurs exactly once but its offsets are wrong, the controller can correct them deterministically; ambiguous spans remain invalid.
 
 The controller then instantiates every applicable rubric item. The checks cover question and answer clarity, relevance, visible grounding, claim correctness and coverage, uncertainty, safety, target language, history use, and public naturalness.
+
+Being a later turn activates consistency and turn-progress checks. It does not by itself activate `H_BINDING` or `H_WITNESS`. `H_BINDING` requires an actual resolved reference to prior public state; the current ledger supplies it for persistent requirements from an earlier user message and passes that requirement to the evaluator. `H_WITNESS` requires the coordinator to designate and provide a history-dependency witness. The current synthesis path does not yet produce that witness artifact, so this item remains inapplicable instead of being guessed from the turn number. This distinction prevents an unrelated second question about the same image from being judged as though it claimed a strong dependency on the first answer.
+
+Natural-language-only criteria are instantiated only when the answer contains a Unicode letter. A numeric answer such as `42` still receives the always-applicable factual, relevance, safety, and public-usability checks, but it is not sent through prose clarity, prose redundancy, or answer-language gates. Units such as `kg` contain letters and therefore keep those language checks enabled.
 
 Two additional paths avoid relying on a prose verdict alone:
 
@@ -166,6 +172,7 @@ The SQLite database is the index. Request and response bodies live in content-ad
 └── artifacts/
     ├── requests/08/<sha256>
     ├── responses/24/<sha256>
+    ├── public-text-rejections/6c/<sha256>
     └── turns/ab/<sha256>
 ```
 
