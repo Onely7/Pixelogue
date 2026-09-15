@@ -12,7 +12,7 @@ This guide follows one image through that path. Read the pages in order the firs
 4. **[Select and export](selection-and-export.md).** Freeze the accepted pool, solve diversity constraints, audit the result, and write the four-file bundle.
 5. **[Inspect artifacts and examples](artifact-examples.md).** Connect real intermediate responses from the Qwen3.5 pilot to final conversation and training-record shapes.
 
-For a shorter command-focused path, use the [CPU quickstart](../quickstart.md) and the [workflow reference](../workflow.md). The [recovery guide](../recovery-and-ci.md) explains backups and integrity checks.
+For a shorter command-focused path, use the [CPU quickstart](../quickstart.md) and the [workflow reference](../workflow.md). The [recovery guide](../recovery-and-ci.md) explains backups and integrity checks. The [measured Qwen3.5-9B pilot report](../validation/qwen35-9b-pilot.md) separates execution validation from production-quality claims.
 
 Japanese readers can start with the [Japanese contents page](README_ja.md).
 

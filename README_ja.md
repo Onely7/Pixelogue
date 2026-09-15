@@ -40,7 +40,8 @@ uv run --locked pytest
 4. [モデルと GPU の確認](docs/models-and-gpu_ja.md)
 5. [生成・選抜・出力](docs/workflow_ja.md)
 6. [復旧と CI](docs/recovery-and-ci_ja.md)
-7. [実装対応表](docs/implementation-map_ja.md)
+7. [Qwen3.5-9B pilot の実測結果](docs/validation/qwen35-9b-pilot_ja.md)
+8. [実装対応表](docs/implementation-map_ja.md)
 
 ## モデルの役割
 
