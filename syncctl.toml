@@ -1,0 +1,66 @@
+# syncctl configuration. Edit syncctl.toml, then run `syncctl sync`.
+branch = "sync"
+
+[central]
+enabled = false
+# repository = "owner/project" # 未指定なら認証ユーザー / Localディレクトリ名
+remote = "origin"
+
+[ssh]
+connect_timeout = 10
+
+[worker]
+backoff_initial = "5s"
+backoff_max = "5m"
+retry_window = "30m"
+notify = true
+
+[secrets]
+paths = [
+  ".env",
+  "container/tokens.sh",
+  "container/gdrive_export-keito_kudo_q4_dc_tohoku_ac_jp.tar",
+]
+
+# path は省略し、Local のホームからの相対パスを各Serverのホーム以下に維持する。
+# 同期先を変える場合のみ、該当する [[server]] に path = "~/other-project" を追加する。
+
+# [[server]]
+# name = "abci3"
+# host = "acd13291ff@abci3"
+
+# [[server]]
+# name = "raiden"
+# host = "keitonlp@raiden"
+
+[[server]]
+name = "whiskey"
+host = "keitonlp@whiskey"
+
+# [[server]]
+# name = "genkai_failab"
+# host = "ku40001211@genkai_failab"
+
+# [[server]]
+# name = "genkai_sakaguchi"
+# host = "ku40003254@genkai_sakaguchi"
+
+[[server]]
+name = "genkai_keitonlp"
+host = "ku40004135@genkai_keitonlp"
+
+# [[server]]
+# name = "genkai_failab_keitonlp"
+# host = "ku40004253@genkai_failab_keitonlp"
+
+[[server]]
+name = "zao_gw"
+host = "keitonlp@zao_gw"
+
+# [[server]]
+# name = "genkai_video_and_nlp"
+# host = "ku50001595@genkai_video_and_nlp"
+
+[[server]]
+name = "tsubame"
+host = "ut03636@tsubame"
