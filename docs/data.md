@@ -69,6 +69,7 @@ uv run --locked pixelogue prepare-local-train \
   --image-root /work/datasets/openimages_v7/images/cvdf/train \
   --destination /work/outputs/pixelogue/oi-train-input \
   --count 32 \
+  --workers 4 \
   --seed 20260916 \
   --evaluation-images artifacts/prepared-open-images/images.jsonl
 ```
@@ -116,9 +117,21 @@ The current standard configuration generates English. Pilot output remains barre
 from training export. Export writes image references, not copied image bytes; retain
 the prepared image directory and private attribution records alongside the bundle.
 
-Progress is shown on stderr by default: stage changes, CSV row counts about every
-two seconds, image counts including rejections, and total elapsed seconds. The second
-CSV pass and image processing include totals. No extra pass is made to count rows.
-The final JSON report remains on stdout, so `> report.json` keeps it machine-readable;
-use `2> progress.log` to save progress or `--quiet` to disable it. Updates are emitted
-between rows/images; a single slow file operation may delay an update.
+Use `--workers 4` to process up to four images concurrently (default: 1, maximum: 32).
+Only image reading, decoding, rotation, colour conversion and PNG writing are parallel;
+CSV sampling/verification and visual grouping remain serial. Result ordering, grouping,
+and image hashes match the serial path. Progress counts completed images, including
+rejections, even if an earlier image is still running. More workers use more memory and
+storage bandwidth; throughput depends on the filesystem and image sizes.
+
+Both preparation and synthesis use tqdm bars on stderr. Preparation displays one bar
+per stage with counts, elapsed time, rate and estimated remaining time when the total
+is known. The first CSV pass has no known total; the second pass uses its row count.
+The final JSON report remains on stdout: use `> report.json`, `2> progress.log`, or
+`--quiet` to disable the bars. No extra CSV pass is made to count rows.
+
+Canonical PNG output now drops inherited EXIF and ICC metadata after conversion to
+sRGB, avoiding timestamps in generated profiles. Encoded hashes for previously prepared
+images with such metadata can change; use a new preparation directory and run ID.
+A single CPU check on 31 local images took 6.65 s with one worker and 1.87 s with four,
+with identical manifests. This excludes CSV scans and is not a repeated benchmark.

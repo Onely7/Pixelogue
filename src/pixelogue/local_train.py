@@ -44,6 +44,7 @@ def prepare_local_train(
     seed: int,
     validation_manifest: Path,
     evaluation_images: Sequence[Path] = (),
+    workers: int = 1,
     progress: Callable[[str, int, int | None], None] | None = None,
 ) -> dict[str, object]:
     """Sample local train JPEGs, validate them, and write manifests and canonical views.
@@ -59,6 +60,8 @@ def prepare_local_train(
         ExternalInputError: If metadata is malformed or output already exists.
         ShortfallError: If fewer eligible local candidates than requested are available.
     """
+    if workers < 1:
+        raise ValueError("workers must be positive")
     if count < 1:
         raise ValueError("count must be positive")
     if destination.exists():
@@ -201,7 +204,14 @@ def prepare_local_train(
     write_json(destination / "selected-ids.json", [row["ImageID"] for row in selected])
     # All calls are CPU-only; no model payload contains the private metadata below.
     prepared = prepare_sources(
-        sources, rights, root, destination, seed=seed, at=timestamp, progress=progress
+        sources,
+        rights,
+        root,
+        destination,
+        seed=seed,
+        at=timestamp,
+        progress=progress,
+        workers=workers,
     )
     if progress is not None:
         progress("write_outputs", 0, 1)
@@ -231,6 +241,7 @@ def prepare_local_train(
         "metadata_path": str(metadata),
         "image_root": str(root),
         "seed": seed,
+        "workers": workers,
         "requested_candidates": count,
         "accepted": len(accepted),
         "rejected": len(failures),

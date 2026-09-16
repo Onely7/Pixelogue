@@ -108,9 +108,9 @@ Candidate IDs, selector reasons, judge reasons, source titles, and operational f
 
 ### Synthesis progress
 
-`synthesize` reports progress on stderr by default, at startup, after each image is
+`synthesize` uses a tqdm progress bar on stderr by default, at startup, after each image is
 saved, and every 10 seconds while waiting. It shows saved/total images, worker count,
-QUALITY_CANDIDATE / REJECTED / ABSTAINED / ERROR counts, and elapsed time. The total
+QUALITY_CANDIDATE / REJECTED / ABSTAINED / ERROR counts, elapsed time, rate and estimated remaining time. The total
 is capped by `data.target_dialogues`; a processed image is not necessarily accepted.
 Counts follow input-order output persistence, so later completed workers may not yet
 be counted. Waiting updates indicate the controller is waiting, not model-server health.

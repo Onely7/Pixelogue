@@ -33,8 +33,8 @@ def test_waiting_updates_and_thread_cleanup_on_failure():
             assert waiting.wait(2)
             raise RuntimeError("failed")
     output = stream.getvalue()
-    assert "waiting saved=1/2" in output
-    assert "interrupted saved=1/2" in output
+    assert "waiting: 1/2" in output
+    assert "interrupted: 1/2" in output
     assert "REJECTED=1" in output
     assert "finished" not in output
     assert not any(thread.name == "pixelogue-progress" for thread in threads())
@@ -94,6 +94,6 @@ def test_synthesize_cli_progress_leaves_stdout_json_and_uses_scheduled_total(
     if quiet:
         assert result.stderr == ""
     else:
-        assert "started saved=0/2" in result.stderr
-        assert "finished saved=2/2" in result.stderr
-        assert "REJECTED=1 ABSTAINED=0 ERROR=1" in result.stderr
+        assert "started: 0/2" in result.stderr
+        assert "finished: 2/2" in result.stderr
+        assert "REJECTED=1, ABSTAINED=0, ERROR=1" in result.stderr

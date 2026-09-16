@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
 from pathlib import Path
 
 import pytest
 from PIL import Image
 from typer.testing import CliRunner
 
-from pixelogue.cli import _local_train_progress, app
+from pixelogue.cli import app
 from pixelogue.contracts import ImageArtifact, RightsRecord, SourceRecord
 from pixelogue.errors import ExternalInputError, ShortfallError
 from pixelogue.io import read_jsonl, write_jsonl
 from pixelogue.local_train import prepare_local_train
 from pixelogue.operations import prepare_sources
+from pixelogue.progress import preparation_progress
 
 
 def _inputs(tmp_path: Path, count: int = 4):
@@ -218,6 +220,8 @@ def test_cli_progress_preserves_json_stdout_and_counts_rejections(tmp_path, quie
         str(tmp_path / "out"),
         "--count",
         "2",
+        "--workers",
+        "2",
         "--validation-manifest",
         str(pinned),
     ]
@@ -238,18 +242,16 @@ def test_cli_progress_preserves_json_stdout_and_counts_rejections(tmp_path, quie
         assert "elapsed=" in result.stderr
 
 
-def test_progress_throttles_updates_but_always_reports_stage_end(monkeypatch, capsys):
-    clock = iter([0.0, 0.0, 1.0, 2.1, 2.2, 2.3])
-    monkeypatch.setattr("pixelogue.cli.time.monotonic", lambda: next(clock))
-    report = _local_train_progress()
-    report("scan_metadata", 0, None)
-    report("scan_metadata", 10000, None)
-    report("scan_metadata", 20000, None)
-    report("scan_metadata", 20001, 20001)
-    report("verify_metadata", 0, 20001)
+def test_preparation_progress_closes_on_failure(capsys):
+
+    with pytest.raises(RuntimeError):
+        with preparation_progress(sys.stderr) as report:
+            assert report is not None
+            report("scan_metadata", 0, None)
+            report("scan_metadata", 10000, None)
+            report("verify_metadata", 0, 10000)
+            raise RuntimeError("failed")
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "10,000" not in captured.err
-    assert "20,000" in captured.err
-    assert "20,001/20,001" in captured.err
-    assert "verify_metadata: 0/20,001" in captured.err
+    assert "10000" in captured.err
+    assert "verify_metadata interrupted" in captured.err

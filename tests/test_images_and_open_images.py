@@ -5,6 +5,7 @@ import hashlib
 import io
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Barrier, Lock, get_ident
 
 import httpx
 import pytest
@@ -226,3 +227,85 @@ def test_invalid_icc_transform_is_an_image_failure(tmp_path: Path) -> None:
     assert result.images[0].source_id == "good"
     assert len(result.failures) == 1
     assert result.failures[0].reason == "ICC_CONVERSION_FAILED"
+
+
+def test_parallel_ingestion_overlaps_and_matches_serial_with_duplicate_pixels(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "source"
+    root.mkdir()
+    for index in range(7):
+        (root / f"{index}.png").write_bytes(_png())
+    (root / "7.png").write_bytes(_png((64, 64)))
+    sources = [
+        SourceRecord(
+            source_id=str(index),
+            image_path=f"{index}.png",
+            rights_record_id="rights",
+            purpose=SourcePurpose.TRAINING,
+        )
+        for index in reversed(range(8))
+    ]
+    serial = prepare_sources(sources, [_rights("rights")], root, tmp_path / "serial", seed=42)
+    barrier = Barrier(3)
+    lock = Lock()
+    active = 0
+    peak = 0
+    completed = []
+    main_thread = get_ident()
+
+    def canonicalize(*args, **kwargs):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            if args[0].source_id in {"0", "1", "2"}:
+                barrier.wait(timeout=5)
+            return canonicalize_image(*args, **kwargs)
+        finally:
+            with lock:
+                active -= 1
+
+    def progress(stage, processed, total):
+        assert get_ident() == main_thread
+        if stage == "images":
+            completed.append(processed)
+
+    monkeypatch.setattr("pixelogue.operations.canonicalize_image", canonicalize)
+    parallel = prepare_sources(
+        sources,
+        [_rights("rights")],
+        root,
+        tmp_path / "parallel",
+        seed=42,
+        workers=3,
+        progress=progress,
+    )
+    assert 1 < peak <= 3
+    assert completed == list(range(9))
+    assert parallel == serial
+    for image in parallel.images:
+        path = tmp_path / "parallel" / image.full_view.relative_path
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == image.full_view.encoded_sha256
+    assert not list((tmp_path / "parallel").rglob(".*.png.*"))
+
+
+def test_canonical_png_does_not_retain_private_exif_or_generated_icc(tmp_path):
+    root = tmp_path / "source"
+    root.mkdir()
+    exif = Image.Exif()
+    exif[270] = "Private image description"
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    Image.new("RGB", (192, 128), "red").save(root / "input.png", icc_profile=profile, exif=exif)
+    source = SourceRecord(
+        source_id="image",
+        image_path="input.png",
+        rights_record_id="rights",
+        purpose=SourcePurpose.TRAINING,
+    )
+    artifact = canonicalize_image(source, _rights("rights"), root, tmp_path / "out")
+    with Image.open(tmp_path / "out" / artifact.full_view.relative_path) as image:
+        assert "icc_profile" not in image.info
+        assert "exif" not in image.info
+        assert image.getpixel((0, 0)) == (255, 0, 0)

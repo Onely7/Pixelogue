@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import time
 from collections import Counter
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from threading import Event, Lock, Thread
 from typing import TextIO
+
+from tqdm import tqdm
+
+_BAR_FORMAT = "{desc}: {n_fmt}/{total_fmt} [{bar}] elapsed={elapsed} remaining={remaining} {rate_fmt}{postfix}"
 
 _STATUSES = ("QUALITY_CANDIDATE", "REJECTED", "ABSTAINED", "ERROR")
 
@@ -32,23 +35,28 @@ def synthesis_progress(
         return
     if interval <= 0:
         raise ValueError("interval must be positive")
-    started = time.monotonic()
+    bar = tqdm(
+        total=total,
+        desc="synthesize",
+        unit="image",
+        file=stream,
+        mininterval=0.5,
+        dynamic_ncols=True,
+        bar_format=_BAR_FORMAT,
+    )
     counts: Counter[str] = Counter()
     lock = Lock()
     stopped = Event()
 
     def emit(state: str) -> None:
-        details = " ".join(f"{status}={counts[status]}" for status in _STATUSES)
-        print(
-            f"[synthesize] {state} saved={sum(counts.values()):,}/{total:,} "
-            f"workers={workers} {details} elapsed={time.monotonic() - started:.1f}s",
-            file=stream,
-            flush=True,
-        )
+        bar.set_description_str(f"synthesize {state}", refresh=False)
+        bar.set_postfix({"workers": workers, **{s: counts[s] for s in _STATUSES}}, refresh=False)
+        bar.refresh()
 
     def record(status: str) -> None:
         with lock:
             counts[status] += 1
+            bar.update(1)
             emit("running")
 
     def heartbeat() -> None:
@@ -68,3 +76,46 @@ def synthesis_progress(
         thread.join()
         with lock:
             emit(state)
+            bar.close()
+
+
+@contextmanager
+def preparation_progress(
+    stream: TextIO, *, enabled: bool = True
+) -> Iterator[Callable[[str, int, int | None], None] | None]:
+    """Display one tqdm bar per preparation stage, closing it even on failure."""
+    if not enabled:
+        yield None
+        return
+    bar = None
+    current_stage = ""
+
+    def report(stage: str, processed: int, total: int | None) -> None:
+        nonlocal bar, current_stage
+        if bar is None or stage != current_stage:
+            if bar is not None:
+                bar.close()
+            current_stage = stage
+            bar = tqdm(
+                total=total,
+                desc=f"prepare-local-train {stage}",
+                file=stream,
+                unit="row" if "metadata" in stage else "item",
+                mininterval=0.5,
+                dynamic_ncols=True,
+                bar_format=_BAR_FORMAT,
+            )
+        bar.total = total
+        bar.update(processed - bar.n)
+        if processed == total:
+            bar.refresh()
+
+    try:
+        yield report
+    except BaseException:
+        if bar is not None:
+            bar.set_description_str(f"prepare-local-train {current_stage} interrupted")
+        raise
+    finally:
+        if bar is not None:
+            bar.close()

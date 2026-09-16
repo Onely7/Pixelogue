@@ -5,8 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
@@ -43,7 +41,7 @@ from pixelogue.operations import (
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.planner import exact_schedule
 from pixelogue.profiling import profile_database
-from pixelogue.progress import synthesis_progress
+from pixelogue.progress import preparation_progress, synthesis_progress
 from pixelogue.selection import (
     SelectionPolicy,
     audit_selection,
@@ -121,32 +119,13 @@ def prepare(
     typer.echo(json.dumps({"downloaded": len(sources), "destination": str(destination)}))
 
 
-def _local_train_progress() -> Callable[[str, int, int | None], None]:
-    """Report stage changes and throttled counters to stderr, including redirected logs."""
-    started = time.monotonic()
-    last_update = started
-    last_stage = ""
-
-    def report(stage: str, processed: int, total: int | None) -> None:
-        nonlocal last_update, last_stage
-        now = time.monotonic()
-        if stage != last_stage or processed == total or now - last_update >= 2.0:
-            counter = f"{processed:,}" if total is None else f"{processed:,}/{total:,}"
-            typer.echo(
-                f"[prepare-local-train] {stage}: {counter} elapsed={now - started:.1f}s",
-                err=True,
-            )
-            last_update, last_stage = now, stage
-
-    return report
-
-
 @app.command("prepare-local-train")
 def prepare_local_train_command(
     metadata: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
     image_root: Annotated[Path, typer.Option(exists=True, file_okay=False)],
     destination: Annotated[Path, typer.Option(file_okay=False)],
     count: Annotated[int, typer.Option(min=1)] = 32,
+    workers: Annotated[int, typer.Option(min=1, max=32)] = 1,
     quiet: Annotated[bool, typer.Option("--quiet", help="Hide progress on stderr.")] = False,
     seed: int = 20260915,
     validation_manifest: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = Path(
@@ -157,16 +136,18 @@ def prepare_local_train_command(
     ] = None,
 ) -> None:
     """Prepare a bounded training sample from local, unmodified CVDF JPEGs."""
-    report = prepare_local_train(
-        metadata,
-        image_root,
-        destination,
-        count=count,
-        seed=seed,
-        validation_manifest=validation_manifest,
-        evaluation_images=evaluation_images or (),
-        progress=None if quiet else _local_train_progress(),
-    )
+    with preparation_progress(sys.stderr, enabled=not quiet) as progress:
+        report = prepare_local_train(
+            metadata,
+            image_root,
+            destination,
+            count=count,
+            seed=seed,
+            validation_manifest=validation_manifest,
+            evaluation_images=evaluation_images or (),
+            progress=progress,
+            workers=workers,
+        )
     typer.echo(json.dumps(report))
 
 
