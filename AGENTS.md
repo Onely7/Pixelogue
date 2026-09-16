@@ -27,7 +27,7 @@ Before GPU work, inspect all GPUs with `nvidia-smi`. Use only idle devices and s
 
 - Keep public dialogue, model evidence, ratings, and operational metadata in separate models.
 - Never pass candidate answers, future turns, dataset annotations, or other judges' decisions to the instruction selector or an evaluator that is not allowed to see them.
-- Treat Open Images V7 samples as evaluation-only. Never export them as training records.
+- Treat the pinned Open Images V7 validation samples and their visual groups as evaluation-only. Never export them as training records. Explicit local train imports use the separate `prepare-local-train` path with train metadata and rights checks; do not reclassify validation samples.
 - Keep `Qwen/Qwen3.5-2B` as the default selector and instantiate only the selector named by `models.active_selector`; `Qwen/Qwen3.6-35B-A3B` is not a fallback. A conversation uses one configured generator role for its full lifetime. The standard pair is `Qwen/Qwen3.8-27B-FP8` (FP8 quantization) and `google/gemma-4-31B-it-qat-w4a16-ct` (compressed-tensors W4A16 quantization); each repository's `quantization` value is pinned in `ModelConfig.validate_roles` and cannot be set to anything else. The temporary one-GPU pilot maps both roles to separate blind calls through one unquantized `Qwen/Qwen3.5-9B` endpoint; never present that override as the intended model pair or as evaluator-model diversity.
 - Keep the training-side `Qwen/Qwen3-VL-8B-Instruct` processor lock independent of every selector.
 - Keep SQLite WAL databases on a local filesystem. Back up complete snapshots to shared storage.

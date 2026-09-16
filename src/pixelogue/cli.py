@@ -28,6 +28,7 @@ from pixelogue.errors import (
 from pixelogue.export import export_bundle
 from pixelogue.fixtures import FixtureRecord, make_fixtures
 from pixelogue.io import read_json, read_jsonl, write_json, write_jsonl
+from pixelogue.local_train import prepare_local_train
 from pixelogue.open_images import OpenImagesDownloader, OpenImagesPinnedRecord
 from pixelogue.operations import (
     FrozenPool,
@@ -114,6 +115,33 @@ def prepare(
     write_jsonl(destination / "sources.jsonl", sources)
     write_jsonl(destination / "rights.jsonl", rights)
     typer.echo(json.dumps({"downloaded": len(sources), "destination": str(destination)}))
+
+
+@app.command("prepare-local-train")
+def prepare_local_train_command(
+    metadata: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    image_root: Annotated[Path, typer.Option(exists=True, file_okay=False)],
+    destination: Annotated[Path, typer.Option(file_okay=False)],
+    count: Annotated[int, typer.Option(min=1)] = 32,
+    seed: int = 20260915,
+    validation_manifest: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = Path(
+        "validation/open_images_v7_manifest.jsonl"
+    ),
+    evaluation_images: Annotated[
+        list[Path] | None, typer.Option(exists=True, dir_okay=False)
+    ] = None,
+) -> None:
+    """Prepare a bounded training sample from local, unmodified CVDF JPEGs."""
+    report = prepare_local_train(
+        metadata,
+        image_root,
+        destination,
+        count=count,
+        seed=seed,
+        validation_manifest=validation_manifest,
+        evaluation_images=evaluation_images or (),
+    )
+    typer.echo(json.dumps(report))
 
 
 @app.command()
