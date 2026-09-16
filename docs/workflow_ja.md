@@ -101,3 +101,14 @@ uv run --locked pixelogue export \
 | `selection.json` | 固定 pool、選抜 ID、solver status、監査 hash |
 
 候補 ID、選択理由、評価理由、画像タイトル、運用情報は `training.jsonl` に入りません。学習側のQwen3-VL-8B processor lock は指示選択器と独立しており、provenance に記録します。
+
+### 生成中の進捗表示
+
+`synthesize` は既定で標準エラー出力へ進捗を表示します。開始時、画像ごとの保存後、
+および待機中の10秒ごとに、保存済み件数／総数、worker数、品質候補・棄却・評価不能・
+エラーの件数と経過時間を表示します。総数は `data.target_dialogues` の上限を反映し、
+処理済み件数は合格件数とは異なります。件数は入力順の保存に合わせて更新するため、
+後続workerが完了していても、先行画像の保存までは加算されません。待機表示は
+コントローラーが待っていることを示し、モデルサーバーの正常性を保証するものではありません。
+中断時は `finished` ではなく `interrupted` と表示します。`--quiet` で非表示、
+`2> progress.log` で進捗の保存、`> report.json` で完了時の標準出力JSONの保存ができます。

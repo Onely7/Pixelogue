@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -42,6 +43,7 @@ from pixelogue.operations import (
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.planner import exact_schedule
 from pixelogue.profiling import profile_database
+from pixelogue.progress import synthesis_progress
 from pixelogue.selection import (
     SelectionPolicy,
     audit_selection,
@@ -313,6 +315,7 @@ def synthesize(
             help="Maximum images processed concurrently; defaults to runtime configuration.",
         ),
     ] = None,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Hide progress on stderr.")] = False,
 ) -> None:
     """Generate and independently rate bounded multi-turn conversations."""
     config = load_config(config_path)
@@ -360,14 +363,20 @@ def synthesize(
         )
         worker_count = workers or config.runtime.max_concurrent_images
         conversations: list[ConversationArtifact] = []
-        for conversation in coordinator.synthesize_batch(
-            jobs,
-            artifact_root,
-            max_workers=worker_count,
-        ):
-            conversations.append(conversation)
-            write_jsonl(output, conversations)
-            write_json(output.with_suffix(".summary.json"), summarize_conversations(conversations))
+        with synthesis_progress(
+            len(scheduled_images), worker_count, sys.stderr, enabled=not quiet
+        ) as record_progress:
+            for conversation in coordinator.synthesize_batch(
+                jobs,
+                artifact_root,
+                max_workers=worker_count,
+            ):
+                conversations.append(conversation)
+                write_jsonl(output, conversations)
+                write_json(
+                    output.with_suffix(".summary.json"), summarize_conversations(conversations)
+                )
+                record_progress(conversation.status)
     typer.echo(json.dumps({"conversations": len(conversations), "output": str(output)}))
 
 
