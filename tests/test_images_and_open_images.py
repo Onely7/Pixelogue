@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from PIL import Image
+from PIL import Image, ImageCms
 
 from pixelogue.contracts import RightsRecord, SourcePurpose, SourceRecord
 from pixelogue.errors import ExternalInputError, ShortfallError
@@ -204,3 +204,25 @@ def test_evaluation_purpose_spreads_to_exact_visual_group(tmp_path: Path) -> Non
     )
     assert len({image.visual_group_id for image in report.images}) == 1
     assert {image.purpose for image in report.images} == {SourcePurpose.EVALUATION}
+
+
+def test_invalid_icc_transform_is_an_image_failure(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("LAB")).tobytes()
+    Image.new("RGB", (192, 128), "red").save(root / "bad.jpg", icc_profile=profile)
+    Image.new("RGB", (192, 128), "blue").save(root / "good.jpg")
+    sources = [
+        SourceRecord(
+            source_id=name,
+            image_path=f"{name}.jpg",
+            rights_record_id="rights",
+            purpose=SourcePurpose.TRAINING,
+        )
+        for name in ("bad", "good")
+    ]
+    result = prepare_sources(sources, [_rights("rights")], root, tmp_path / "out", seed=42)
+    assert len(result.images) == 1
+    assert result.images[0].source_id == "good"
+    assert len(result.failures) == 1
+    assert result.failures[0].reason == "ICC_CONVERSION_FAILED"

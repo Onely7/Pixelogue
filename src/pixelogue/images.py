@@ -59,7 +59,7 @@ def _rgb_image(image: Image.Image, rotation_degrees: int = 0) -> Image.Image:
                     "ICC_CONVERSION_FAILED", "ICC conversion returned no image"
                 )
             oriented = converted
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, ImageCms.PyCMSError) as error:
             raise ExternalInputError("ICC_CONVERSION_FAILED", str(error)) from error
     if oriented.mode in {"RGBA", "LA"} or "transparency" in oriented.info:
         rgba = oriented.convert("RGBA")
