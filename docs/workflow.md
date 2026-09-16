@@ -15,7 +15,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot/conversations.jsonl
 ```
 
-`runtime.max_concurrent_images` controls how many independent images can be in flight. The checked-in profiles use four so vLLM can apply continuous batching. Use `--workers 1` for a serial diagnostic or `--workers N` for a measured override. Pixelogue still processes the turns within one conversation in order and writes final conversation rows in input order.
+`runtime.max_concurrent_images` controls how many independent images can be in flight. The checked-in profiles use four so vLLM can apply continuous batching. Use `--workers 1` for a serial diagnostic or `--workers N` for a measured override (1–64 workers). Pixelogue still processes the turns within one conversation in order and writes final conversation rows in input order.
 
 The coordinator assigns languages and the two generators with exact batch quotas. One generator is fixed for a complete conversation, including its one permitted answer repair. The sequence for each turn is:
 

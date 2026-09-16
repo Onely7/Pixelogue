@@ -15,7 +15,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot/conversations.jsonl
 ```
 
-同時に処理する独立画像の上限は `runtime.max_concurrent_images` で指定します。Gitに含まれる設定では4件とし、vLLMのcontinuous batchingが働くようにしています。直列実行で問題を調べる場合は `--workers 1`、測定した値へ一時的に変更する場合は `--workers N` を指定できます。1つの対話内の往復は順番どおりに処理し、最終的な対話レコードも入力順で保存します。
+同時に処理する独立画像の上限は `runtime.max_concurrent_images` で指定します。Gitに含まれる設定では4件とし、vLLMのcontinuous batchingが働くようにしています。直列実行で問題を調べる場合は `--workers 1`、測定した値へ一時的に変更する場合は `--workers N` を指定できます（1〜64）。1つの対話内の往復は順番どおりに処理し、最終的な対話レコードも入力順で保存します。
 
 言語と 2 つの生成モデルは、小さな batch でも設定比率どおりの正確な件数に割り当てます。1 対話の質問、回答、1 回だけ許される回答修復は同じ生成モデルが担当します。各 turn は次の順序です。
 

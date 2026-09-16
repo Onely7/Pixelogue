@@ -125,7 +125,7 @@ def prepare_local_train_command(
     image_root: Annotated[Path, typer.Option(exists=True, file_okay=False)],
     destination: Annotated[Path, typer.Option(file_okay=False)],
     count: Annotated[int, typer.Option(min=1)] = 32,
-    workers: Annotated[int, typer.Option(min=1, max=32)] = 1,
+    workers: Annotated[int, typer.Option(min=1, max=64)] = 1,
     quiet: Annotated[bool, typer.Option("--quiet", help="Hide progress on stderr.")] = False,
     seed: int = 20260915,
     validation_manifest: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = Path(
@@ -292,7 +292,7 @@ def synthesize(
         typer.Option(
             "--workers",
             min=1,
-            max=32,
+            max=64,
             help="Maximum images processed concurrently; defaults to runtime configuration.",
         ),
     ] = None,

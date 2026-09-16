@@ -117,7 +117,7 @@ The current standard configuration generates English. Pilot output remains barre
 from training export. Export writes image references, not copied image bytes; retain
 the prepared image directory and private attribution records alongside the bundle.
 
-Use `--workers 4` to process up to four images concurrently (default: 1, maximum: 32).
+Use `--workers 4` to process up to four images concurrently (default: 1, maximum: 64).
 Only image reading, decoding, rotation, colour conversion and PNG writing are parallel;
 CSV sampling/verification and visual grouping remain serial. Result ordering, grouping,
 and image hashes match the serial path. Progress counts completed images, including
