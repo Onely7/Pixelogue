@@ -7,9 +7,10 @@ import httpx
 import pytest
 from pydantic import HttpUrl
 
-from pixelogue.config import ModelEndpoint, RuntimeConfig
+from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
 from pixelogue.contracts import RubricVerdict, TextPayload
 from pixelogue.errors import ExecutionError
+from pixelogue.pipeline import SynthesisCoordinator
 from pixelogue.profiling import profile_database
 from pixelogue.prompts import validate_stage_payload
 from pixelogue.serving import ModelAdapter, VllmClient
@@ -153,12 +154,21 @@ def test_identical_complete_model_call_replays_saved_response(tmp_path: Path) ->
     assert tuple(budget) == (1, 3)
 
 
-def test_invalid_model_output_releases_output_reservation(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{}",
+        '{"verdict":"MET","reason":"unescaped\nnewline"}',
+        '{"verdict":"MET","verdict":"NOT_MET","reason":"duplicate"}',
+        '{"verdict":"MET","reason":NaN}',
+    ],
+)
+def test_invalid_model_output_releases_output_reservation(tmp_path: Path, content: str) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
             json={
-                "choices": [{"finish_reason": "stop", "message": {"content": "{}"}}],
+                "choices": [{"finish_reason": "stop", "message": {"content": content}}],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1},
             },
             request=request,
@@ -175,7 +185,7 @@ def test_invalid_model_output_releases_output_reservation(tmp_path: Path) -> Non
             store=store,
             client=http_client,
         )
-        with pytest.raises(ExecutionError, match="validation errors"):
+        with pytest.raises(ExecutionError) as caught:
             client.invoke(
                 "rubric_item",
                 _rubric_payload(),
@@ -185,6 +195,7 @@ def test_invalid_model_output_releases_output_reservation(tmp_path: Path) -> Non
                 temperature=0.0,
                 seed=1,
             )
+        assert caught.value.reason == "MODEL_SCHEMA_MISMATCH"
         budget = store.connection.execute(
             "SELECT request_count, reserved_output_tokens FROM budget WHERE singleton=1"
         ).fetchone()
@@ -285,3 +296,71 @@ def test_length_completion_repairs_only_missing_json_containers() -> None:
     with pytest.raises(ExecutionError) as caught:
         VllmClient._validate_completion(response)
     assert caught.value.reason == "MODEL_FINISH_REASON"
+
+
+@pytest.mark.parametrize("recovers", [True, False])
+def test_malformed_json_uses_bounded_structured_retries(tmp_path, recovers):
+    config = load_config(Path("configs/pilot.yaml"))
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        content = (
+            '{"verdict":"MET","reason":"Supported."}'
+            if recovers and calls > 1
+            else '{"verdict":"MET","reason":"invalid\nnewline"}'
+        )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"finish_reason": "stop", "message": {"content": content}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            },
+        )
+
+    with RunStore(tmp_path, "json-retry", require_local_wal=False) as store:
+        store.initialize_run("json-retry", config.config_hash, config.profile)
+        with httpx.Client(
+            base_url="http://127.0.0.1:8000/v1/", transport=httpx.MockTransport(handler)
+        ) as http:
+            client = VllmClient(
+                config.models.generator_a,
+                config.runtime,
+                run_id="json-retry",
+                store=store,
+                client=http,
+            )
+            coordinator = SynthesisCoordinator(config, "json-retry", store, client, client, client)
+            if recovers:
+                result = coordinator._invoke(
+                    client,
+                    "rubric_item",
+                    _rubric_payload(),
+                    (),
+                    RubricVerdict,
+                    max_tokens=32,
+                    temperature=0.0,
+                    seed=1,
+                )
+                assert result.verdict == "MET"
+            else:
+                with pytest.raises(ExecutionError) as caught:
+                    coordinator._invoke(
+                        client,
+                        "rubric_item",
+                        _rubric_payload(),
+                        (),
+                        RubricVerdict,
+                        max_tokens=32,
+                        temperature=0.0,
+                        seed=1,
+                    )
+                assert caught.value.reason == "MODEL_SCHEMA_MISMATCH"
+        assert calls == config.runtime.structured_output_max_attempts == 2
+        assert (
+            store.connection.execute("SELECT reserved_output_tokens FROM budget").fetchone()[0] == 0
+        )
+        assert store.connection.execute(
+            "SELECT COUNT(*) FROM model_call WHERE status='INVALID'"
+        ).fetchone()[0] == (1 if recovers else 2)

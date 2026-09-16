@@ -16,12 +16,24 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from pixelogue.config import ModelEndpoint, RuntimeConfig
-from pixelogue.errors import ExecutionError
+from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_payload
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
 from pixelogue.store import RunStore
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
+
+
+def _model_json_object(payload: str | bytes) -> dict[str, Any]:
+    """Translate malformed model JSON into a retryable execution failure.
+
+    Preserve strict parsing for envelopes and generated content, including duplicate
+    keys and non-finite values. Input-file parsing retains its external-input errors.
+    """
+    try:
+        return strict_json_object(payload)
+    except ExternalInputError as error:
+        raise ExecutionError("MODEL_SCHEMA_MISMATCH", f"{error.reason}: {error}") from error
 
 
 @dataclass(frozen=True)
@@ -205,7 +217,7 @@ class VllmClient:
                 response_model,
                 max_tokens=max_tokens,
             )
-            parsed = strict_json_object(raw_response.content)
+            parsed = _model_json_object(raw_response.content)
             _, usage = self._validate_completion(parsed)
             prompt_tokens = int(usage.get("prompt_tokens", 0))
             completion_tokens = int(usage.get("completion_tokens", 0))
@@ -254,14 +266,14 @@ class VllmClient:
         max_tokens: int,
     ) -> tuple[ResponseModel, str]:
         """Validate one saved or fresh completion and return its typed content."""
-        parsed = strict_json_object(raw_response)
+        parsed = _model_json_object(raw_response)
         content, usage = self._validate_completion(parsed)
         prompt_tokens = int(usage.get("prompt_tokens", 0))
         completion_tokens = int(usage.get("completion_tokens", 0))
         if prompt_tokens < 0 or completion_tokens < 0 or completion_tokens > max_tokens:
             raise ExecutionError("MODEL_USAGE_INVALID", "Token usage is outside request bounds")
         cleaned = self.adapter.clean_content(content)
-        strict_json_object(cleaned)
+        _model_json_object(cleaned)
         try:
             typed = response_model.model_validate_json(cleaned)
         except ValidationError as error:
