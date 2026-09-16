@@ -44,6 +44,7 @@ def prepare_local_train(
     seed: int,
     validation_manifest: Path,
     evaluation_images: Sequence[Path] = (),
+    progress: Callable[[str, int, int | None], None] | None = None,
 ) -> dict[str, object]:
     """Sample local train JPEGs, validate them, and write manifests and canonical views.
 
@@ -52,6 +53,7 @@ def prepare_local_train(
     Missing/corrupt images are never downloaded or silently replaced after decoding.
     Reference manifests exclude exact evaluation copies; near copies require a separate
     joint SSCD check. Existing output directories are refused to protect reproducibility.
+    An optional progress callback receives stage, processed count, and total (if known).
 
     Raises:
         ExternalInputError: If metadata is malformed or output already exists.
@@ -61,6 +63,8 @@ def prepare_local_train(
         raise ValueError("count must be positive")
     if destination.exists():
         raise ExternalInputError("DESTINATION_EXISTS", str(destination))
+    if progress is not None:
+        progress("load_references", 0, 1)
     root = image_root.resolve(strict=True)
     pinned = read_jsonl(validation_manifest, OpenImagesPinnedRecord)
     excluded_ids = {item.image_id for item in pinned}
@@ -77,6 +81,9 @@ def prepare_local_train(
         references.append(
             {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
         )
+    if progress is not None:
+        progress("load_references", 1, 1)
+        progress("scan_metadata", 0, None)
     digest = hashlib.sha256()
     skipped: Counter[str] = Counter()
     heap: list[tuple[int, str, dict[str, str]]] = []
@@ -89,6 +96,8 @@ def prepare_local_train(
         raise ExternalInputError("METADATA_COLUMNS", "Duplicate metadata columns")
     for row in reader:
         rows += 1
+        if progress is not None and rows % 10000 == 0:
+            progress("scan_metadata", rows, None)
         if None in row or any(value is None for value in row.values()):
             raise ExternalInputError("METADATA_ROW", f"Malformed CSV row {reader.line_num}")
         identifier = row["ImageID"]
@@ -127,6 +136,8 @@ def prepare_local_train(
         else:
             heapq.heappush(heap, entry)
         selected_ids.add(identifier)
+    if progress is not None:
+        progress("scan_metadata", rows, rows)
     if len(heap) < count:
         raise ShortfallError(
             "LOCAL_TRAIN_SHORTFALL", f"Requested {count}, found {len(heap)} candidates"
@@ -135,13 +146,22 @@ def prepare_local_train(
     # occurrence was ineligible or had already left the heap. Memory stays bounded.
     verification_digest = hashlib.sha256()
     occurrences: Counter[str] = Counter()
+    if progress is not None:
+        progress("verify_metadata", 0, rows)
+    verified_rows = 0
     for row in csv.DictReader(_hashed_lines(metadata, verification_digest.update)):
+        verified_rows += 1
+        if progress is not None and verified_rows % 10000 == 0:
+            progress("verify_metadata", verified_rows, rows)
         if row["ImageID"] in selected_ids:
             occurrences[row["ImageID"]] += 1
     if verification_digest.digest() != digest.digest():
         raise ExternalInputError("METADATA_CHANGED", "Metadata changed during preparation")
     if any(value != 1 for value in occurrences.values()):
         raise ExternalInputError("DUPLICATE_SOURCE_ID", "Sampled IDs must have unique metadata")
+    if progress is not None:
+        progress("verify_metadata", verified_rows, rows)
+        progress("build_records", 0, count)
     selected = [entry[2] for entry in sorted(heap, key=lambda item: (-item[0], item[1]))]
     sources: list[SourceRecord] = []
     rights: list[RightsRecord] = []
@@ -174,11 +194,17 @@ def prepare_local_train(
                 valid_from=timestamp,
             )
         )
+    if progress is not None:
+        progress("build_records", count, count)
     destination.mkdir(parents=True)
     write_jsonl(destination / "private-metadata.jsonl", selected)
     write_json(destination / "selected-ids.json", [row["ImageID"] for row in selected])
     # All calls are CPU-only; no model payload contains the private metadata below.
-    prepared = prepare_sources(sources, rights, root, destination, seed=seed, at=timestamp)
+    prepared = prepare_sources(
+        sources, rights, root, destination, seed=seed, at=timestamp, progress=progress
+    )
+    if progress is not None:
+        progress("write_outputs", 0, 1)
     accepted = []
     failures = [item.model_dump(mode="json") for item in prepared.failures]
     for image in prepared.images:
@@ -218,4 +244,6 @@ def prepare_local_train(
         "splits": {image.image_id: prepared.splits[image.image_id] for image in accepted},
     }
     write_json(destination / "manifest.json", report)
+    if progress is not None:
+        progress("write_outputs", 1, 1)
     return report

@@ -115,3 +115,10 @@ additional disjoint batches with new run IDs when more quality candidates are ne
 The current standard configuration generates English. Pilot output remains barred
 from training export. Export writes image references, not copied image bytes; retain
 the prepared image directory and private attribution records alongside the bundle.
+
+Progress is shown on stderr by default: stage changes, CSV row counts about every
+two seconds, image counts including rejections, and total elapsed seconds. The second
+CSV pass and image processing include totals. No extra pass is made to count rows.
+The final JSON report remains on stdout, so `> report.json` keeps it machine-readable;
+use `2> progress.log` to save progress or `--quiet` to disable it. Updates are emitted
+between rows/images; a single slow file operation may delay an update.

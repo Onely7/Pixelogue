@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
 import pytest
 from PIL import Image
 from typer.testing import CliRunner
 
-from pixelogue.cli import app
+from pixelogue.cli import _local_train_progress, app
 from pixelogue.contracts import ImageArtifact, RightsRecord, SourceRecord
 from pixelogue.errors import ExternalInputError, ShortfallError
 from pixelogue.io import read_jsonl, write_jsonl
@@ -201,3 +202,54 @@ def test_training_reference_is_not_treated_as_evaluation(tmp_path):
             evaluation_images=[baseline / "images.jsonl"],
         )
     assert caught.value.reason == "REFERENCE_NOT_EVALUATION"
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+def test_cli_progress_preserves_json_stdout_and_counts_rejections(tmp_path, quiet):
+    root, metadata, pinned, rows = _inputs(tmp_path, 2)
+    (root / f"{rows[0]['ImageID']}.jpg").write_bytes(b"invalid image")
+    arguments = [
+        "prepare-local-train",
+        "--metadata",
+        str(metadata),
+        "--image-root",
+        str(root),
+        "--destination",
+        str(tmp_path / "out"),
+        "--count",
+        "2",
+        "--validation-manifest",
+        str(pinned),
+    ]
+    if quiet:
+        arguments.append("--quiet")
+    result = CliRunner().invoke(app, arguments)
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)
+    assert report["accepted"] == 1
+    assert report["rejected"] == 1
+    if quiet:
+        assert result.stderr == ""
+    else:
+        assert "scan_metadata: 0" in result.stderr
+        assert "verify_metadata: 2/2" in result.stderr
+        assert "images: 2/2" in result.stderr
+        assert "write_outputs: 1/1" in result.stderr
+        assert "elapsed=" in result.stderr
+
+
+def test_progress_throttles_updates_but_always_reports_stage_end(monkeypatch, capsys):
+    clock = iter([0.0, 0.0, 1.0, 2.1, 2.2, 2.3])
+    monkeypatch.setattr("pixelogue.cli.time.monotonic", lambda: next(clock))
+    report = _local_train_progress()
+    report("scan_metadata", 0, None)
+    report("scan_metadata", 10000, None)
+    report("scan_metadata", 20000, None)
+    report("scan_metadata", 20001, 20001)
+    report("verify_metadata", 0, 20001)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "10,000" not in captured.err
+    assert "20,000" in captured.err
+    assert "20,001/20,001" in captured.err
+    assert "verify_metadata: 0/20,001" in captured.err

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
@@ -117,12 +119,33 @@ def prepare(
     typer.echo(json.dumps({"downloaded": len(sources), "destination": str(destination)}))
 
 
+def _local_train_progress() -> Callable[[str, int, int | None], None]:
+    """Report stage changes and throttled counters to stderr, including redirected logs."""
+    started = time.monotonic()
+    last_update = started
+    last_stage = ""
+
+    def report(stage: str, processed: int, total: int | None) -> None:
+        nonlocal last_update, last_stage
+        now = time.monotonic()
+        if stage != last_stage or processed == total or now - last_update >= 2.0:
+            counter = f"{processed:,}" if total is None else f"{processed:,}/{total:,}"
+            typer.echo(
+                f"[prepare-local-train] {stage}: {counter} elapsed={now - started:.1f}s",
+                err=True,
+            )
+            last_update, last_stage = now, stage
+
+    return report
+
+
 @app.command("prepare-local-train")
 def prepare_local_train_command(
     metadata: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
     image_root: Annotated[Path, typer.Option(exists=True, file_okay=False)],
     destination: Annotated[Path, typer.Option(file_okay=False)],
     count: Annotated[int, typer.Option(min=1)] = 32,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Hide progress on stderr.")] = False,
     seed: int = 20260915,
     validation_manifest: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = Path(
         "validation/open_images_v7_manifest.jsonl"
@@ -140,6 +163,7 @@ def prepare_local_train_command(
         seed=seed,
         validation_manifest=validation_manifest,
         evaluation_images=evaluation_images or (),
+        progress=None if quiet else _local_train_progress(),
     )
     typer.echo(json.dumps(report))
 

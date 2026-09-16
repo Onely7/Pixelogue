@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -129,12 +129,14 @@ def prepare_sources(
     embedder: ImageEmbedder | None = None,
     similarity_threshold: float = 0.95,
     at: datetime | None = None,
+    progress: Callable[[str, int, int | None], None] | None = None,
 ) -> PreparedDataset:
     """Validate, canonicalize, group, and split a source manifest.
 
     Invalid individual sources are preserved as failures so deterministic replacement can be
     performed by the caller. Duplicate identities and dangling rights references reject the whole
     manifest because continuing would make resumption ambiguous.
+    An optional progress callback receives stage, processed count, and total count.
     """
     if len({source.source_id for source in sources}) != len(sources):
         raise ExternalInputError("DUPLICATE_SOURCE_ID", "Source IDs must be unique")
@@ -144,6 +146,8 @@ def prepare_sources(
     accepted: list[ImageArtifact] = []
     failures: list[IngestFailure] = []
     evaluated_at = at or datetime.now(UTC)
+    if progress is not None:
+        progress("images", 0, len(sources))
     for source in sorted(sources, key=lambda item: item.source_id):
         rights = rights_by_id.get(source.rights_record_id)
         if rights is None:
@@ -169,6 +173,10 @@ def prepare_sources(
                     message=str(error),
                 )
             )
+        if progress is not None:
+            progress("images", len(accepted) + len(failures), len(sources))
+    if progress is not None:
+        progress("group_images", 0, 1)
     if embeddings is not None and embedder is not None:
         raise ValueError("supply existing embeddings or an embedder, not both")
     effective_embeddings: Mapping[str, Sequence[float]] = embeddings or {}
@@ -213,6 +221,8 @@ def prepare_sources(
         "failures": [failure.model_dump(mode="json") for failure in failures],
         "splits": splits,
     }
+    if progress is not None:
+        progress("group_images", 1, 1)
     return PreparedDataset(
         images=grouped,
         failures=tuple(failures),
