@@ -219,7 +219,7 @@ class RuntimeConfig(StrictModel):
     request_timeout_seconds: Annotated[int, Field(ge=1, le=180)] = 180
     transport_max_attempts: Literal[1, 2, 3] = 3
     structured_output_max_attempts: Literal[1, 2, 3] = 2
-    max_concurrent_images: Annotated[int, Field(ge=1, le=32)] = 1
+    max_concurrent_images: Annotated[int, Field(ge=1, le=64)] = 1
     max_total_requests: Annotated[int, Field(ge=1)] = 10_000_000
     max_total_output_tokens: Annotated[int, Field(ge=1)] = 1_000_000_000
     allow_external_inference: Literal[False] = False

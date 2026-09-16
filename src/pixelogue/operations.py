@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
+from itertools import islice
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -129,13 +131,20 @@ def prepare_sources(
     embedder: ImageEmbedder | None = None,
     similarity_threshold: float = 0.95,
     at: datetime | None = None,
+    progress: Callable[[str, int, int | None], None] | None = None,
+    workers: int = 1,
 ) -> PreparedDataset:
     """Validate, canonicalize, group, and split a source manifest.
 
     Invalid individual sources are preserved as failures so deterministic replacement can be
     performed by the caller. Duplicate identities and dangling rights references reject the whole
     manifest because continuing would make resumption ambiguous.
+    An optional progress callback receives stage, processed count, and total count.
+    Image work is bounded by workers; results retain source order, while progress
+    counts actual completions. Grouping and split assignment remain serial.
     """
+    if workers < 1:
+        raise ValueError("workers must be positive")
     if len({source.source_id for source in sources}) != len(sources):
         raise ExternalInputError("DUPLICATE_SOURCE_ID", "Source IDs must be unique")
     if len({record.rights_record_id for record in rights_records}) != len(rights_records):
@@ -144,31 +153,58 @@ def prepare_sources(
     accepted: list[ImageArtifact] = []
     failures: list[IngestFailure] = []
     evaluated_at = at or datetime.now(UTC)
-    for source in sorted(sources, key=lambda item: item.source_id):
-        rights = rights_by_id.get(source.rights_record_id)
-        if rights is None:
-            raise ExternalInputError(
-                "RIGHTS_REFERENCE_MISSING",
-                f"{source.source_id} references {source.rights_record_id}",
-            )
+    if progress is not None:
+        progress("images", 0, len(sources))
+    ordered = sorted(sources, key=lambda item: item.source_id)
+    for source in ordered:
+        if source.rights_record_id not in rights_by_id:
+            raise ExternalInputError("RIGHTS_REFERENCE_MISSING", source.source_id)
+
+    def process(source: SourceRecord) -> ImageArtifact | IngestFailure:
         try:
-            accepted.append(
-                canonicalize_image(
-                    source,
-                    rights,
-                    image_root,
-                    artifact_root,
-                    at=evaluated_at,
-                )
+            return canonicalize_image(
+                source,
+                rights_by_id[source.rights_record_id],
+                image_root,
+                artifact_root,
+                at=evaluated_at,
             )
         except ExternalInputError as error:
-            failures.append(
-                IngestFailure(
-                    source_id=source.source_id,
-                    reason=error.reason,
-                    message=str(error),
-                )
+            return IngestFailure(
+                source_id=source.source_id, reason=error.reason, message=str(error)
             )
+
+    results: dict[int, ImageArtifact | IngestFailure] = {}
+    if workers == 1:
+        for index, source in enumerate(ordered):
+            results[index] = process(source)
+            if progress is not None:
+                progress("images", len(results), len(sources))
+    else:
+        # Keep only one in-flight image per worker; collect on the coordinator thread.
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="pixelogue-ingest") as pool:
+            jobs = iter(enumerate(ordered))
+            pending = {
+                pool.submit(process, source): index for index, source in islice(jobs, workers)
+            }
+            while pending:
+                completed, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for future in completed:
+                    index = pending.pop(future)
+                    results[index] = future.result()
+                    if progress is not None:
+                        progress("images", len(results), len(sources))
+                    job = next(jobs, None)
+                    if job is not None:
+                        pending[pool.submit(process, job[1])] = job[0]
+    for index in range(len(ordered)):
+        result = results[index]
+        if isinstance(result, ImageArtifact):
+            accepted.append(result)
+        else:
+            failures.append(result)
+    if progress is not None:
+        progress("group_images", 0, 1)
     if embeddings is not None and embedder is not None:
         raise ValueError("supply existing embeddings or an embedder, not both")
     effective_embeddings: Mapping[str, Sequence[float]] = embeddings or {}
@@ -213,6 +249,8 @@ def prepare_sources(
         "failures": [failure.model_dump(mode="json") for failure in failures],
         "splits": splits,
     }
+    if progress is not None:
+        progress("group_images", 1, 1)
     return PreparedDataset(
         images=grouped,
         failures=tuple(failures),

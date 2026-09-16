@@ -15,7 +15,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot/conversations.jsonl
 ```
 
-同時に処理する独立画像の上限は `runtime.max_concurrent_images` で指定します。Gitに含まれる設定では4件とし、vLLMのcontinuous batchingが働くようにしています。直列実行で問題を調べる場合は `--workers 1`、測定した値へ一時的に変更する場合は `--workers N` を指定できます。1つの対話内の往復は順番どおりに処理し、最終的な対話レコードも入力順で保存します。
+同時に処理する独立画像の上限は `runtime.max_concurrent_images` で指定します。Gitに含まれる設定では4件とし、vLLMのcontinuous batchingが働くようにしています。直列実行で問題を調べる場合は `--workers 1`、測定した値へ一時的に変更する場合は `--workers N` を指定できます（1〜64）。1つの対話内の往復は順番どおりに処理し、最終的な対話レコードも入力順で保存します。
 
 言語と 2 つの生成モデルは、小さな batch でも設定比率どおりの正確な件数に割り当てます。1 対話の質問、回答、1 回だけ許される回答修復は同じ生成モデルが担当します。各 turn は次の順序です。
 
@@ -101,3 +101,14 @@ uv run --locked pixelogue export \
 | `selection.json` | 固定 pool、選抜 ID、solver status、監査 hash |
 
 候補 ID、選択理由、評価理由、画像タイトル、運用情報は `training.jsonl` に入りません。学習側のQwen3-VL-8B processor lock は指示選択器と独立しており、provenance に記録します。
+
+### 生成中の進捗表示
+
+`synthesize` は既定で標準エラー出力へtqdmの進捗バーを表示します。開始時、画像ごとの保存後、
+および待機中の10秒ごとに、保存済み件数／総数、worker数、品質候補・棄却・評価不能・
+エラーの件数、経過時間、処理速度、推定残り時間を表示します。総数は `data.target_dialogues` の上限を反映し、
+処理済み件数は合格件数とは異なります。件数は入力順の保存に合わせて更新するため、
+後続workerが完了していても、先行画像の保存までは加算されません。待機表示は
+コントローラーが待っていることを示し、モデルサーバーの正常性を保証するものではありません。
+中断時は `finished` ではなく `interrupted` と表示します。`--quiet` で非表示、
+`2> progress.log` で進捗の保存、`> report.json` で完了時の標準出力JSONの保存ができます。

@@ -7,6 +7,7 @@ import io
 import math
 import os
 import struct
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -59,7 +60,7 @@ def _rgb_image(image: Image.Image, rotation_degrees: int = 0) -> Image.Image:
                     "ICC_CONVERSION_FAILED", "ICC conversion returned no image"
                 )
             oriented = converted
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, ImageCms.PyCMSError) as error:
             raise ExternalInputError("ICC_CONVERSION_FAILED", str(error)) from error
     if oriented.mode in {"RGBA", "LA"} or "transparency" in oriented.info:
         rgba = oriented.convert("RGBA")
@@ -137,6 +138,8 @@ def canonicalize_image(
     view = rgb.copy()
     if max(view.size) > MAX_INFERENCE_EDGE:
         view.thumbnail((MAX_INFERENCE_EDGE, MAX_INFERENCE_EDGE), Image.Resampling.LANCZOS)
+    # Pixels are already sRGB; discard EXIF and generated ICC profile timestamps.
+    view.info.clear()
     encoded = io.BytesIO()
     view.save(encoded, "PNG", optimize=False)
     encoded_bytes = encoded.getvalue()
@@ -171,18 +174,19 @@ def canonicalize_image(
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary: Path | None = None
     try:
-        with temporary.open("xb") as stream:
+        with tempfile.NamedTemporaryFile(
+            dir=path.parent, prefix=f".{path.name}.", delete=False
+        ) as stream:
+            temporary = Path(stream.name)
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
-    except FileExistsError:
-        if not path.exists() or path.read_bytes() != data:
-            raise
     finally:
-        temporary.unlink(missing_ok=True)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 @dataclass

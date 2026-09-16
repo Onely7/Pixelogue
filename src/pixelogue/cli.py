@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
@@ -28,6 +29,7 @@ from pixelogue.errors import (
 from pixelogue.export import export_bundle
 from pixelogue.fixtures import FixtureRecord, make_fixtures
 from pixelogue.io import read_json, read_jsonl, write_json, write_jsonl
+from pixelogue.local_train import prepare_local_train
 from pixelogue.open_images import OpenImagesDownloader, OpenImagesPinnedRecord
 from pixelogue.operations import (
     FrozenPool,
@@ -39,6 +41,7 @@ from pixelogue.operations import (
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.planner import exact_schedule
 from pixelogue.profiling import profile_database
+from pixelogue.progress import preparation_progress, synthesis_progress
 from pixelogue.selection import (
     SelectionPolicy,
     audit_selection,
@@ -114,6 +117,38 @@ def prepare(
     write_jsonl(destination / "sources.jsonl", sources)
     write_jsonl(destination / "rights.jsonl", rights)
     typer.echo(json.dumps({"downloaded": len(sources), "destination": str(destination)}))
+
+
+@app.command("prepare-local-train")
+def prepare_local_train_command(
+    metadata: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    image_root: Annotated[Path, typer.Option(exists=True, file_okay=False)],
+    destination: Annotated[Path, typer.Option(file_okay=False)],
+    count: Annotated[int, typer.Option(min=1)] = 32,
+    workers: Annotated[int, typer.Option(min=1, max=64)] = 1,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Hide progress on stderr.")] = False,
+    seed: int = 20260915,
+    validation_manifest: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = Path(
+        "validation/open_images_v7_manifest.jsonl"
+    ),
+    evaluation_images: Annotated[
+        list[Path] | None, typer.Option(exists=True, dir_okay=False)
+    ] = None,
+) -> None:
+    """Prepare a bounded training sample from local, unmodified CVDF JPEGs."""
+    with preparation_progress(sys.stderr, enabled=not quiet) as progress:
+        report = prepare_local_train(
+            metadata,
+            image_root,
+            destination,
+            count=count,
+            seed=seed,
+            validation_manifest=validation_manifest,
+            evaluation_images=evaluation_images or (),
+            progress=progress,
+            workers=workers,
+        )
+    typer.echo(json.dumps(report))
 
 
 @app.command()
@@ -257,10 +292,11 @@ def synthesize(
         typer.Option(
             "--workers",
             min=1,
-            max=32,
+            max=64,
             help="Maximum images processed concurrently; defaults to runtime configuration.",
         ),
     ] = None,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Hide progress on stderr.")] = False,
 ) -> None:
     """Generate and independently rate bounded multi-turn conversations."""
     config = load_config(config_path)
@@ -308,14 +344,20 @@ def synthesize(
         )
         worker_count = workers or config.runtime.max_concurrent_images
         conversations: list[ConversationArtifact] = []
-        for conversation in coordinator.synthesize_batch(
-            jobs,
-            artifact_root,
-            max_workers=worker_count,
-        ):
-            conversations.append(conversation)
-            write_jsonl(output, conversations)
-            write_json(output.with_suffix(".summary.json"), summarize_conversations(conversations))
+        with synthesis_progress(
+            len(scheduled_images), worker_count, sys.stderr, enabled=not quiet
+        ) as record_progress:
+            for conversation in coordinator.synthesize_batch(
+                jobs,
+                artifact_root,
+                max_workers=worker_count,
+            ):
+                conversations.append(conversation)
+                write_jsonl(output, conversations)
+                write_json(
+                    output.with_suffix(".summary.json"), summarize_conversations(conversations)
+                )
+                record_progress(conversation.status)
     typer.echo(json.dumps({"conversations": len(conversations), "output": str(output)}))
 
 

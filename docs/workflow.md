@@ -15,7 +15,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot/conversations.jsonl
 ```
 
-`runtime.max_concurrent_images` controls how many independent images can be in flight. The checked-in profiles use four so vLLM can apply continuous batching. Use `--workers 1` for a serial diagnostic or `--workers N` for a measured override. Pixelogue still processes the turns within one conversation in order and writes final conversation rows in input order.
+`runtime.max_concurrent_images` controls how many independent images can be in flight. The checked-in profiles use four so vLLM can apply continuous batching. Use `--workers 1` for a serial diagnostic or `--workers N` for a measured override (1–64 workers). Pixelogue still processes the turns within one conversation in order and writes final conversation rows in input order.
 
 The coordinator assigns languages and the two generators with exact batch quotas. One generator is fixed for a complete conversation, including its one permitted answer repair. The sequence for each turn is:
 
@@ -105,3 +105,14 @@ The output files have different audiences:
 | `selection.json` | Frozen pool identity, selected IDs, solver status, and audit hash |
 
 Candidate IDs, selector reasons, judge reasons, source titles, and operational fields never enter `training.jsonl`. The training-side Qwen3-VL-8B processor lock is independent of the instruction selector and is recorded in provenance.
+
+### Synthesis progress
+
+`synthesize` uses a tqdm progress bar on stderr by default, at startup, after each image is
+saved, and every 10 seconds while waiting. It shows saved/total images, worker count,
+QUALITY_CANDIDATE / REJECTED / ABSTAINED / ERROR counts, elapsed time, rate and estimated remaining time. The total
+is capped by `data.target_dialogues`; a processed image is not necessarily accepted.
+Counts follow input-order output persistence, so later completed workers may not yet
+be counted. Waiting updates indicate the controller is waiting, not model-server health.
+Interrupted runs are labelled `interrupted`, not `finished`. Use `--quiet` to hide
+progress, `2> progress.log` to save it, or `> report.json` for the final stdout JSON.

@@ -52,3 +52,78 @@ uv run --locked pixelogue ingest \
 同じ visual group に検証専用画像が 1 件でもあれば、グループ全体を検証専用にします。さらに`export` でも検証画像を拒否するため、学習出力への混入を 2 段階で防ぎます。
 
 公式資料には [V7 validation と取得方法](https://storage.googleapis.com/openimages/web/download_v7.html)および[回転値が反時計回りの角度であること](https://storage.googleapis.com/openimages/web/2018-05-17-rotation-information.html)が説明されています。
+
+## 取得済みのCVDF train画像を使う
+
+`prepare-local-train` は、未加工のCVDF画像 `<ImageID>.jpg` が並ぶディレクトリと
+公式画像メタデータCSVを入力にするCPU専用コマンドです。画像の再取得は行いません。
+従来の `prepare` は、引き続き固定validation画像の検証専用です。
+
+```sh
+uv run --locked pixelogue prepare-local-train \
+  --metadata /work/datasets/openimages_v7/metadata/images.csv \
+  --image-root /work/datasets/openimages_v7/images/cvdf/train \
+  --destination /work/outputs/pixelogue/oi-train-input \
+  --count 32 \
+  --workers 4 \
+  --seed 20260916 \
+  --evaluation-images artifacts/prepared-open-images/images.jsonl
+```
+
+リポジトリのルートで実行します。`--evaluation-images` は省略可能で、複数指定できます。
+手元の検証画像の取り込み済み台帳をすべて渡してください。既定の
+`--validation-manifest validation/open_images_v7_manifest.jsonl` に記録された検証画像の
+IDと元画像ハッシュは常に除外します。追加台帳は全件が検証用途であることを検査し、
+正規化画素のハッシュも照合するため、別IDの完全一致コピーも除外できます。
+**近似画像の判定は実施しません。** この制限は `manifest.json` に記録します。
+本番の学習用出力前には、上記の固定SSCDモデルを用いて検証画像と合同でグループ化するか、
+別途検証した除外リストで入力CSVを絞ってください。別々の `ingest` 実行間では
+近似画像グループを自動的に照合できません。
+
+CSVを2回逐次走査し、候補の保持メモリを `--count` に比例する範囲に抑えます。
+対象となるローカル画像から `seed:ImageID` のSHA-256順に抽出するため、CSVの行順には
+依存しません。2回目の走査で入力の変更と選択IDの重複を検査します。
+候補に入り得る順位の画像だけ存在確認するため、欠損ファイルの件数は全画像の監査件数では
+ありません。既存の出力ディレクトリへの上書きは拒否します。
+
+対象は `Subset=train`、16桁の16進ID、明示されたCC BY 2.0/2.5/3.0/4.0のURL、
+作者名とHTTPSの掲載ページ、既知の回転値が揃う画像です。それ以外の利用条件や
+回転情報が欠けた画像は除外します。`90` と `90.0` の両表記に対応しています。
+CVDF画像は画素を回転せずEXIFを除去しているため、正規化時にCSVの回転を一度適用します。
+既に回転補正した画像には使用しないでください。利用条件台帳は帰属を保持した処理・学習・
+QA再配布を許可し、画像自体の再配布は許可しない設定です。タイトルなどの元メタデータは
+非公開記録に保存し、推論入力には渡しません。
+
+出力は `sources.jsonl`、`rights.jsonl`、正規化した `images/`、推論用 `images.jsonl`、
+`failures.jsonl`、`selected-ids.json`、`private-metadata.jsonl`、`manifest.json` です。
+manifestには入力ハッシュ、seed、件数、split割り当て、除外検査の範囲を残します。
+準備時刻を記録するため、再実行で同じになるのは選択IDや画像ハッシュであり、
+利用条件台帳のバイト列全体ではありません。`--count` は画像検査前の候補数です。
+画像検査で落ちた候補は理由を保存し、自動補充しません。生成前に採用件数を確認してください。
+**正規化まで行うため、追加の `ingest` は不要です。**
+
+サーバー確認後、`configs/standard.yaml` と、出力先を `synthesize --artifact-root`、
+その中の `images.jsonl` を `--images` に指定して生成できます。
+`data.target_dialogues` は処理する画像数の上限で、合格対話の保証件数ではありません。
+不足する場合は対象IDが重複しない追加バッチと新しいrun IDを用意します。
+現在のstandard設定の生成言語は英語です。pilotからの学習用出力は禁止したままです。
+`export` は画像参照を書き出すだけで画像をコピーしないため、正規化画像と非公開の帰属記録も
+bundleとともに保持してください。
+
+`--workers 4` で最大4画像を並列処理します（既定値1、上限64）。並列化するのは
+画像の読み込み・デコード・回転・色変換・PNG保存です。CSVの抽出と再検査、画像の
+グループ化は直列のままです。出力順序・グループ・画像ハッシュは直列処理と一致します。
+進捗は拒否画像を含む完了件数を数え、先行画像の処理中でも後続画像の完了を反映します。
+並列数を増やすとメモリとストレージ帯域を多く使い、速度は画像と保存先に依存します。
+
+準備・生成ともに標準エラー出力へtqdmのバーを表示します。準備は段階ごとの件数、
+経過時間、処理速度、総数が分かる場合の推定残り時間を表示します。CSVの1回目の走査は
+総数不明、2回目は1回目の行数を総数に使います。行数確認の追加走査はありません。
+完了JSONは標準出力のままです。`> report.json` で結果、`2> progress.log` で進捗を
+保存できます。`--quiet` でバーを非表示にできます。
+
+sRGB変換後の正規化PNGにはEXIFやICCメタデータを引き継がず、生成されたプロファイルの
+時刻情報を除去します。以前に準備した画像は符号化ハッシュが変わる場合があるため、
+新しい準備ディレクトリとrun IDを使用してください。実画像31件のCPU処理を各1回測定した
+結果は1 workerで6.65秒、4 workersで1.87秒で、manifestは一致しました。
+この測定はCSV走査を含まず、反復測定による性能保証ではありません。
