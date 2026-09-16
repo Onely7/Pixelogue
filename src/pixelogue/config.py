@@ -19,8 +19,12 @@ from pydantic import (
 from pixelogue.errors import ConfigurationError
 from pixelogue.serialization import canonical_hash, canonical_json, load_yaml
 
-PRIMARY_GENERATOR_REPOS = ("Qwen/Qwen3.8-27B", "google/gemma-4-31B-it")
+PRIMARY_GENERATOR_REPOS = ("Qwen/Qwen3.8-27B-FP8", "google/gemma-4-31B-it-qat-w4a16-ct")
 PILOT_GENERATOR_REPOS = ("Qwen/Qwen3.5-9B", "Qwen/Qwen3.5-9B")
+ALLOWED_QUANTIZATIONS = {
+    "Qwen/Qwen3.8-27B-FP8": "fp8",
+    "google/gemma-4-31B-it-qat-w4a16-ct": "compressed-tensors",
+}
 
 
 def allocate_quotas(total: int, weights: Mapping[str, int | str]) -> dict[str, int]:
@@ -77,7 +81,7 @@ class ModelEndpoint(StrictModel):
     tensor_parallel_size: Annotated[int, Field(ge=1)] = 1
     gpu_memory_utilization: Annotated[float, Field(gt=0, le=0.95)] = 0.9
     dtype: Literal["bfloat16"] = "bfloat16"
-    quantization: None = None
+    quantization: Literal["fp8", "compressed-tensors"] | None = None
     max_model_len: Annotated[int, Field(ge=4096)] = 32768
     api_key_env: str = "PIXELLOGUE_API_KEY"
 
@@ -93,8 +97,12 @@ class ModelConfig(StrictModel):
     selector: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.5-2B")
     selector_alternative: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.6-35B-A3B")
     active_selector: Literal["default", "alternative"] = "default"
-    generator_a: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.8-27B")
-    generator_b: ModelEndpoint = ModelEndpoint(repo_id="google/gemma-4-31B-it")
+    generator_a: ModelEndpoint = ModelEndpoint(
+        repo_id="Qwen/Qwen3.8-27B-FP8", quantization="fp8"
+    )
+    generator_b: ModelEndpoint = ModelEndpoint(
+        repo_id="google/gemma-4-31B-it-qat-w4a16-ct", quantization="compressed-tensors"
+    )
     generation_allocation: dict[Literal["generator_a", "generator_b"], int] = {
         "generator_a": 1,
         "generator_b": 1,
@@ -111,9 +119,16 @@ class ModelConfig(StrictModel):
         generator_repos = (self.generator_a.repo_id, self.generator_b.repo_id)
         if generator_repos not in {PRIMARY_GENERATOR_REPOS, PILOT_GENERATOR_REPOS}:
             raise ValueError(
-                "generators must use the primary Qwen3.8/Gemma pair or the temporary "
+                "generators must use the primary Qwen3.8-FP8/Gemma-w4a16 pair or the temporary "
                 "Qwen3.5-9B pilot pair"
             )
+        for endpoint in (self.generator_a, self.generator_b):
+            expected_quantization = ALLOWED_QUANTIZATIONS.get(endpoint.repo_id)
+            if endpoint.quantization != expected_quantization:
+                raise ValueError(
+                    f"{endpoint.repo_id} must use its pinned quantization method "
+                    f"({expected_quantization!r}), not {endpoint.quantization!r}"
+                )
         if any(weight <= 0 for weight in self.generation_allocation.values()):
             raise ValueError("generation allocation weights must be positive")
         return self

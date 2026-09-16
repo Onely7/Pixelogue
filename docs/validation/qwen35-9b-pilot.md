@@ -1,6 +1,6 @@
 # Qwen3.5-9B pilot validation
 
-This report records the one-GPU diagnostic run completed on 15 September 2026. The run used `Qwen/Qwen3.5-9B` as a temporary replacement for both generator and evaluator roles. It did not use the intended standard pair, `Qwen/Qwen3.8-27B` and `google/gemma-4-31B-it`, and it does not measure evaluator diversity or production data quality.
+This report records the one-GPU diagnostic run completed on 15 September 2026. The run used `Qwen/Qwen3.5-9B` as a temporary replacement for both generator and evaluator roles. It did not use the intended standard pair, `Qwen/Qwen3.8-27B-FP8` and `google/gemma-4-31B-it-qat-w4a16-ct`, and it does not measure evaluator diversity or production data quality.
 
 ## What was tested
 

@@ -6,10 +6,10 @@ Pixelogue は、指示選択と対話生成を別の役割に分けます。stan
 |---|---|---|
 | 指示選択器 | `Qwen/Qwen3.5-2B` | `http://127.0.0.1:8000/v1` |
 | 明示的に切り替える選択器 | `Qwen/Qwen3.6-35B-A3B` | `http://127.0.0.1:8001/v1` |
-| 生成器・評価器A | `Qwen/Qwen3.8-27B` | `http://127.0.0.1:8002/v1` |
-| 生成器・評価器B | `google/gemma-4-31B-it` | `http://127.0.0.1:8003/v1` |
+| 生成器・評価器A | `Qwen/Qwen3.8-27B-FP8` | `http://127.0.0.1:8002/v1` |
+| 生成器・評価器B | `google/gemma-4-31B-it-qat-w4a16-ct` | `http://127.0.0.1:8003/v1` |
 
-`configs/standard.yaml` では、Qwen3.8-27B と Gemma 4 31B が対話を同数ずつ生成します。割り当てたモデルは、1回だけ許される修復を含め、対話が終わるまで変えません。さらに、すべての対話を両方のモデルが別々に評価します。互いの判定は入力へ含めません。
+`configs/standard.yaml` では、Qwen3.8-27B-FP8 と Gemma 4 31B が対話を同数ずつ生成します。割り当てたモデルは、1回だけ許される修復を含め、対話が終わるまで変えません。さらに、すべての対話を両方のモデルが別々に評価します。互いの判定は入力へ含めません。
 
 `configs/pilot.yaml` は、一時的な検証用の設定です。2つの論理的な役割を、port 8002で動く1つの `Qwen/Qwen3.5-9B` サーバーへ割り当てます。評価要求は別々に送りますが、同じ重みを使うため、確認できるのはパイプラインの接続です。異なるモデルによる評価の多様性は確認できません。
 
@@ -36,14 +36,14 @@ GPU用パッケージがCPU開発環境を暗黙に変えないよう、vLLMは�
 uv sync --project runtime/vllm --locked
 ```
 
-vLLMは0.29.0に固定しています。サーバー設定には、モデルのrevision、BF16、context長、tensor parallel数、GPUメモリ使用率、生成時の既定値を記録しています。量子化は使いません。
+vLLMは0.29.0に固定しています。サーバー設定には、モデルのrevision、dtype(BF16)、context長、tensor parallel数、GPUメモリ使用率、生成時の既定値を記録しています。量子化は生成器ごとに固定されており、`generator-a.yaml`はQwen3.8-27B-FP8向けに`quantization: fp8`を、`generator-b.yaml`はW4A16版Gemma向けに`quantization: compressed-tensors`を指定します。`configs/standard.yaml`も同じ値を反映しており、`ModelConfig.validate_roles`はこれら以外の量子化指定を拒否します。
 
 ## 3. 長時間の GPU 処理を tmux 内で動かす
 
 standard 構成では、次のサーバー設定を使います。
 
 ```text
-runtime/vllm/generator-a.yaml        -> Qwen3.8-27B、port 8002、tensor parallel size 2
+runtime/vllm/generator-a.yaml        -> Qwen3.8-27B-FP8、port 8002、tensor parallel size 2
 runtime/vllm/generator-b.yaml        -> Gemma 4 31B、port 8003、tensor parallel size 2
 runtime/vllm/selector-default.yaml   -> Qwen3.5-2B、port 8000、tensor parallel size 1
 ```

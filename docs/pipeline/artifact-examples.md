@@ -6,7 +6,7 @@ One generated answer passes its rubric, yet the conversation containing it is re
 
 ## How these examples were obtained
 
-The values below came from the temporary BF16 Qwen3.5-9B/Qwen3.5-2B one-GPU pilot run on 15 September 2026. Qwen3.5-9B substitutes for both standard generator and evaluator models in this validation run; these are not Qwen3.8-27B/Gemma 4 31B results. Long hashes preserve the identity chain. The JSON blocks contain the fields needed for each explanation; the complete content-addressed records retain the remaining fields.
+The values below came from the temporary BF16 Qwen3.5-9B/Qwen3.5-2B one-GPU pilot run on 15 September 2026. Qwen3.5-9B substitutes for both standard generator and evaluator models in this validation run; these are not Qwen3.8-27B-FP8/Gemma 4 31B results. Long hashes preserve the identity chain. The JSON blocks contain the fields needed for each explanation; the complete content-addressed records retain the remaining fields.
 
 The images are generated evaluation fixtures. They are safe for pipeline validation and remain ineligible for training export.
 
@@ -218,7 +218,7 @@ The corresponding provenance row remains separate:
   "source_id": "local:example-001",
   "image_id": "image-example-001",
   "visual_group_id": "visual-group-example-001",
-  "generation_model": "Qwen/Qwen3.8-27B",
+  "generation_model": "Qwen/Qwen3.8-27B-FP8",
   "student_processor_lock": {
     "repo_id": "Qwen/Qwen3-VL-8B-Instruct",
     "revision": "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",

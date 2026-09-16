@@ -98,7 +98,7 @@ A high rejection rate can reveal a model or prompt problem, but a rejected recor
 
 ## Which model does what?
 
-The standard configuration uses `Qwen/Qwen3.5-2B` to select an instruction, `Qwen/Qwen3.8-27B` for generator and evaluator role A, and `google/gemma-4-31B-it` for role B. Pixelogue sends the evaluation calls separately and hides each verdict from the other model.
+The standard configuration uses `Qwen/Qwen3.5-2B` to select an instruction, `Qwen/Qwen3.8-27B-FP8` for generator and evaluator role A, and `google/gemma-4-31B-it-qat-w4a16-ct` for role B. Pixelogue sends the evaluation calls separately and hides each verdict from the other model.
 
 The temporary `configs/pilot.yaml` override points roles A and B to one `Qwen/Qwen3.5-9B` endpoint so the current validation run fits on one GPU. It checks the pipeline path without providing two model lineages. Pilot results must state that limitation and must not be presented as results from the standard model pair.
 

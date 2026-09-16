@@ -9,11 +9,11 @@ Pixelogue は、画像に基づく複数往復の質問と回答を作る Python
 - 指示選択器は設定で 1 つだけ有効にします。失敗時に別の選択器へ自動切り替えしません。
 - 質問が2回の独立した画像適合検査を通るまで、回答を生成しません。
 - 回答を見る前に両評価器で公開要求を固定し、有効な要求を 1 件ずつ評価します。
-- 評価器AとBは、互いの判定や生成側の役割を知らずに別々に評価します。standardプロファイルでは、Qwen3.8-27BとGemma 4 31Bという異なるモデル系列を使います。
+- 評価器AとBは、互いの判定や生成側の役割を知らずに別々に評価します。standardプロファイルでは、Qwen3.8-27B-FP8とGemma 4 31B(W4A16 compressed-tensors)という異なるモデル系列を使います。
 - Open Images V7 の validation 画像とその近似画像グループは検証専用です。学習用には出力できません。
 - モデルの要求、応答、revision、processor revision、トークン数を保存します。
 - SQLite の WAL はローカルファイルシステムに置き、整合したバックアップだけを共有領域へコピーします。
-- BF16 を固定し、量子化指定は設定エラーとして拒否します。
+- モデルのdtypeはBF16に固定します。量子化は各生成器に固定されたチェックイン済みの方式(Qwen3.8-27BはFP8、Gemma 4 31BはW4A16 compressed-tensors)だけを許可し、それ以外の値は設定エラーとして拒否します。
 
 ## CPU だけで始める
 
@@ -50,8 +50,8 @@ uv run --locked pytest
 |---|---|
 | 指示選択器 | `Qwen/Qwen3.5-2B` |
 | 設定でのみ切り替える選択器 | `Qwen/Qwen3.6-35B-A3B` |
-| 生成器・評価器 A | [`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B) |
-| 生成器・評価器 B | [`google/gemma-4-31B-it`](https://huggingface.co/google/gemma-4-31B-it) |
+| 生成器・評価器 A | [`Qwen/Qwen3.8-27B-FP8`](https://huggingface.co/Qwen/Qwen3.8-27B-FP8) |
+| 生成器・評価器 B | [`google/gemma-4-31B-it-qat-w4a16-ct`](https://huggingface.co/google/gemma-4-31B-it-qat-w4a16-ct) |
 | 独立した学習側画像プロセッサー | `Qwen/Qwen3-VL-8B-Instruct` |
 
 `configs/pilot.yaml` は、1 GPUで動作を検証するための一時的なプロファイルです。生成器と評価器の2つの論理的な役割を、1つの `Qwen/Qwen3.5-9B` エンドポイントへ割り当てています。この構成ではパイプラインの動作を確認できますが、異なるモデルによる評価の多様性は確認できません。`configs/standard.yaml` で使用する本来のモデルは変更していません。

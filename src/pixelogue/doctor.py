@@ -17,8 +17,8 @@ PARAMETER_COUNTS = {
     "Qwen/Qwen3.5-2B": 2_000_000_000,
     "Qwen/Qwen3.6-35B-A3B": 35_951_822_704,
     "Qwen/Qwen3.5-9B": 9_000_000_000,
-    "Qwen/Qwen3.8-27B": 27_000_000_000,
-    "google/gemma-4-31B-it": 31_000_000_000,
+    "Qwen/Qwen3.8-27B-FP8": 27_000_000_000,
+    "google/gemma-4-31B-it-qat-w4a16-ct": 31_000_000_000,
 }
 
 

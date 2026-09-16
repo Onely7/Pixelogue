@@ -6,7 +6,7 @@
 
 ## 実例を取得した条件
 
-以下の値は、2026年9月15日にBF16のQwen3.5-9BとQwen3.5-2Bで実行した、一時的な1 GPU用pilotから得たものです。この実行では、本来の生成・評価モデル2つの代わりにQwen3.5-9Bを使っているため、Qwen3.8-27BとGemma 4 31Bによる結果ではありません。長いハッシュを残しているのは、生成物同士のつながりを確認できるようにするためです。各JSONには説明に必要な項目だけを載せ、内容ハッシュで保存した完全なレコードには残りの項目も保持しています。
+以下の値は、2026年9月15日にBF16のQwen3.5-9BとQwen3.5-2Bで実行した、一時的な1 GPU用pilotから得たものです。この実行では、本来の生成・評価モデル2つの代わりにQwen3.5-9Bを使っているため、Qwen3.8-27B-FP8とGemma 4 31Bによる結果ではありません。長いハッシュを残しているのは、生成物同士のつながりを確認できるようにするためです。各JSONには説明に必要な項目だけを載せ、内容ハッシュで保存した完全なレコードには残りの項目も保持しています。
 
 使用した画像はプログラムで作った検証用fixtureです。パイプラインの確認には使えますが、学習用には出力できません。
 
@@ -218,7 +218,7 @@ Qwen3.5-2Bは、そのIDを選びました。
   "source_id": "local:example-001",
   "image_id": "image-example-001",
   "visual_group_id": "visual-group-example-001",
-  "generation_model": "Qwen/Qwen3.8-27B",
+  "generation_model": "Qwen/Qwen3.8-27B-FP8",
   "student_processor_lock": {
     "repo_id": "Qwen/Qwen3-VL-8B-Instruct",
     "revision": "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",

@@ -18,9 +18,11 @@ def test_example_profiles_are_valid_and_separate() -> None:
     assert standard.data.target_dialogues == 30_000
     assert pilot.models.active_selector_endpoint.repo_id == "Qwen/Qwen3.5-2B"
     assert (standard.models.generator_a.repo_id, standard.models.generator_b.repo_id) == (
-        "Qwen/Qwen3.8-27B",
-        "google/gemma-4-31B-it",
+        "Qwen/Qwen3.8-27B-FP8",
+        "google/gemma-4-31B-it-qat-w4a16-ct",
     )
+    assert standard.models.generator_a.quantization == "fp8"
+    assert standard.models.generator_b.quantization == "compressed-tensors"
     assert (pilot.models.generator_a.repo_id, pilot.models.generator_b.repo_id) == (
         "Qwen/Qwen3.5-9B",
         "Qwen/Qwen3.5-9B",
@@ -86,8 +88,15 @@ def test_unknown_model_and_quantization_are_rejected() -> None:
 
 def test_generator_pairs_cannot_mix_standard_and_pilot_models() -> None:
     base = load_config(Path("configs/pilot.yaml")).model_dump(mode="json")
-    base["models"]["generator_a"]["repo_id"] = "Qwen/Qwen3.8-27B"
-    with pytest.raises(ValidationError, match="primary Qwen3.8/Gemma pair"):
+    base["models"]["generator_a"]["repo_id"] = "Qwen/Qwen3.8-27B-FP8"
+    with pytest.raises(ValidationError, match="primary Qwen3.8-FP8/Gemma-w4a16 pair"):
+        PixelogueConfig.model_validate(base)
+
+
+def test_generator_quantization_must_match_pinned_method() -> None:
+    base = load_config(Path("configs/standard.yaml")).model_dump(mode="json")
+    base["models"]["generator_a"]["quantization"] = "compressed-tensors"
+    with pytest.raises(ValidationError, match="pinned quantization method"):
         PixelogueConfig.model_validate(base)
 
 

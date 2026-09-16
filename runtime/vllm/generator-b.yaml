@@ -1,8 +1,9 @@
-model: google/gemma-4-31B-it
+model: google/gemma-4-31B-it-qat-w4a16-ct
 revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
 host: 127.0.0.1
 port: 8003
 dtype: bfloat16
+quantization: compressed-tensors
 tensor-parallel-size: 2
 max-model-len: 32768
 generation-config: vllm

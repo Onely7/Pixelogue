@@ -1,6 +1,6 @@
 # Qwen3.5-9B throughput validation
 
-Pixelogue processed the same eight images with one worker and four workers on one GPU. Four-image concurrency reduced the interval from the first saved model response to the last from 745 to 296 seconds, a 2.52× speedup and a 60.3% reduction. This result supports bounded image-level concurrency for the diagnostic pilot. It does not establish performance for the standard Qwen3.8-27B and Gemma 4 31B configuration.
+Pixelogue processed the same eight images with one worker and four workers on one GPU. Four-image concurrency reduced the interval from the first saved model response to the last from 745 to 296 seconds, a 2.52× speedup and a 60.3% reduction. This result supports bounded image-level concurrency for the diagnostic pilot. It does not establish performance for the standard Qwen3.8-27B-FP8 and Gemma 4 31B configuration.
 
 ## Experiment status
 

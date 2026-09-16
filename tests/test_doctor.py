@@ -30,8 +30,8 @@ def _gpus(count: int) -> tuple[GpuDevice, ...]:
 def test_required_servers_receive_distinct_gpus_or_report_shortfall() -> None:
     endpoints = (
         ("selector", _endpoint("Qwen/Qwen3.5-2B", 1), True),
-        ("generator_a", _endpoint("Qwen/Qwen3.8-27B", 2), True),
-        ("generator_b", _endpoint("google/gemma-4-31B-it", 2), True),
+        ("generator_a", _endpoint("Qwen/Qwen3.8-27B-FP8", 2), True),
+        ("generator_b", _endpoint("google/gemma-4-31B-it-qat-w4a16-ct", 2), True),
     )
     enough = _allocate_required_gpus(endpoints, _gpus(5))
     assigned = [gpu for group in enough.values() for gpu in group]

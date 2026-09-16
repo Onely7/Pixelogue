@@ -6,10 +6,10 @@ Pixelogue separates instruction choice from dialogue generation. The standard pr
 |---|---|---|
 | Instruction selector | `Qwen/Qwen3.5-2B` | `http://127.0.0.1:8000/v1` |
 | Optional selector | `Qwen/Qwen3.6-35B-A3B` | `http://127.0.0.1:8001/v1` |
-| Generator and evaluator A | `Qwen/Qwen3.8-27B` | `http://127.0.0.1:8002/v1` |
-| Generator and evaluator B | `google/gemma-4-31B-it` | `http://127.0.0.1:8003/v1` |
+| Generator and evaluator A | `Qwen/Qwen3.8-27B-FP8` | `http://127.0.0.1:8002/v1` |
+| Generator and evaluator B | `google/gemma-4-31B-it-qat-w4a16-ct` | `http://127.0.0.1:8003/v1` |
 
-In `configs/standard.yaml`, Qwen3.8-27B and Gemma 4 31B generate an equal share of conversations. The assigned model remains fixed for the entire conversation, including its one allowed repair. Both models also judge every conversation through separate blind calls.
+In `configs/standard.yaml`, Qwen3.8-27B-FP8 and Gemma 4 31B generate an equal share of conversations. The assigned model remains fixed for the entire conversation, including its one allowed repair. Both models also judge every conversation through separate blind calls.
 
 `configs/pilot.yaml` is a temporary validation override. It maps both logical roles to a shared `Qwen/Qwen3.5-9B` server on port 8002. The calls remain separate and blind, but the shared checkpoint means this profile tests pipeline wiring rather than evaluator-model diversity.
 
@@ -36,14 +36,14 @@ The application and vLLM use different lock files so GPU packages cannot silentl
 uv sync --project runtime/vllm --locked
 ```
 
-The runtime is pinned to vLLM 0.29.0. Server files pin model revisions, BF16, context length, tensor parallelism, memory utilization, and generation defaults. Quantization is not enabled.
+The runtime is pinned to vLLM 0.29.0. Server files pin model revisions, dtype (BF16), context length, tensor parallelism, memory utilization, and generation defaults. Quantization is pinned per generator: `generator-a.yaml` sets `quantization: fp8` for Qwen3.8-27B-FP8, and `generator-b.yaml` sets `quantization: compressed-tensors` for the W4A16 Gemma checkpoint. `configs/standard.yaml` mirrors the same pinned values, and `ModelConfig.validate_roles` rejects any other quantization value for these repositories.
 
 ## 3. Run long GPU work in tmux
 
 The standard servers use these files:
 
 ```text
-runtime/vllm/generator-a.yaml        -> Qwen3.8-27B, port 8002, tensor parallel size 2
+runtime/vllm/generator-a.yaml        -> Qwen3.8-27B-FP8, port 8002, tensor parallel size 2
 runtime/vllm/generator-b.yaml        -> Gemma 4 31B, port 8003, tensor parallel size 2
 runtime/vllm/selector-default.yaml   -> Qwen3.5-2B, port 8000, tensor parallel size 1
 ```
