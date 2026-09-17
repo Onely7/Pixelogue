@@ -142,8 +142,9 @@ items:
 - template_id: C_COVERAGE
   axis: factual_correctness
   applies_when: always
-  input_scope: VISION_IHQA
-  question: Does the claim inventory include all factual content of the candidate answer?
+  input_scope: TEXT_HQA
+  question: Does the supplied claim inventory represent every factual assertion in the answer text,
+    without judging visual truth or requiring a description of additional image objects?
   met_anchor: Every factual assertion, including unsolicited detail, is represented.
   not_met_anchor: Factual content was omitted from verification.
   default_use: gate

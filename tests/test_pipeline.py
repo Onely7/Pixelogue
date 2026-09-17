@@ -11,7 +11,8 @@ from pydantic import BaseModel
 from pixelogue.config import ModelEndpoint, load_config
 from pixelogue.contracts import (
     AtomicClaim,
-    ClaimInventory,
+    ClaimExtraction,
+    ClaimSpan,
     EvidenceInventory,
     GateVerdict,
     InstructionSelection,
@@ -145,15 +146,13 @@ class ScriptedClient:
                 extraction_complete=True,
                 reason="The question has no separate explicit constraints.",
             )
-        elif response_model is ClaimInventory:
+        elif response_model is ClaimExtraction:
             answer = payload["candidate_answer"]
-            value = ClaimInventory(
+            value = ClaimExtraction(
                 claims=(
-                    AtomicClaim(
-                        text=answer,
-                        source_message_id=payload["candidate_answer_message_id"],
-                        start=0,
-                        end=len(answer),
+                    ClaimSpan(
+                        start_token=0,
+                        end_token=len(SynthesisCoordinator._answer_tokens(answer)),
                     ),
                 ),
                 coverage=GateVerdict.MET,
@@ -670,3 +669,103 @@ def test_evidence_identity_is_regenerated_or_fails_closed(
             assert client.attempts == 2
         assert "expected-image" in (client.retry_feedback[1] or "")
         assert "regenerate the complete evidence" in (client.retry_feedback[1] or "")
+
+
+def test_coverage_receives_verified_inventory_and_ids_stay_controller_owned(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    co, store, _, a, b = _coordinator(tmp_path, requirement_text="color")
+    try:
+        conversation = co.synthesize_image(image, root)
+        assert conversation.status == "QUALITY_CANDIDATE"
+        for client in (a, b):
+            for stage, payload in client.calls:
+                if stage == "requirement_extraction":
+                    assert payload["question_message_id"].startswith("m")
+                    assert len(payload["question_message_id"]) < 5
+                if stage == "claim_inventory":
+                    assert "candidate_answer_message_id" not in payload
+                if stage == "rubric_item" and payload["criterion"]["template_id"] == "C_COVERAGE":
+                    assert "image_views" not in payload
+                    assert payload["candidate_claim_inventory"]
+                    for claim in payload["candidate_claim_inventory"]:
+                        assert claim["source_message_id"].startswith(conversation.conversation_id)
+                        assert (
+                            payload["candidate_answer"][claim["start"] : claim["end"]]
+                            == claim["text"]
+                        )
+        for turn in conversation.turns:
+            assert all(r.source_message_id == turn.question.message_id for r in turn.requirements)
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("always_invalid", [False, True])
+def test_invalid_claim_boundaries_are_retried_without_guessing(
+    tmp_path: Path, always_invalid: bool
+) -> None:
+    class InvalidQuoteClient(ScriptedClient):
+        attempts = 0
+
+        def invoke(self, *args: Any, **kwargs: Any) -> ModelResponse:
+            response = super().invoke(*args, **kwargs)
+            self.attempts += 1
+            if always_invalid or self.attempts == 1:
+                value = ClaimExtraction(
+                    claims=(ClaimSpan(start_token=0, end_token=9999),),
+                    coverage=GateVerdict.MET,
+                    reason="Complete",
+                )
+                return ModelResponse(
+                    value=value,
+                    request_hash="1" * 64,
+                    response_hash="2" * 64,
+                    prompt_tokens=1,
+                    completion_tokens=1,
+                )
+            return response
+
+    config = load_config(Path("configs/pilot.yaml"))
+    with RunStore(tmp_path / "runs", "quote", require_local_wal=False) as store:
+        client = InvalidQuoteClient(config.models.generator_a)
+        co = SynthesisCoordinator(config, "quote", store, client, client, client)
+
+        def invoke():
+            return co._invoke(
+                client,
+                "claim_inventory",
+                {"candidate_answer": "Blue."},
+                (),
+                ClaimExtraction,
+                max_tokens=1024,
+                temperature=0.0,
+                seed=1,
+            )
+
+        if always_invalid:
+            with pytest.raises(ExecutionError, match="token boundaries"):
+                invoke()
+        else:
+            assert (
+                co._bind_claim_span(
+                    invoke().claims[0],
+                    PublicMessage(message_id="a", turn_index=1, role="assistant", content="Blue."),
+                ).text
+                == "Blue."
+            )
+        assert client.attempts == 2
+
+
+@pytest.mark.parametrize(
+    "text", ['The cap says "TITANS SWIMWEAR".', "看板には「停止」と書いてあります。", "2"]
+)
+def test_token_boundaries_reconstruct_original_quotes_and_unicode(text: str) -> None:
+    answer = PublicMessage(message_id="actual-answer", turn_index=1, role="assistant", content=text)
+    tokens = SynthesisCoordinator._answer_tokens(text)
+    claim = SynthesisCoordinator._bind_claim_span(
+        ClaimSpan(start_token=0, end_token=len(tokens)), answer
+    )
+    assert claim.text == text
+    assert claim.source_message_id == answer.message_id
+    claim.validate_span(answer)

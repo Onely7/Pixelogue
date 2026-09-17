@@ -224,3 +224,28 @@ Requirement extraction retains introductory scope phrases with their content req
 a different image ID is regenerated within the existing structured-output attempt limit; the ID is
 never silently rewritten. Schema retries enumerate required top-level fields without quoting the
 invalid response. Use a new run ID and output directory when validating these prompt changes.
+
+Extraction validation now happens before downstream grading. Claim models select boundaries in a controller-supplied numbered token table instead of copying
+text, character offsets or source IDs. The controller reconstructs the exact original substring
+and attaches the single answer ID. Requirement extraction uses short local
+message references, mapped back to real public IDs only after source validation. Invalid references
+or altered quotes trigger bounded retries, never fuzzy acceptance. Courtesy prefixes (`Please`,
+`Can you`) and outer sentence punctuation are normalized only after validating the original span;
+negation, scope restrictions and different operations still require agreement.
+
+`C_COVERAGE` receives the validated claim union as `candidate_claim_inventory` and compares it with
+the answer text, without image input or other judges' verdicts. Other criteria cannot receive this
+field. Short direct answers need no extra sentence framing unless explicitly requested.
+
+Set extraction requires every field, including empty arrays. Count mode compares independently
+extracted expected and reported counts per question category rather than requiring answer member
+names. Member mode ignores list order while preserving duplicates and exact member agreement;
+arbitrary synonym matching is not allowed. Unreadable scope is not a zero count. Set checks do not
+replace image-aware factual or completeness judgments. `rating-decisions` private artifacts retain
+full votes and the controller's set/coverage result so an overridden verdict can be diagnosed.
+These protocol changes require a new run ID; do not resume an old run with the new contracts.
+
+Retryable HTTP 429/5xx responses retain up to 4096 characters of response text in private
+`transport-errors` artifacts with model, attempt and request hash, without request headers.
+Claim extraction has a 2048-token response budget; answer generation is instructed to avoid
+unrequested long enumerations. Token limits and bounded retries still apply.

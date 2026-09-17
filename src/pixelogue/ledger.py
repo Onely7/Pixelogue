@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Literal
 
@@ -86,7 +87,7 @@ def reconcile_inventories(
         return None
     normalized: list[tuple[RequirementSpec, ...]] = []
     for inventory in inventories:
-        values = [_normalize_spec(spec, messages) for spec in inventory.requirements]
+        values = [_canonical_spec(spec, messages) for spec in inventory.requirements]
         if any(value is None for value in values):
             return None
         normalized.append(
@@ -150,6 +151,29 @@ def _normalize_spec(
         start = starts[0]
         return spec.model_copy(update={"start": start, "end": start + len(spec.text)})
     return None
+
+
+def _canonical_spec(spec: RequirementSpec, messages: Sequence[object]) -> RequirementSpec | None:
+    """Normalize only verified outer punctuation and a small English courtesy prefix."""
+    value = _normalize_spec(spec, messages)
+    if value is None:
+        return None
+    text = value.text
+    left = len(text) - len(text.lstrip())
+    right = len(text.rstrip(" \t\r\n.,;:?!"))
+    if value.kind == "content":
+        match = re.match(r"(?i)(?:please\s+|can you\s+)", text[left:right])
+        if match:
+            left += match.end()
+    if left >= right:
+        return None
+    return value.model_copy(
+        update={
+            "text": text[left:right],
+            "start": value.start + left,
+            "end": value.start + right,
+        }
+    )
 
 
 class RequirementEvent(StrictModel):

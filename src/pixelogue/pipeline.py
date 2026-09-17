@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -15,7 +16,9 @@ from pixelogue.catalog import load_task_catalog
 from pixelogue.config import ModelEndpoint, PixelogueConfig
 from pixelogue.contracts import (
     AtomicClaim,
+    ClaimExtraction,
     ClaimInventory,
+    ClaimSpan,
     ConversationArtifact,
     EvidenceInventory,
     GateVerdict,
@@ -42,7 +45,12 @@ from pixelogue.evaluation import (
     question_fit_consensus,
     repeated_public_question,
 )
-from pixelogue.ledger import Requirement, RequirementInventory, reconcile_inventories
+from pixelogue.ledger import (
+    Requirement,
+    RequirementInventory,
+    _normalize_spec,
+    reconcile_inventories,
+)
 from pixelogue.planner import allocated_role, instruction_candidates, planned_turn_count
 from pixelogue.prompts import is_private_prompt_echo
 from pixelogue.rules import (
@@ -600,15 +608,21 @@ class SynthesisCoordinator:
         language: str,
         turn_index: int,
     ) -> tuple[GateVerdict, tuple[Requirement, ...]]:
+        messages = (*history, question)
+        references = {f"m{index}": message.message_id for index, message in enumerate(messages)}
+        local_messages = tuple(
+            message.model_copy(update={"message_id": reference})
+            for reference, message in zip(references, messages, strict=True)
+        )
         inventories = [
             self._invoke(
                 client,
                 "requirement_extraction",
                 {
                     "target_language": language,
-                    "public_history": self._history(history),
+                    "public_history": self._history(local_messages[:-1]),
                     "question": question.content,
-                    "question_message_id": question.message_id,
+                    "question_message_id": local_messages[-1].message_id,
                 },
                 (),
                 RequirementInventory,
@@ -618,6 +632,19 @@ class SynthesisCoordinator:
                 bypass_cache=judge_index > 0,
             )
             for judge_index, client in enumerate(self.generators.values())
+        ]
+        inventories = [
+            inventory.model_copy(
+                update={
+                    "requirements": tuple(
+                        spec.model_copy(
+                            update={"source_message_id": references[spec.source_message_id]}
+                        )
+                        for spec in inventory.requirements
+                    )
+                }
+            )
+            for inventory in inventories
         ]
         if not all(item.extraction_complete for item in inventories):
             return GateVerdict.UNKNOWN, ()
@@ -753,17 +780,24 @@ class SynthesisCoordinator:
                     "public_history": self._history(history),
                     "question": question.content,
                     "candidate_answer": answer.content,
-                    "candidate_answer_message_id": answer.message_id,
-                    "image_views": image_views,
+                    "answer_tokens": self._answer_tokens(answer.content),
                 },
-                (model_image,),
-                ClaimInventory,
-                max_tokens=1024,
+                (),
+                ClaimExtraction,
+                max_tokens=2048,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
                 bypass_cache=judge_index > 0,
             )
             for judge_index, client in enumerate(self.generators.values())
+        ]
+        inventories = [
+            ClaimInventory(
+                claims=tuple(self._bind_claim_span(claim, answer) for claim in inventory.claims),
+                coverage=inventory.coverage,
+                reason=inventory.reason,
+            )
+            for inventory in inventories
         ]
         coverage = consensus([inventory.coverage for inventory in inventories])
         claims = self._claim_union(inventories, answer)
@@ -844,6 +878,10 @@ class SynthesisCoordinator:
                         subject,
                         computation.typed_rule_inputs if computation is not None else {},
                     )
+                    if template["template_id"] == "C_COVERAGE":
+                        payload["candidate_claim_inventory"] = [
+                            claim.model_dump(mode="json") for claim in claims
+                        ]
                     votes.append(
                         self._invoke(
                             client,
@@ -868,6 +906,26 @@ class SynthesisCoordinator:
                         verdict = GateVerdict.UNKNOWN
                     elif set_check.verdict == "NOT_MET":
                         verdict = GateVerdict.NOT_MET
+                self.store.write_json_artifact(
+                    "rating-decisions",
+                    {
+                        "conversation_id": conversation_id,
+                        "turn_index": turn_index,
+                        "template_id": template["template_id"],
+                        "subject": subject.model_dump(mode="json") if subject is not None else None,
+                        "votes": [vote.model_dump(mode="json") for vote in votes],
+                        "claim_coverage": coverage.value
+                        if template["template_id"] == "C_COVERAGE"
+                        else None,
+                        "set_check": set_check.model_dump(mode="json")
+                        if template["template_id"] == "C_SET_COMPLETE" and set_check is not None
+                        else None,
+                        "controller_reason": "SET_INVENTORY_UNRESOLVED"
+                        if template["template_id"] == "C_SET_COMPLETE" and set_check is None
+                        else None,
+                        "verdict": verdict.value,
+                    },
+                )
                 if isinstance(subject, AtomicClaim):
                     subject_id = subject.claim_id
                 elif isinstance(subject, Requirement):
@@ -984,6 +1042,29 @@ class SynthesisCoordinator:
         return verify_computation_inventories(inventories)
 
     @staticmethod
+    def _answer_tokens(text: str) -> list[dict[str, Any]]:
+        """Expose stable token boundaries without requiring copied text or character counting."""
+        return [
+            {"index": index, "text": match.group(), "start": match.start(), "end": match.end()}
+            for index, match in enumerate(re.finditer(r"\w+|[^\w\s]", text))
+        ]
+
+    @staticmethod
+    def _bind_claim_span(span: ClaimSpan, answer: PublicMessage) -> AtomicClaim:
+        """Bind validated token boundaries to exact source bytes and a controller-owned ID."""
+        tokens = SynthesisCoordinator._answer_tokens(answer.content)
+        if not 0 <= span.start_token < span.end_token <= len(tokens):
+            raise ExecutionError("EXTRACTION_SOURCE_INVALID", "Claim token boundaries are invalid")
+        start = tokens[span.start_token]["start"]
+        end = tokens[span.end_token - 1]["end"]
+        return AtomicClaim(
+            text=answer.content[start:end],
+            start=start,
+            end=end,
+            source_message_id=answer.message_id,
+        )
+
+    @staticmethod
     def _claim_union(
         inventories: Sequence[ClaimInventory],
         answer: PublicMessage,
@@ -1073,6 +1154,7 @@ class SynthesisCoordinator:
             "MODEL_FINISH_REASON",
             "MODEL_SCHEMA_MISMATCH",
             "EVIDENCE_IMAGE_MISMATCH",
+            "EXTRACTION_SOURCE_INVALID",
         }
         retry_feedback: str | None = None
         for attempt in range(self.config.runtime.structured_output_max_attempts):
@@ -1090,6 +1172,43 @@ class SynthesisCoordinator:
                     raise ExecutionError(
                         "EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image"
                     )
+                if isinstance(response.value, ClaimExtraction):
+                    answer = PublicMessage(
+                        message_id="answer",
+                        turn_index=1,
+                        role="assistant",
+                        content=payload["candidate_answer"],
+                    )
+                    for claim in response.value.claims:
+                        self._bind_claim_span(claim, answer)
+                if isinstance(response.value, RequirementInventory):
+                    messages = [
+                        PublicMessage.model_validate(value) for value in payload["public_history"]
+                    ]
+                    messages.append(
+                        PublicMessage(
+                            message_id=payload["question_message_id"],
+                            turn_index=1,
+                            role="user",
+                            content=payload["question"],
+                        )
+                    )
+                    if any(
+                        _normalize_spec(spec, messages) is None
+                        for spec in response.value.requirements
+                    ):
+                        raise ExecutionError(
+                            "EXTRACTION_SOURCE_INVALID", "Requirement quote or reference is invalid"
+                        )
+                if isinstance(response.value, SetInventory) and response.value.mode == "count":
+                    if any(
+                        item.scope != "all" and item.scope not in payload["question"]
+                        for item in response.value.counts
+                    ):
+                        raise ExecutionError(
+                            "EXTRACTION_SOURCE_INVALID",
+                            "Count scope must quote the question or be all",
+                        )
             except ExecutionError as error:
                 if (
                     error.reason in retryable
@@ -1115,6 +1234,14 @@ class SynthesisCoordinator:
     @staticmethod
     def _structured_retry_feedback(reason: str) -> str:
         """Return bounded correction guidance without copying an invalid model response."""
+        if reason == "EXTRACTION_SOURCE_INVALID":
+            return (
+                "An extracted quote or source reference was invalid. Copy exact substrings "
+                "from the supplied source without changing quotes, punctuation or characters. "
+                "Use only the supplied local message references. Never paraphrase a quoted span. "
+                "For claims select existing answer_tokens indices, with exclusive end_token. "
+                "For count categories copy the category exactly from the question; use all for a single total."
+            )
         if reason == "MODEL_SCHEMA_MISMATCH":
             return (
                 "The previous response failed schema validation. Return one complete JSON object "

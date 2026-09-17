@@ -242,6 +242,21 @@ class ClaimInventory(StrictModel):
     reason: Annotated[str, Field(min_length=1, max_length=240)]
 
 
+class ClaimSpan(StrictModel):
+    """Model-selected boundaries in the controller's answer token table."""
+
+    start_token: Annotated[int, Field(ge=0)]
+    end_token: Annotated[int, Field(gt=0)]
+
+
+class ClaimExtraction(StrictModel):
+    """Model-facing extraction; the controller binds the single source answer."""
+
+    claims: Annotated[tuple[ClaimSpan, ...], Field(max_length=32)]
+    coverage: GateVerdict
+    reason: Annotated[str, Field(min_length=1, max_length=240)]
+
+
 class RubricContext(StrictModel):
     """Controller-owned facts that determine which rubric items apply."""
 

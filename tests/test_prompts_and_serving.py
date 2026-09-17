@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -471,3 +472,44 @@ def test_persistent_disconnect_is_confined_to_images(tmp_path, monkeypatch, imag
             results = list(coordinator.synthesize_batch(jobs, root, max_workers=1))
         assert [result.status for result in results] == ["ERROR", "ERROR"]
         assert calls == 6
+
+
+def test_coverage_requires_its_inventory_and_restricts_it_to_coverage() -> None:
+    payload = {"criterion": {"template_id": "C_COVERAGE"}}
+    with pytest.raises(ExecutionError, match="requires candidate_claim_inventory"):
+        validate_stage_payload("rubric_item", payload)
+    validate_stage_payload("rubric_item", {**payload, "candidate_claim_inventory": []})
+    with pytest.raises(ExecutionError, match="restricted to C_COVERAGE"):
+        validate_stage_payload(
+            "rubric_item", {"criterion": {"template_id": "R_CORE"}, "candidate_claim_inventory": []}
+        )
+
+
+def test_http_500_records_bounded_response_body_without_headers(tmp_path, monkeypatch):
+    monkeypatch.setattr("pixelogue.serving.time.sleep", lambda delay: None)
+    with RunStore(tmp_path, "http500", require_local_wal=False) as store:
+        with httpx.Client(
+            base_url="http://127.0.0.1:8000/v1/",
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(500, text="backend error: " + "x" * 5000)
+            ),
+        ) as http:
+            client = VllmClient(
+                ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
+                RuntimeConfig(),
+                run_id="http500",
+                store=store,
+                client=http,
+            )
+            with pytest.raises(ExecutionError, match="500"):
+                client._request({"model": "test", "messages": []})
+        artifacts = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind='transport-errors'"
+        ).fetchall()
+        assert len(artifacts) == 3
+        for (artifact_hash,) in artifacts:
+            value = json.loads(store.read_artifact(artifact_hash))
+            assert value["status_code"] == 500 and value["truncated"]
+            assert value["response_body"].startswith("backend error:")
+            assert len(value["response_body"]) == 4096
+            assert "headers" not in value

@@ -101,7 +101,7 @@ def test_requirement_inventory_corrects_only_a_unique_quoted_span() -> None:
     message = _Message("q1", "user", "How many squares?")
     requirements = reconcile_inventories((inventory, inventory), (message,), 1)
     assert requirements is not None
-    assert (requirements[0].start, requirements[0].end) == (0, 17)
+    assert (requirements[0].start, requirements[0].end) == (0, 16)
 
     ambiguous = _Message("q1", "user", "How many squares? How many squares?")
     assert reconcile_inventories((inventory, inventory), (ambiguous,), 1) is None
@@ -136,3 +136,42 @@ def test_requirement_extraction_completeness_is_strict_and_answer_independent():
             RequirementInventory.model_validate(
                 {**inventory.model_dump(), "extraction_complete": value}
             )
+
+
+@pytest.mark.parametrize(
+    ("question", "left", "right", "agree"),
+    [
+        ("Can you group the clothes?", "Can you group the clothes?", "group the clothes", True),
+        ("Please count the cups.", "Please count the cups.", "count the cups", True),
+        (
+            "Based only on what is visible, count the cups.",
+            "Based only on what is visible, count the cups",
+            "count the cups",
+            False,
+        ),
+        ("Do not count the cups.", "Do not count the cups", "count the cups", False),
+    ],
+)
+def test_only_courtesy_and_boundary_punctuation_are_normalized(question, left, right, agree):
+    message = _Message("q1", "user", question)
+    inventories = [
+        RequirementInventory(
+            requirements=(
+                RequirementSpec(
+                    kind="content",
+                    text=text,
+                    lifetime="current_turn",
+                    source_message_id="q1",
+                    start=question.index(text),
+                    end=question.index(text) + len(text),
+                ),
+            ),
+            extraction_complete=True,
+            reason="Complete",
+        )
+        for text in (left, right)
+    ]
+    result = reconcile_inventories(inventories, (message,), 1)
+    assert (result is not None) == agree
+    if result:
+        assert question[result[0].start : result[0].end] == result[0].description

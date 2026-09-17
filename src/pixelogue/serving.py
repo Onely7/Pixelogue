@@ -345,6 +345,18 @@ class VllmClient:
             try:
                 response = self.client.post("chat/completions", json=body)
                 if response.status_code == 429 or response.status_code >= 500:
+                    if self.store is not None:
+                        self.store.write_json_artifact(
+                            "transport-errors",
+                            {
+                                "request_hash": canonical_hash(body),
+                                "model_repo": self.endpoint.repo_id,
+                                "attempt": attempt + 1,
+                                "status_code": response.status_code,
+                                "response_body": response.text[:4096],
+                                "truncated": len(response.text) > 4096,
+                            },
+                        )
                     last_error = ExecutionError(
                         "MODEL_TRANSPORT_RETRYABLE",
                         f"Inference server returned {response.status_code}",
