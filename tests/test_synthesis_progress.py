@@ -61,6 +61,10 @@ def test_synthesize_cli_progress_leaves_stdout_json_and_uses_scheduled_total(
 
     def synthesize_batch(self, jobs, artifact_root, *, max_workers):
         for index, job in enumerate(jobs):
+            if index:
+                saved = [json.loads(line) for line in output.read_text().splitlines()]
+                assert len(saved) == index
+                assert saved[0]["conversation_id"] == "conversation-0"
             yield ConversationArtifact(
                 conversation_id=f"conversation-{index}",
                 image=job.image,
