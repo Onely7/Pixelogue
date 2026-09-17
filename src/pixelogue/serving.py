@@ -16,7 +16,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from pixelogue.config import ModelEndpoint, RuntimeConfig
-from pixelogue.contracts import ClaimExtraction
+from pixelogue.contracts import ClaimExtraction, EvidenceInventory
 from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_payload
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
@@ -339,6 +339,11 @@ class VllmClient:
             {"type": "image_url", "image_url": {"url": image.data_uri()}} for image in images
         )
         schema = response_model.model_json_schema()
+        if response_model is EvidenceInventory:
+            image_id = payload.get("image_id")
+            if not isinstance(image_id, str) or not image_id:
+                raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")
+            schema["properties"]["image_id"]["const"] = image_id
         if response_model is ClaimExtraction:
             tokens = payload.get("answer_tokens")
             if not isinstance(tokens, list) or any(

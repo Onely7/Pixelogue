@@ -10,7 +10,7 @@ import pytest
 from pydantic import HttpUrl
 
 from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
-from pixelogue.contracts import ClaimExtraction, RubricVerdict, TextPayload
+from pixelogue.contracts import ClaimExtraction, EvidenceInventory, RubricVerdict, TextPayload
 from pixelogue.errors import ExecutionError
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.profiling import profile_database
@@ -615,3 +615,27 @@ def test_request_images_are_deduplicated_and_restore_exact_envelope(tmp_path):
             assert store.verify()["model_calls"] == 2
         finally:
             client.client.close()
+
+
+def test_evidence_schema_fixes_only_the_requested_image_identity():
+    with httpx.Client(base_url="http://127.0.0.1:8000/v1/") as http:
+        client = VllmClient(
+            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
+            RuntimeConfig(),
+            run_id="evidence-identity",
+            client=http,
+        )
+        for image_id in ("a" * 64, "b" * 64):
+            body = client._build_body(
+                "evidence_extraction",
+                {"image_id": image_id},
+                (),
+                EvidenceInventory,
+                max_tokens=1024,
+                temperature=0.0,
+                seed=1,
+            )
+            schema = body["response_format"]["json_schema"]["schema"]
+            assert schema["properties"]["image_id"]["const"] == image_id
+            assert "const" not in schema["properties"]["capabilities"]
+        assert "const" not in EvidenceInventory.model_json_schema()["properties"]["image_id"]
