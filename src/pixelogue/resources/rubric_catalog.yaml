@@ -89,10 +89,14 @@ items:
   axis: relevance
   applies_when: each_public_requirement
   input_scope: TEXT_HQA
-  question: Does the answer satisfy this one active public requirement?
-  met_anchor: The requirement is satisfied, including a justified limitation/premise correction where
-    relevant.
-  not_met_anchor: An explicit applicable requirement is violated.
+  question: Does the answer text address this active requirement, including the requested operation,
+    target, scope and explicit response constraints, without judging visual factual truth?
+  met_anchor: The answer addresses the requested operation, target and scope and follows explicit
+    response constraints. Visual accuracy and exhaustive visual completeness are evaluated separately;
+    missing image input is not a reason for UNKNOWN here. A relevant limitation or premise correction
+    addresses the request; its factual justification is checked separately.
+  not_met_anchor: The answer omits or changes the requested operation, target or scope, or violates
+    an explicit response constraint evident from the text alone.
   default_use: gate
 - template_id: R_FOCUS
   axis: relevance

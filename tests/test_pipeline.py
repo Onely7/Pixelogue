@@ -201,6 +201,7 @@ def test_structured_retry_receives_bounded_correction_feedback(tmp_path: Path) -
         (
             "The previous response failed schema validation. Return one complete JSON object "
             "with every required field, unique array items, and a short non-empty reason."
+            " Required top-level fields: verdict, reason."
         ),
     ]
 
@@ -621,3 +622,51 @@ def test_incomplete_extraction_abstains_without_generating_answer(
         for client in (generator_a, generator_b)
         for stage, _ in client.calls
     )
+
+
+@pytest.mark.parametrize("always_wrong", [False, True])
+def test_evidence_identity_is_regenerated_or_fails_closed(
+    tmp_path: Path, always_wrong: bool
+) -> None:
+    class WrongImageClient(ScriptedClient):
+        attempts = 0
+
+        def invoke(self, *args: Any, **kwargs: Any) -> ModelResponse:
+            response = super().invoke(*args, **kwargs)
+            self.attempts += 1
+            if always_wrong or self.attempts == 1:
+                return ModelResponse(
+                    value=response.value.model_copy(update={"image_id": "wrong-image"}),
+                    request_hash=response.request_hash,
+                    response_hash=response.response_hash,
+                    prompt_tokens=1,
+                    completion_tokens=1,
+                )
+            return response
+
+    config = load_config(Path("configs/pilot.yaml"))
+    with RunStore(tmp_path / "runs", "identity", require_local_wal=False) as store:
+        client = WrongImageClient(config.models.generator_a)
+        co = SynthesisCoordinator(config, "identity", store, client, client, client)
+
+        def invoke() -> EvidenceInventory:
+            return co._invoke(
+                client,
+                "evidence_extraction",
+                {"image_id": "expected-image"},
+                (),
+                EvidenceInventory,
+                max_tokens=1024,
+                temperature=0.0,
+                seed=1,
+            )
+
+        if always_wrong:
+            with pytest.raises(ExecutionError, match="another image"):
+                invoke()
+            assert client.attempts == config.runtime.structured_output_max_attempts
+        else:
+            assert invoke().image_id == "expected-image"
+            assert client.attempts == 2
+        assert "expected-image" in (client.retry_feedback[1] or "")
+        assert "regenerate the complete evidence" in (client.retry_feedback[1] or "")

@@ -1072,6 +1072,7 @@ class SynthesisCoordinator:
             "MODEL_CONTENT_EMPTY",
             "MODEL_FINISH_REASON",
             "MODEL_SCHEMA_MISMATCH",
+            "EVIDENCE_IMAGE_MISMATCH",
         }
         retry_feedback: str | None = None
         for attempt in range(self.config.runtime.structured_output_max_attempts):
@@ -1082,12 +1083,28 @@ class SynthesisCoordinator:
                 call_kwargs["retry_feedback"] = retry_feedback
             try:
                 response = client.invoke(stage, payload, images, model, **call_kwargs)
+                if (
+                    isinstance(response.value, EvidenceInventory)
+                    and response.value.image_id != payload["image_id"]
+                ):
+                    raise ExecutionError(
+                        "EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image"
+                    )
             except ExecutionError as error:
                 if (
                     error.reason in retryable
                     and attempt + 1 < self.config.runtime.structured_output_max_attempts
                 ):
                     retry_feedback = self._structured_retry_feedback(error.reason)
+                    if error.reason == "MODEL_SCHEMA_MISMATCH":
+                        required = model.model_json_schema().get("required", [])
+                        retry_feedback += " Required top-level fields: " + ", ".join(required) + "."
+                    elif error.reason == "EVIDENCE_IMAGE_MISMATCH":
+                        retry_feedback = (
+                            "The previous response referred to another image. Re-examine only the "
+                            "attached image and regenerate the complete evidence object. "
+                            f"Copy the input image_id exactly: {payload['image_id']}."
+                        )
                     continue
                 raise
             if not isinstance(response.value, model):

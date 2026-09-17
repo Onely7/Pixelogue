@@ -216,3 +216,11 @@ This changes the prompt and response schema: use a new run ID and output directo
 An eight-question check on the standard model pair agreed in all eight cases, including
 three historical failures. This does not measure full-dialogue acceptance or resolve all
 structured-output failures in other stages.
+
+Text-only `R_REQUIREMENT` checks whether an answer addresses the requested operation, target,
+scope and explicit response constraints. It must not judge visual truth or abstain merely because
+no image is supplied. Image-aware factual and exhaustive-set criteria remain required independently.
+Requirement extraction retains introductory scope phrases with their content request. Evidence with
+a different image ID is regenerated within the existing structured-output attempt limit; the ID is
+never silently rewritten. Schema retries enumerate required top-level fields without quoting the
+invalid response. Use a new run ID and output directory when validating these prompt changes.
