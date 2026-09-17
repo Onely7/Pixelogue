@@ -103,6 +103,28 @@ class ModelAdapter:
         return content
 
 
+def read_request_artifact(store: RunStore, artifact_hash: str) -> dict[str, Any]:
+    """Restore the exact request envelope from legacy or deduplicated audit storage."""
+    request = strict_json_object(store.read_artifact(artifact_hash))
+    version = request.pop("archive_format", None)
+    if version is None:
+        return request
+    if version != "image-refs-v1":
+        raise ExecutionError("REQUEST_ARCHIVE_FORMAT", f"Unsupported archive format: {version}")
+    for message in request["request"]["messages"]:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if part.get("type") == "image_url":
+                url = part["image_url"]["url"]
+                if url.startswith("pixelogue-image:"):
+                    part["image_url"]["url"] = store.read_artifact(
+                        url.removeprefix("pixelogue-image:")
+                    ).decode("utf-8")
+    return request
+
+
 class VllmClient:
     """Strict local client for image-capable vLLM chat completions."""
 
@@ -463,7 +485,21 @@ class VllmClient:
         status: Literal["COMPLETE", "INVALID"] = "COMPLETE",
     ) -> None:
         assert self.store is not None
-        request_artifact = self.store.write_artifact("requests", canonical_json(request))
+        archived = json.loads(canonical_json(request))
+        for message in archived["request"].get("messages", []):
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if part.get("type") == "image_url":
+                    url = part["image_url"]["url"]
+                    if url.startswith("data:image/"):
+                        image_hash = self.store.write_artifact(
+                            "request-images", url.encode("utf-8")
+                        )
+                        part["image_url"]["url"] = f"pixelogue-image:{image_hash}"
+                        archived["archive_format"] = "image-refs-v1"
+        request_artifact = self.store.write_artifact("requests", canonical_json(archived))
         response_artifact = self.store.write_artifact("responses", response)
         model_lock_hash = canonical_hash(request["model_lock"])
         call_id = canonical_hash({"run": self.run_id, "stage": stage, "request": request_hash})

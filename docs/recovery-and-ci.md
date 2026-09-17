@@ -70,3 +70,16 @@ No rejected turn is exported. Runtime errors remain errors. Set
 changing settings, including when migrating configurations created before evaluation settings
 were introduced. `rate-existing` rejudges stored Q/A without generating missing turns; an empty
 or one-turn input cannot become a quality candidate.
+
+## Large synthesis runs
+
+Synthesis flushes each completed conversation to JSONL instead of rewriting the entire file.
+The summary is refreshed after the first record, every 100 records, and on exit. Restarting
+rebuilds the output from the run's saved conversation/turn commits; use the same immutable input
+manifest and configuration.
+
+New request artifacts externalize repeated image data URLs into content-addressed
+`request-images` artifacts (`archive_format: image-refs-v1`). The HTTP payload and request hash
+remain unchanged. Use `pixelogue.serving.read_request_artifact(store, artifact_hash)` to restore
+the exact request envelope for auditing; it also reads legacy inline-image requests. Backups
+must include all artifacts, including the referenced images.

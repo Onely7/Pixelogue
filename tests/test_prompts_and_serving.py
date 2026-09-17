@@ -1,3 +1,4 @@
+import hashlib
 import json
 import threading
 import time
@@ -14,7 +15,8 @@ from pixelogue.errors import ExecutionError
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.profiling import profile_database
 from pixelogue.prompts import validate_stage_payload
-from pixelogue.serving import ModelAdapter, VllmClient
+from pixelogue.serialization import canonical_hash
+from pixelogue.serving import ModelAdapter, VllmClient, read_request_artifact
 from pixelogue.store import RunStore
 
 
@@ -554,3 +556,62 @@ def test_claim_schema_bounds_follow_each_answer_without_mutating_contract():
                 temperature=0.0,
                 seed=1,
             )
+
+
+def test_request_images_are_deduplicated_and_restore_exact_envelope(tmp_path):
+    with RunStore(tmp_path, "dedup", require_local_wal=False) as store:
+        client = VllmClient(
+            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="dedup", store=store
+        )
+        uri = "data:image/png;base64," + "A" * 100000
+        envelopes = []
+        try:
+            for number in range(2):
+                envelope = {
+                    "model_lock": {"repo": "test"},
+                    "request": {
+                        "messages": [
+                            {"role": "system", "content": "fixed"},
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": str(number)},
+                                    {"type": "image_url", "image_url": {"url": uri}},
+                                ],
+                            },
+                        ]
+                    },
+                }
+                envelopes.append(envelope)
+                request_hash = canonical_hash(envelope)
+                response = b'{"answer":"ok"}'
+                client._record(
+                    "holistic_review",
+                    envelope,
+                    response,
+                    request_hash,
+                    hashlib.sha256(response).hexdigest(),
+                    1,
+                    1,
+                    1,
+                )
+                assert envelope["request"]["messages"][1]["content"][1]["image_url"]["url"] == uri
+            assert (
+                store.connection.execute(
+                    "SELECT count(*) FROM artifact WHERE kind='request-images'"
+                ).fetchone()[0]
+                == 1
+            )
+            rows = store.connection.execute(
+                "SELECT request_artifact_hash, request_hash FROM model_call ORDER BY rowid"
+            ).fetchall()
+            for row, envelope in zip(rows, envelopes, strict=True):
+                assert len(store.read_artifact(row[0])) < 1000
+                restored = read_request_artifact(store, row[0])
+                assert restored == envelope
+                assert canonical_hash(restored) == row[1]
+            legacy = store.write_json_artifact("requests", envelopes[0])
+            assert read_request_artifact(store, legacy) == envelopes[0]
+            assert store.verify()["model_calls"] == 2
+        finally:
+            client.client.close()
