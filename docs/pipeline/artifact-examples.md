@@ -1,5 +1,7 @@
 # Intermediate and final artifact examples
 
+The decomposed evaluator, planned-length requirement, and historical examples on this page describe `evaluation.mode: detailed`. The current default is `holistic`: two whole-turn reviews with optional retention of accepted prefixes of at least two turns. See the [current workflow](../../README.md).
+
 One generated answer passes its rubric, yet the conversation containing it is rejected. Another conversation reaches `QUALITY_CANDIDATE` but still cannot enter training output. These are different boundaries, and the saved records make the difference visible.
 
 [Previous: select and export](selection-and-export.md) · [Back to contents](README.md) · [Japanese version](artifact-examples_ja.md)

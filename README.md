@@ -7,8 +7,11 @@ The repository implements the pipeline and a diagnostic pilot. It does not conta
 ## Safeguards built into the workflow
 
 - The active instruction selector is configured explicitly. The other selector is never called as an automatic fallback.
-- A question must pass both blind evaluator calls before an answer is generated.
-- Both judges must agree on answer-independent public requirements before generation; every active requirement is then rated separately.
+- The default `evaluation.mode: holistic` generates a question and answer, then obtains one whole-turn review from each judge. Only two MET votes accept a turn; disagreement or uncertainty abstains.
+- Holistic review checks image facts, request fulfillment, history, target language, explicit formats, and safety together. It skips question-fit, requirement/claim/set extraction, per-item grading, and automatic answer repair.
+- Empty text, exact repeated questions, and substantial private-prompt echoes fail controller checks. A requested regrouping can be useful without adding a new fact.
+- With `evaluation.retain_accepted_prefix: true`, a quality stop retains an accepted prefix of at least two turns. Failed tails stay in private `conversation-stops` artifacts, never training output. Operational errors are not converted to accepted conversations.
+- `evaluation.mode: detailed` retains the legacy decomposed evaluator for comparisons and requires completion of the planned conversation. Changing evaluation settings requires a new run ID.
 - Evaluator roles A and B receive separate blind calls. Neither receives the other verdict or the generator role. The standard profile uses Qwen3.8-27B-FP8 and Gemma 4 31B (W4A16 compressed-tensors) as distinct model lineages.
 - Open Images V7 validation images and their visual-copy groups are evaluation-only and cannot be exported for training.
 - Model requests, responses, revisions, processor revisions, and token use are content-addressed.
@@ -30,7 +33,7 @@ uv run --locked pixelogue make-fixtures \
 uv run --locked pytest
 ```
 
-The first command validates the complete configuration and emits the 24-task catalog, 28 rating criteria, exact language quotas, and JSON Schemas. Model weights are not needed for these steps.
+The first command validates the complete configuration and emits the 24-task catalog, 28 legacy detailed rating criteria, the effective evaluation settings, exact language quotas, and JSON Schemas. Model weights are not needed for these steps.
 
 ## Guides
 

@@ -1,5 +1,7 @@
 # Pixelogue pipeline guide
 
+The decomposed evaluator, planned-length requirement, and historical examples on this page describe `evaluation.mode: detailed`. The current default is `holistic`: two whole-turn reviews with optional retention of accepted prefixes of at least two turns. See the [current workflow](../../README.md).
+
 A fluent answer can still name the wrong object, repeat an earlier question, or come from an image that cannot be used for training. Pixelogue treats those as separate problems. It checks the image, builds a conversation one turn at a time, records the evidence behind each decision, and exports only records that pass the later selection and audit steps.
 
 This guide follows one image through that path. Read the pages in order the first time.

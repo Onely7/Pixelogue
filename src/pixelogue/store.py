@@ -140,6 +140,10 @@ class RunStore:
                 status TEXT NOT NULL,
                 UNIQUE(model_lock_hash, stage, request_hash)
             );
+            CREATE TABLE IF NOT EXISTS conversation_commit (
+                conversation_id TEXT PRIMARY KEY,
+                artifact_hash TEXT NOT NULL REFERENCES artifact(artifact_hash)
+            );
             CREATE TABLE IF NOT EXISTS turn_commit (
                 conversation_id TEXT NOT NULL,
                 branch_id TEXT NOT NULL,

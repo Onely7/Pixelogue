@@ -1,5 +1,7 @@
 # 中間生成物と最終出力の実例
 
+このページの分解評価・全予定ターン必須という説明と過去の実行例は、旧 `evaluation.mode: detailed` に対応します。現在の既定は `holistic`（2モデルの総合評価）で、2ターン以上の合格済み部分を保持できます。[現在の手順](../workflow_ja.md)を参照してください。
+
 1つの回答がすべての評価を通っても、その回答を含む対話全体が棄却されることがあります。別の対話は`QUALITY_CANDIDATE` になっても、学習用には出力できません。この違いは、保存されたレコードを見るとはっきりします。
 
 [前へ：選抜して出力する](selection-and-export_ja.md) · [目次へ戻る](README_ja.md) · [English version](artifact-examples.md)

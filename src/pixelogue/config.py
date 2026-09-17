@@ -97,9 +97,7 @@ class ModelConfig(StrictModel):
     selector: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.5-2B")
     selector_alternative: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.6-35B-A3B")
     active_selector: Literal["default", "alternative"] = "default"
-    generator_a: ModelEndpoint = ModelEndpoint(
-        repo_id="Qwen/Qwen3.8-27B-FP8", quantization="fp8"
-    )
+    generator_a: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.8-27B-FP8", quantization="fp8")
     generator_b: ModelEndpoint = ModelEndpoint(
         repo_id="google/gemma-4-31B-it-qat-w4a16-ct", quantization="compressed-tensors"
     )
@@ -243,6 +241,13 @@ class StudentViewConfig(StrictModel):
         return self
 
 
+class EvaluationConfig(StrictModel):
+    """Choose joint review or the legacy decomposed rubric."""
+
+    mode: Literal["holistic", "detailed"] = "holistic"
+    retain_accepted_prefix: bool = True
+
+
 class PixelogueConfig(StrictModel):
     """Complete, immutable configuration for one Pixelogue run."""
 
@@ -254,6 +259,7 @@ class PixelogueConfig(StrictModel):
     storage: StorageConfig = StorageConfig()
     runtime: RuntimeConfig = RuntimeConfig()
     student_view: StudentViewConfig = StudentViewConfig()
+    evaluation: EvaluationConfig = EvaluationConfig()
 
     @model_validator(mode="after")
     def validate_profile(self) -> PixelogueConfig:

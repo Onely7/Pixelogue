@@ -100,6 +100,7 @@ def aggregate_rating(items: Sequence[RubricItem]) -> TurnRating:
     """Aggregate gate criteria while retaining annotations and every axis."""
     catalog = load_rubric_catalog()
     uses = {item["template_id"]: item["default_use"] for item in catalog["items"]}
+    uses["Q_HOLISTIC"] = "gate"
     gates = [item.verdict for item in items if uses[item.template_id] == "gate"]
     if GateVerdict.ERROR in gates:
         aggregate = "ERROR"

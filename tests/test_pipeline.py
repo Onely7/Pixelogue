@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -9,7 +10,7 @@ import pytest
 from pydantic import BaseModel
 
 from pixelogue.catalog import load_rubric_catalog
-from pixelogue.config import ModelEndpoint, load_config
+from pixelogue.config import EvaluationConfig, ModelEndpoint, load_config
 from pixelogue.contracts import (
     AtomicClaim,
     ClaimExtraction,
@@ -26,6 +27,7 @@ from pixelogue.contracts import (
 )
 from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import applicable_rubric_items, has_natural_language_content
+from pixelogue.export import training_record
 from pixelogue.ledger import RequirementInventory, RequirementSpec
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.prompts import STAGE_INSTRUCTIONS
@@ -239,8 +241,12 @@ def _coordinator(
     echo_question_prompt: bool = False,
     echo_answer_prompt: bool = False,
     unknown_capability: bool = False,
+    evaluation_mode: str = "detailed",
 ):
     config = load_config(Path("configs/pilot.yaml"))
+    config = config.model_copy(
+        update={"evaluation": EvaluationConfig.model_validate({"mode": evaluation_mode})}
+    )
     store = RunStore(tmp_path / "runs", "test", require_local_wal=False)
     store.initialize_run("test", config.config_hash, config.profile)
     selector = ScriptedClient(
@@ -900,5 +906,183 @@ def test_set_rating_preserves_failure_without_rescuing_uncertainty(
         )
         assert rating.items[0].verdict == expected
         assert rating.aggregate == aggregate
+    finally:
+        store.close()
+
+
+def test_holistic_uses_only_two_blind_reviews_per_turn(tmp_path, image_artifact):
+    image, root = image_artifact
+    co, store, _, a, b = _coordinator(tmp_path, evaluation_mode="holistic")
+    try:
+        conversation = co.synthesize_image(image, root)
+        assert conversation.status == "QUALITY_CANDIDATE"
+        for client in (a, b):
+            stages = [stage for stage, _ in client.calls]
+            assert stages.count("holistic_review") == len(conversation.turns)
+            assert not set(stages) & {
+                "question_fit",
+                "requirement_extraction",
+                "claim_inventory",
+                "set_inventory",
+                "rubric_item",
+                "answer_repair",
+            }
+            for stage, payload in client.calls:
+                if stage == "holistic_review":
+                    assert set(payload) == {
+                        "target_language",
+                        "public_history",
+                        "question",
+                        "candidate_answer",
+                        "image_views",
+                    }
+        assert all(not turn.requirements for turn in conversation.turns)
+        assert all(turn.rating.items[0].template_id == "Q_HOLISTIC" for turn in conversation.turns)
+        calls = len(a.calls) + len(b.calls)
+        assert co.synthesize_image(image, root) == conversation
+        assert len(a.calls) + len(b.calls) == calls
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    ("votes", "expected"),
+    [
+        (("NOT_MET", "NOT_MET"), "REJECTED"),
+        (("MET", "NOT_MET"), "ABSTAINED"),
+        (("UNKNOWN", "MET"), "ABSTAINED"),
+    ],
+)
+@pytest.mark.parametrize("passing_turns", [0, 1, 2])
+def test_holistic_stop_retains_only_two_or_more_accepted_turns(
+    tmp_path, image_artifact, monkeypatch, votes, expected, passing_turns
+):
+    image, root = image_artifact
+    co, store, _, a, b = _coordinator(tmp_path, evaluation_mode="holistic")
+    monkeypatch.setattr("pixelogue.pipeline.planned_turn_count", lambda *args: 4)
+    for client, vote in zip((a, b), votes, strict=True):
+        original = client.invoke
+
+        def invoke(stage, payload, *args, _original=original, _vote=vote, **kwargs):
+            response = _original(stage, payload, *args, **kwargs)
+            if stage == "holistic_review" and len(payload["public_history"]) >= 2 * passing_turns:
+                return ModelResponse(
+                    value=RubricVerdict(verdict=_vote, reason="Observed defect or uncertainty."),
+                    request_hash=response.request_hash,
+                    response_hash=response.response_hash,
+                    prompt_tokens=1,
+                    completion_tokens=1,
+                )
+            return response
+
+        monkeypatch.setattr(client, "invoke", invoke)
+    try:
+        conversation = co.synthesize_image(image, root)
+        if passing_turns >= 2:
+            assert conversation.status == "QUALITY_CANDIDATE"
+            assert len(conversation.turns) == passing_turns
+            assert all(t.status == "COMMITTED" for t in conversation.turns)
+            rows = store.connection.execute(
+                "SELECT artifact_hash FROM artifact WHERE kind='conversation-stops'"
+            ).fetchall()
+            assert len(rows) == 1
+
+            stopped = json.loads(store.read_artifact(rows[0][0]))
+            assert stopped["conversation"]["status"] == expected
+            assert len(stopped["conversation"]["turns"]) == passing_turns + 1
+        else:
+            assert conversation.status == expected
+        assert co.synthesize_image(image, root) == conversation
+        assert not any(stage == "answer_repair" for client in (a, b) for stage, _ in client.calls)
+    finally:
+        store.close()
+
+
+def test_holistic_prefix_retention_can_be_disabled(tmp_path, image_artifact, monkeypatch):
+    image, root = image_artifact
+    co, store, _, _, _ = _coordinator(tmp_path, evaluation_mode="holistic")
+    co.config = co.config.model_copy(
+        update={"evaluation": EvaluationConfig(mode="holistic", retain_accepted_prefix=False)}
+    )
+    monkeypatch.setattr("pixelogue.pipeline.planned_turn_count", lambda *args: 3)
+    original = co._select_instruction
+    monkeypatch.setattr(
+        co, "_select_instruction", lambda *args: None if args[-1] == 3 else original(*args)
+    )
+    try:
+        conversation = co.synthesize_image(image, root)
+        assert len(conversation.turns) == 2
+        assert conversation.status == "REJECTED"
+    finally:
+        store.close()
+
+
+def test_holistic_rerating_rejects_empty_conversation(tmp_path, image_artifact):
+    image, root = image_artifact
+    co, store, _, _, _ = _coordinator(tmp_path, reject_selection=True, evaluation_mode="holistic")
+    try:
+        conversation = co.synthesize_image(image, root)
+        assert not conversation.turns
+        assert co.rate_existing(conversation, root).status == "REJECTED"
+    finally:
+        store.close()
+
+
+def test_holistic_prefix_survives_reopening_and_exports_only_committed_turns(
+    tmp_path, image_artifact, monkeypatch
+):
+    image, root = image_artifact
+    co, store, _, a, b = _coordinator(tmp_path, evaluation_mode="holistic")
+    monkeypatch.setattr("pixelogue.pipeline.planned_turn_count", lambda *args: 4)
+    original = co._select_instruction
+    monkeypatch.setattr(
+        co, "_select_instruction", lambda *args: None if args[-1] == 3 else original(*args)
+    )
+    accepted = co.synthesize_image(image, root)
+    assert accepted.status == "QUALITY_CANDIDATE" and len(accepted.turns) == 2
+    store.close()
+    with RunStore(tmp_path / "runs", "test", require_local_wal=False) as reopened:
+        reopened.initialize_run("test", co.config.config_hash, co.config.profile)
+        resumed = SynthesisCoordinator(co.config, "test", reopened, co.selector, a, b)
+        calls = len(a.calls) + len(b.calls)
+        assert resumed.synthesize_image(image, root) == accepted
+        assert len(a.calls) + len(b.calls) == calls
+        changed = image.model_copy(update={"source_id": "different-source"})
+        with pytest.raises(ExecutionError, match="conflicts with the current input"):
+            resumed.synthesize_image(changed, root)
+        record = training_record(accepted)
+        assert len(record.messages) == 4
+        assert record.messages[-1].content[0].text == accepted.turns[-1].answer.content
+
+
+def test_holistic_rerating_uses_new_votes_and_preserves_failed_tail_privately(
+    tmp_path, image_artifact, monkeypatch
+):
+    image, root = image_artifact
+    co, store, _, a, b = _coordinator(tmp_path, evaluation_mode="holistic")
+    monkeypatch.setattr("pixelogue.pipeline.planned_turn_count", lambda *args: 4)
+    try:
+        original = co.synthesize_image(image, root)
+        for client in (a, b):
+            invoke_original = client.invoke
+
+            def invoke(stage, payload, *args, _original=invoke_original, **kwargs):
+                result = _original(stage, payload, *args, **kwargs)
+                if stage == "holistic_review" and len(payload["public_history"]) == 4:
+                    return ModelResponse(
+                        value=RubricVerdict(verdict="NOT_MET", reason="Wrong visible fact."),
+                        request_hash=result.request_hash,
+                        response_hash=result.response_hash,
+                        prompt_tokens=1,
+                        completion_tokens=1,
+                    )
+                return result
+
+            monkeypatch.setattr(client, "invoke", invoke)
+        rated = co.rate_existing(original, root)
+        assert rated.status == "QUALITY_CANDIDATE"
+        assert len(rated.turns) == 2
+        assert rated.public_messages == original.public_messages[:4]
+        assert all(t.rating.items[0].template_id == "Q_HOLISTIC" for t in rated.turns)
     finally:
         store.close()
