@@ -82,8 +82,12 @@ items:
   applies_when: always
   input_scope: TEXT_HQA
   question: Does the answer perform the operation actually requested, considering history?
-  met_anchor: The requested operation is addressed.
-  not_met_anchor: The answer evades or performs a different operation.
+  met_anchor: The requested operation is addressed semantically. Copied text alone is a transcription;
+    yes/no answers and naming the chosen alternative satisfy their respective questions. Grouping
+    can be expressed in prose by associating objects with categories; no special layout is required
+    unless requested. Factual truth and visual completeness are checked separately.
+  not_met_anchor: The answer evades or performs a different operation. For grouping, objects listed
+    without their category associations do not suffice; prose with those associations does suffice.
   default_use: gate
 - template_id: R_REQUIREMENT
   axis: relevance
@@ -94,7 +98,9 @@ items:
   met_anchor: The answer addresses the requested operation, target and scope and follows explicit
     response constraints. Visual accuracy and exhaustive visual completeness are evaluated separately;
     missing image input is not a reason for UNKNOWN here. A relevant limitation or premise correction
-    addresses the request; its factual justification is checked separately.
+    addresses the request; its factual justification is checked separately. Copied text alone,
+    yes/no short answers, chosen alternatives, and prose associating objects with categories are
+    valid responses to the corresponding requests unless an explicit format constraint says otherwise.
   not_met_anchor: The answer omits or changes the requested operation, target or scope, or violates
     an explicit response constraint evident from the text alone.
   default_use: gate
@@ -283,7 +289,8 @@ items:
     number of turns?
   met_anchor: It acquires a new fact, uses prior information, updates a condition, restructures requested
     output, or explicitly verifies/clarifies a prior result. Clear topic changes within the image are
-    allowed.
+    allowed. A requested regrouping of already known facts counts as restructuring even in prose;
+    it need not introduce a new visual fact or use a list or table.
   not_met_anchor: An unchanged question and answer are repeated with no public request to verify, clarify,
     or reformulate; or the referent/topic shifts without an understandable transition.
   default_use: gate

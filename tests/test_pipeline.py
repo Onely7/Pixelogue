@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from pixelogue.catalog import load_rubric_catalog
 from pixelogue.config import ModelEndpoint, load_config
 from pixelogue.contracts import (
     AtomicClaim,
@@ -15,6 +16,7 @@ from pixelogue.contracts import (
     ClaimSpan,
     EvidenceInventory,
     GateVerdict,
+    InstructionCandidate,
     InstructionSelection,
     PublicMessage,
     QuestionFit,
@@ -27,7 +29,7 @@ from pixelogue.evaluation import applicable_rubric_items, has_natural_language_c
 from pixelogue.ledger import RequirementInventory, RequirementSpec
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.prompts import STAGE_INSTRUCTIONS
-from pixelogue.rules import CountGroup, SetInventory, verify_set_inventories
+from pixelogue.rules import CountGroup, SetCheck, SetInventory, verify_set_inventories
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
 
@@ -823,3 +825,80 @@ def test_visible_categories_need_not_be_literal_question_substrings(
             update={"counts": (CountGroup(scope=category, expected=3, reported=3),)}
         )
         assert verify_set_inventories((result, other)) is None
+
+
+@pytest.mark.parametrize(
+    ("votes", "set_verdict", "expected", "aggregate"),
+    [
+        (("NOT_MET", "NOT_MET"), None, "NOT_MET", "FAIL"),
+        (("MET", "MET"), None, "UNKNOWN", "ABSTAIN"),
+        (("MET", "NOT_MET"), None, "UNKNOWN", "ABSTAIN"),
+        (("UNKNOWN", "UNKNOWN"), None, "UNKNOWN", "ABSTAIN"),
+        (("NOT_MET", "NOT_MET"), "MET", "NOT_MET", "FAIL"),
+        (("MET", "MET"), "MET", "MET", "PASS"),
+        (("MET", "NOT_MET"), "MET", "UNKNOWN", "ABSTAIN"),
+        (("UNKNOWN", "UNKNOWN"), "MET", "UNKNOWN", "ABSTAIN"),
+        (("NOT_MET", "NOT_MET"), "NOT_MET", "NOT_MET", "FAIL"),
+        (("MET", "MET"), "NOT_MET", "NOT_MET", "FAIL"),
+        (("MET", "NOT_MET"), "NOT_MET", "NOT_MET", "FAIL"),
+        (("UNKNOWN", "UNKNOWN"), "NOT_MET", "NOT_MET", "FAIL"),
+    ],
+)
+def test_set_rating_preserves_failure_without_rescuing_uncertainty(
+    tmp_path, image_artifact, monkeypatch, votes, set_verdict, expected, aggregate
+):
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    template = next(
+        t for t in load_rubric_catalog()["items"] if t["template_id"] == "C_SET_COMPLETE"
+    )
+    monkeypatch.setattr("pixelogue.pipeline.applicable_rubric_items", lambda context: [template])
+    check = (
+        None
+        if set_verdict is None
+        else SetCheck(verdict=set_verdict, missing=(), unexpected=(), duplicates=())
+    )
+    monkeypatch.setattr(coordinator, "_check_complete_set", lambda *args: check)
+    remaining_votes = iter(votes)
+
+    def invoke(client, stage, *args, **kwargs):
+        if stage == "claim_inventory":
+            return ClaimExtraction(
+                claims=(ClaimSpan(start_token=0, end_token=1),),
+                coverage=GateVerdict.MET,
+                reason="The numeric answer is covered.",
+            )
+        assert stage == "rubric_item"
+        return RubricVerdict(verdict=next(remaining_votes), reason="Independent semantic vote.")
+
+    monkeypatch.setattr(coordinator, "_invoke", invoke)
+    try:
+        rating = coordinator._rate_turn(
+            "test-conversation",
+            "1" * 64,
+            (),
+            PublicMessage(message_id="q", turn_index=1, role="user", content="How many cords?"),
+            PublicMessage(message_id="a", turn_index=1, role="assistant", content="2"),
+            InstructionCandidate(
+                candidate_id="count",
+                task_id="count",
+                family="visible_count",
+                visible_scope="cords",
+                instruction_summary="Count cords.",
+                required_capabilities=(),
+            ),
+            "en",
+            [],
+            ModelImage(
+                view_id=image.full_view.view_id,
+                path=root / image.full_view.relative_path,
+                encoded_sha256=image.full_view.encoded_sha256,
+                media_type=image.full_view.media_type,
+            ),
+            1,
+            (),
+        )
+        assert rating.items[0].verdict == expected
+        assert rating.aggregate == aggregate
+    finally:
+        store.close()

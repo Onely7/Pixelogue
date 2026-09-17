@@ -148,6 +148,20 @@ question: 'STOP' for 'What word is on the sign?', '2' for 'How many?', or a name
 Do not demand a full sentence, restatement or conversational framing unless explicitly requested.
 No repetition means redundancy is absent; repeated grammatical patterns for distinct requested
 items are not unnecessary repetition. This does not waive explicit format requirements or truth.
+For R_CORE and R_REQUIREMENT, assess the meaning of the response, not an unstated presentation
+format. A transcription consists of the copied text itself: 'STOP' fulfills 'Transcribe the main
+word on the sign'. 'No' fulfills 'Is there any other text?' at the textual-compliance level.
+Naming one of the offered alternatives answers 'Which is closer, X or Y?'; no repeated comparison
+sentence is needed. Image-aware criteria still check whether these answers are true.
+For grouping, an explicit association between categories and objects is sufficient in prose:
+'The butterfly is black and white, while the flower is red' supplies color groups. 'The jacket and
+hat are dark; the pants are light' also groups items. Do not require headings, bullets, a table,
+or the word 'group' unless the user requests that format. A bare list of objects without category
+associations does NOT satisfy grouping; a mere color list does not identify which objects belong.
+For H_TURN_PROGRESS, reorganizing existing facts into a newly requested grouping is useful progress;
+new visual facts are not required. Unrequested unchanged repetition can still fail.
+Before returning NOT_MET for these criteria, identify the specific unmet request or explicit
+constraint. Do not negate a response merely because it consists of the requested result itself.
 For C_COVERAGE compare candidate_answer with candidate_claim_inventory ONLY. Check that every
 factual assertion in the answer is represented by the supplied spans, including unsolicited detail.
 Do not judge whether the image has additional objects, whether the answer is true, or whether it

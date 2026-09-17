@@ -903,7 +903,9 @@ class SynthesisCoordinator:
                         verdict = GateVerdict(computation.verdict)
                 elif template["template_id"] == "C_SET_COMPLETE":
                     if set_check is None:
-                        verdict = GateVerdict.UNKNOWN
+                        # Missing corroboration blocks a pass, not an agreed failure.
+                        if verdict == GateVerdict.MET:
+                            verdict = GateVerdict.UNKNOWN
                     elif set_check.verdict == "NOT_MET":
                         verdict = GateVerdict.NOT_MET
                 self.store.write_json_artifact(
