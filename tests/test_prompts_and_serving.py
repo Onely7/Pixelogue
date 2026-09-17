@@ -10,7 +10,7 @@ from pydantic import HttpUrl
 from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
 from pixelogue.contracts import RubricVerdict, TextPayload
 from pixelogue.errors import ExecutionError
-from pixelogue.pipeline import SynthesisCoordinator
+from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.profiling import profile_database
 from pixelogue.prompts import validate_stage_payload
 from pixelogue.serving import ModelAdapter, VllmClient
@@ -364,3 +364,110 @@ def test_malformed_json_uses_bounded_structured_retries(tmp_path, recovers):
         assert store.connection.execute(
             "SELECT COUNT(*) FROM model_call WHERE status='INVALID'"
         ).fetchone()[0] == (1 if recovers else 2)
+
+
+@pytest.mark.parametrize("recovers", [True, False])
+def test_server_disconnect_retries_and_releases_budget(tmp_path, monkeypatch, recovers):
+    calls = 0
+    delays = []
+    monkeypatch.setattr("pixelogue.serving.time.sleep", delays.append)
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if not recovers or calls < 3:
+            raise httpx.RemoteProtocolError(
+                "Server disconnected without sending a response.", request=request
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": '{"verdict":"MET","reason":"Supported."}'},
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            },
+        )
+
+    with RunStore(tmp_path, "disconnect", require_local_wal=False) as store:
+        store.initialize_run("disconnect", "a" * 64, "pilot")
+        with httpx.Client(
+            base_url="http://127.0.0.1:8000/v1/", transport=httpx.MockTransport(handler)
+        ) as http:
+            client = VllmClient(
+                ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
+                RuntimeConfig(),
+                run_id="disconnect",
+                store=store,
+                client=http,
+            )
+            if recovers:
+                response = client.invoke(
+                    "rubric_item",
+                    _rubric_payload(),
+                    (),
+                    RubricVerdict,
+                    max_tokens=32,
+                    temperature=0.0,
+                    seed=1,
+                )
+                assert isinstance(response.value, RubricVerdict)
+                assert response.value.verdict == "MET"
+            else:
+                with pytest.raises(ExecutionError) as caught:
+                    client.invoke(
+                        "rubric_item",
+                        _rubric_payload(),
+                        (),
+                        RubricVerdict,
+                        max_tokens=32,
+                        temperature=0.0,
+                        seed=1,
+                    )
+                assert caught.value.reason == "MODEL_TRANSPORT_FAILED"
+                assert isinstance(caught.value.__cause__, httpx.RemoteProtocolError)
+        assert calls == 3
+        assert delays == [1, 2]
+        assert (
+            store.connection.execute("SELECT reserved_output_tokens FROM budget").fetchone()[0] == 0
+        )
+
+
+def test_persistent_disconnect_is_confined_to_images(tmp_path, monkeypatch, image_artifact):
+    image, root = image_artifact
+    monkeypatch.setattr("pixelogue.serving.time.sleep", lambda delay: None)
+    config = load_config(Path("configs/pilot.yaml"))
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        raise httpx.RemoteProtocolError("Server disconnected", request=request)
+
+    with RunStore(tmp_path / "runs", "disconnect", require_local_wal=False) as store:
+        store.initialize_run("disconnect", config.config_hash, config.profile)
+        with httpx.Client(
+            base_url="http://127.0.0.1:8000/v1/", transport=httpx.MockTransport(handler)
+        ) as http:
+            client = VllmClient(
+                config.models.generator_a,
+                config.runtime,
+                run_id="disconnect",
+                store=store,
+                client=http,
+            )
+            coordinator = SynthesisCoordinator(config, "disconnect", store, client, client, client)
+            jobs = [
+                SynthesisJob(
+                    image=image.model_copy(update={"image_id": f"{i:064x}"}),
+                    target_language="en",
+                    generator_role="generator_a",
+                )
+                for i in range(2)
+            ]
+            results = list(coordinator.synthesize_batch(jobs, root, max_workers=1))
+        assert [result.status for result in results] == ["ERROR", "ERROR"]
+        assert calls == 6

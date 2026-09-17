@@ -352,7 +352,7 @@ class VllmClient:
                 else:
                     response.raise_for_status()
                     return response
-            except (httpx.TimeoutException, httpx.NetworkError) as error:
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as error:
                 last_error = error
             except httpx.HTTPStatusError as error:
                 raise ExecutionError("MODEL_REQUEST_REJECTED", str(error)) from error
