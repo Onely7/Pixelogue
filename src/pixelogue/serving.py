@@ -16,6 +16,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from pixelogue.config import ModelEndpoint, RuntimeConfig
+from pixelogue.contracts import ClaimExtraction
 from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_payload
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
@@ -315,6 +316,22 @@ class VllmClient:
         user_content.extend(
             {"type": "image_url", "image_url": {"url": image.data_uri()}} for image in images
         )
+        schema = response_model.model_json_schema()
+        if response_model is ClaimExtraction:
+            tokens = payload.get("answer_tokens")
+            if not isinstance(tokens, list) or any(
+                not isinstance(token, dict) or token.get("index") != index
+                for index, token in enumerate(tokens)
+            ):
+                raise ExecutionError(
+                    "MODEL_PAYLOAD_FIELD", "Claim extraction requires indexed answer_tokens"
+                )
+            count = len(tokens)
+            properties = schema["$defs"]["ClaimSpan"]["properties"]
+            properties["start_token"]["maximum"] = max(0, count - 1)
+            properties["end_token"]["maximum"] = max(1, count)
+            if count == 0:
+                schema["properties"]["claims"]["maxItems"] = 0
         body: dict[str, Any] = {
             "model": self.endpoint.model_name,
             "messages": [
@@ -332,7 +349,7 @@ class VllmClient:
                 "json_schema": {
                     "name": response_model.__name__,
                     "strict": True,
-                    "schema": response_model.model_json_schema(),
+                    "schema": schema,
                 },
             },
         }

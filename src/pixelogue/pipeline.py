@@ -1200,15 +1200,6 @@ class SynthesisCoordinator:
                         raise ExecutionError(
                             "EXTRACTION_SOURCE_INVALID", "Requirement quote or reference is invalid"
                         )
-                if isinstance(response.value, SetInventory) and response.value.mode == "count":
-                    if any(
-                        item.scope != "all" and item.scope not in payload["question"]
-                        for item in response.value.counts
-                    ):
-                        raise ExecutionError(
-                            "EXTRACTION_SOURCE_INVALID",
-                            "Count scope must quote the question or be all",
-                        )
             except ExecutionError as error:
                 if (
                     error.reason in retryable
@@ -1240,7 +1231,7 @@ class SynthesisCoordinator:
                 "from the supplied source without changing quotes, punctuation or characters. "
                 "Use only the supplied local message references. Never paraphrase a quoted span. "
                 "For claims select existing answer_tokens indices, with exclusive end_token. "
-                "For count categories copy the category exactly from the question; use all for a single total."
+                "For counts use categories grounded in the requested grouping and visible evidence."
             )
         if reason == "MODEL_SCHEMA_MISMATCH":
             return (

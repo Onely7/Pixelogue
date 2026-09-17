@@ -249,3 +249,10 @@ Retryable HTTP 429/5xx responses retain up to 4096 characters of response text i
 `transport-errors` artifacts with model, attempt and request hash, without request headers.
 Claim extraction has a 2048-token response budget; answer generation is instructed to avoid
 unrequested long enumerations. Token limits and bounded retries still apply.
+
+Count categories need not be literal question substrings: open-ended color grouping and per-ring
+counts may introduce visible labels such as `white` or `innermost ring`. Explicit category wording
+is reused when available; grouping must still follow the request, and independent inventories and
+image-aware checks must agree. Token-boundary extraction now sends answer-specific JSON Schema
+maximums (`start_token < token_count`, `end_token <= token_count`); an empty token table permits
+only an empty claim list. Post-generation validation still enforces ordered, nonempty spans.

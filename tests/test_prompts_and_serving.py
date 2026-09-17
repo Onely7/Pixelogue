@@ -9,7 +9,7 @@ import pytest
 from pydantic import HttpUrl
 
 from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
-from pixelogue.contracts import RubricVerdict, TextPayload
+from pixelogue.contracts import ClaimExtraction, RubricVerdict, TextPayload
 from pixelogue.errors import ExecutionError
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.profiling import profile_database
@@ -513,3 +513,44 @@ def test_http_500_records_bounded_response_body_without_headers(tmp_path, monkey
             assert value["response_body"].startswith("backend error:")
             assert len(value["response_body"]) == 4096
             assert "headers" not in value
+
+
+def test_claim_schema_bounds_follow_each_answer_without_mutating_contract():
+    with httpx.Client(base_url="http://127.0.0.1:8000/v1/") as http:
+        client = VllmClient(
+            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="bounds", client=http
+        )
+        for text in ("The cap says TITANS.", "2", ""):
+            tokens = SynthesisCoordinator._answer_tokens(text)
+            body = client._build_body(
+                "claim_inventory",
+                {"candidate_answer": text, "answer_tokens": tokens},
+                (),
+                ClaimExtraction,
+                max_tokens=2048,
+                temperature=0.0,
+                seed=1,
+            )
+            schema = body["response_format"]["json_schema"]["schema"]
+            bounds = schema["$defs"]["ClaimSpan"]["properties"]
+            assert bounds["start_token"]["minimum"] == 0
+            assert bounds["start_token"]["maximum"] == max(0, len(tokens) - 1)
+            assert bounds["end_token"]["maximum"] == max(1, len(tokens))
+            if not tokens:
+                assert schema["properties"]["claims"]["maxItems"] == 0
+        assert (
+            "maximum"
+            not in ClaimExtraction.model_json_schema()["$defs"]["ClaimSpan"]["properties"][
+                "end_token"
+            ]
+        )
+        with pytest.raises(ExecutionError, match="indexed answer_tokens"):
+            client._build_body(
+                "claim_inventory",
+                {"answer_tokens": [{"index": 10}]},
+                (),
+                ClaimExtraction,
+                max_tokens=2048,
+                temperature=0.0,
+                seed=1,
+            )

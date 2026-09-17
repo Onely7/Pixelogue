@@ -124,7 +124,12 @@ Every field is mandatory: coverage, mode, counts, expected_members, reported_mem
 empty_scope_is_explicit, reason. Never omit arrays; use [] only when the selected mode requires it.
 For a numeric answer to a counting question (including counts per category), use mode=count:
 counts contains one {scope, expected, reported} per requested category. Use scope='all' for a single
-total; for multiple categories copy each category exactly from the question (e.g. 'white', 'silver').
+total. For explicitly named categories reuse the question's wording. For open-ended grouping
+(e.g. 'group by color'), derive concise category names from visible evidence, even when these words
+are absent from the question (e.g. 'white', 'black'). For 'each ring', names such as 'innermost ring'
+and 'outermost ring' are valid. Category names must represent the requested grouping, not arbitrary
+new attributes. Include all requested categories and all visible groups within the question's scope.
+Never invent categories merely to fit the answer; uncertainty about groups requires UNKNOWN.
 Count expected directly from the image, independently of the candidate's reported number.
 Do not infer expected from reported. Do not require a numeric answer to enumerate object names.
 In count mode both member arrays are [] and empty_scope_is_explicit=false. Zero is a verified count,

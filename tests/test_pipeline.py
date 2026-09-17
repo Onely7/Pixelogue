@@ -27,6 +27,7 @@ from pixelogue.evaluation import applicable_rubric_items, has_natural_language_c
 from pixelogue.ledger import RequirementInventory, RequirementSpec
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.prompts import STAGE_INSTRUCTIONS
+from pixelogue.rules import CountGroup, SetInventory, verify_set_inventories
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
 
@@ -769,3 +770,56 @@ def test_token_boundaries_reconstruct_original_quotes_and_unicode(text: str) -> 
     assert claim.text == text
     assert claim.source_message_id == answer.message_id
     claim.validate_span(answer)
+
+
+@pytest.mark.parametrize(
+    ("question", "category"),
+    [
+        ("How many signs are there, and can you group them by color?", "white"),
+        ("How many lights are attached to each of the concentric rings?", "innermost ring"),
+    ],
+)
+def test_visible_categories_need_not_be_literal_question_substrings(
+    tmp_path: Path, question: str, category: str
+):
+    inventory = SetInventory(
+        coverage="MET",
+        mode="count",
+        counts=(CountGroup(scope=category, expected=2, reported=3),),
+        expected_members=(),
+        reported_members=(),
+        empty_scope_is_explicit=False,
+        reason="Visible category",
+    )
+
+    class CategoryClient(ScriptedClient):
+        def invoke(self, *args: Any, **kwargs: Any) -> ModelResponse:
+            return ModelResponse(
+                value=inventory,
+                request_hash="1" * 64,
+                response_hash="2" * 64,
+                prompt_tokens=1,
+                completion_tokens=1,
+            )
+
+    config = load_config(Path("configs/pilot.yaml"))
+    with RunStore(tmp_path / "runs", "categories", require_local_wal=False) as store:
+        client = CategoryClient(config.models.generator_a)
+        co = SynthesisCoordinator(config, "categories", store, client, client, client)
+        result = co._invoke(
+            client,
+            "set_inventory",
+            {"question": question},
+            (),
+            SetInventory,
+            max_tokens=2048,
+            temperature=0.0,
+            seed=1,
+        )
+        assert result.counts[0].scope == category
+        check = verify_set_inventories((result, result))
+        assert check is not None and check.verdict == "NOT_MET"
+        other = result.model_copy(
+            update={"counts": (CountGroup(scope=category, expected=3, reported=3),)}
+        )
+        assert verify_set_inventories((result, other)) is None
