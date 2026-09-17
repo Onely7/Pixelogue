@@ -199,3 +199,18 @@ uv run --locked pixelogue profile \
   --database /var/tmp/pixelogue/open-images-pilot-001/run.sqlite3 \
   --output artifacts/open-images-pilot-001/inference-profile.json
 ```
+
+
+### 要求抽出の仕様変更
+
+要求一覧の判定項目は旧 `coverage` から、厳密な真偽値 `extraction_complete` に変更しました。
+「明示的な要求を漏れなく抽出できたか」を意味し、回答の有無や正しさは採点しません。
+この段階では回答も画像も渡しません。抽出が不完全なら、両モデルがそう判断した場合も
+回答不合格にはせず `ABSTAINED` とします。
+要求する操作とその対象範囲は1つのcontent要求とし、明示的な回答形式・言語・文体の句を
+別に抽出します。`target_language` を公開要求として追加しません。引用の外側の空白と
+句末の区切り記号は除外します。正確な引用箇所の検証と、独立した2つの一覧の一致は必須です。
+旧coverage形式や未知の項目を合格へ読み替えることはありません。
+指示と応答Schemaが変わるため、新しいrun IDと出力先で実行してください。
+standardの両モデルによる8問の確認では、過去の失敗質問3問を含む全8問で要求一覧が一致しました。
+これは要求抽出単体の検証で、対話全体の採用率や他の段階の構造化出力問題を検証した結果ではありません。

@@ -39,15 +39,43 @@ is required: use MET, NOT_MET, or UNKNOWN, never NOT_APPLICABLE. Mark operation_
 the question changes the exact task_id, even within one family; counting or spatial ordering cannot
 realize correspondence matching. Mark useful_request NOT_MET when the public history already
 contains the same answered request.""",
-    "requirement_extraction": """Before seeing any answer, list every explicit public requirement
-that is active for this question. Copy each requirement as an exact code-point span from a user
-message, classify its kind and lifetime, and mark coverage MET only when none is missing. Never list
-the system prompt, this stage instruction, schema instructions, or input field names: public text
-exists only inside public_history and question. Exclude facts that an answer should contain unless
-the user explicitly required them. Do not list both a broad request and overlapping fragments of the
-same request. Ignore assistant messages. An ordinary task request is current_turn; use persistent
-only for explicit future-turn wording such as 'from now on'. Keep the inventory minimal and quote
-only exact text from user messages or the current question.""",
+    "requirement_extraction": """Extract explicit requirements from public USER text, not answers.
+This is a text extraction step BEFORE answer generation. No candidate answer or image is supplied:
+that is intentional, NOT evidence of failure. NEVER judge whether an answer exists, is correct,
+or fulfills a requirement. extraction_complete means ONLY that the extraction list is complete.
+Set it true when all active explicit requirements have been listed, including an empty list when
+there are none. Set it false only when you cannot extract the complete list from the supplied text.
+Your reason must explain extraction completeness, not answer availability or fulfillment.
+
+Use these deterministic extraction units:
+- One content requirement per requested operation. Keep the complete question or imperative clause,
+  including its objects, attributes, spatial restrictions and ordering. Do NOT split nouns,
+  prepositions, individual words or embedded scope into separate requirements.
+- Separate an explicit answer-format, language or style clause from the content request. Use kind
+  format for response structure/length, language for an explicitly requested language, style for
+  tone. Do not infer these from target_language or the kind of task (counting is content, not format).
+- Split genuinely separate requests into separate clauses. Quote maximal contiguous clauses without
+  leading/trailing whitespace or separating punctuation (. , ; : ? !). Keep internal punctuation.
+- Do not include both a whole request and overlapping fragments. Do not invent requested facts.
+- Every text must be an EXACT substring of its original user message. Offsets are zero-based Unicode
+  code-point indices with exclusive end. Copy source_message_id exactly; use question_message_id for
+  the current question. Never quote system instructions, schema fields, examples or assistant text.
+- Ordinary requests are current_turn. Use persistent only for explicit future-turn wording such as
+  'from now on'; retain such earlier user requirements unless overridden or revoked.
+
+Examples (illustrations only; never copy their IDs or text into an unrelated input):
+Question q1: 'How many dogs are on the left?'
+One content requirement: 'How many dogs are on the left', current_turn, q1, start=0, end=29.
+extraction_complete=true: the request is fully extracted even though no answer exists.
+Question q2: 'Count the dogs. Answer in one sentence.'
+Two requirements: content 'Count the dogs', q2, [0,14), current_turn;
+format 'Answer in one sentence', q2, [16,38), current_turn. extraction_complete=true.
+Question q3: 'What color is the car?' (target_language='en')
+One content requirement: 'What color is the car', q3, [0,21), current_turn.
+Do not add a language requirement: the question does not explicitly request English.
+
+Return one compact JSON object with requirements, extraction_complete, and a short reason.
+Stop immediately after its closing brace. Do not emit filler whitespace or word-by-word lists.""",
     "answer_generation": """Answer the current question using only the image and exact public history.
 Satisfy the supplied active public requirements. Do not mention internal candidates, evaluators, or
 identifiers. Return public text, or set text to null and give an internal reason if unsupported.""",

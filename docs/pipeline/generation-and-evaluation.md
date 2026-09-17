@@ -199,3 +199,20 @@ uv run --locked pixelogue profile \
   --database /var/tmp/pixelogue/open-images-pilot-001/run.sqlite3 \
   --output artifacts/open-images-pilot-001/inference-profile.json
 ```
+
+
+### Requirement extraction protocol update
+
+Requirement inventories use the strict boolean `extraction_complete`, not the old
+`coverage` verdict. It means every explicit user requirement was extracted; it never
+scores an answer. No answer or image is supplied at this stage. Incomplete extraction
+abstains, even if both models report incomplete; it is not a failed answer.
+One content requirement represents one requested operation including its scope.
+Explicit format, language and style clauses are separate; target_language does not
+create a public language requirement. Quotes exclude outer whitespace and clause-ending
+punctuation. Exact source validation and agreement between independent inventories remain
+mandatory. Unknown fields and legacy coverage responses are rejected, not promoted.
+This changes the prompt and response schema: use a new run ID and output directory.
+An eight-question check on the standard model pair agreed in all eight cases, including
+three historical failures. This does not measure full-dialogue acceptance or resolve all
+structured-output failures in other stages.

@@ -30,7 +30,11 @@ class RequirementInventory(StrictModel):
     """A judge's complete inventory of active public constraints."""
 
     requirements: tuple[RequirementSpec, ...] = Field(max_length=32)
-    coverage: Literal["MET", "NOT_MET", "UNKNOWN"]
+    extraction_complete: bool = Field(
+        description="True only when every active explicit user requirement has been extracted. "
+        "This measures extraction completeness, NEVER answer correctness or fulfillment. "
+        "No answer is supplied at this stage; its absence is expected."
+    )
     reason: str = Field(min_length=1, max_length=240)
 
 
@@ -78,7 +82,7 @@ def reconcile_inventories(
     Reasons are intentionally excluded from agreement. Any incomplete inventory,
     disagreement, duplicate, or invalid public source span returns ``None``.
     """
-    if len(inventories) != 2 or any(item.coverage != "MET" for item in inventories):
+    if len(inventories) != 2 or any(not item.extraction_complete for item in inventories):
         return None
     normalized: list[tuple[RequirementSpec, ...]] = []
     for inventory in inventories:

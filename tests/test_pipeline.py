@@ -142,7 +142,7 @@ class ScriptedClient:
                         end=start + len(text),
                     ),
                 ),
-                coverage="MET",
+                extraction_complete=True,
                 reason="The question has no separate explicit constraints.",
             )
         elif response_model is ClaimInventory:
@@ -591,3 +591,33 @@ def test_claim_offsets_are_corrected_only_for_a_unique_quoted_span() -> None:
 
     repeated = answer.model_copy(update={"content": "five squares and five squares"})
     assert SynthesisCoordinator._normalize_claim(claim, repeated) is None
+
+
+def test_incomplete_extraction_abstains_without_generating_answer(
+    tmp_path, image_artifact, monkeypatch
+):
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(tmp_path)
+    original = coordinator._invoke
+
+    def invoke(client, stage, payload, images, model, **kwargs):
+        if model is RequirementInventory:
+            return RequirementInventory(
+                requirements=(),
+                extraction_complete=False,
+                reason="Unable to extract all explicit requirements.",
+            )
+        return original(client, stage, payload, images, model, **kwargs)
+
+    monkeypatch.setattr(coordinator, "_invoke", invoke)
+    try:
+        conversation = coordinator.synthesize_image(image, root)
+    finally:
+        store.close()
+    assert conversation.status == "ABSTAINED"
+    assert not conversation.turns
+    assert all(
+        stage != "answer_generation"
+        for client in (generator_a, generator_b)
+        for stage, _ in client.calls
+    )

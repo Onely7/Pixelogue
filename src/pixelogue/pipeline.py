@@ -619,9 +619,8 @@ class SynthesisCoordinator:
             )
             for judge_index, client in enumerate(self.generators.values())
         ]
-        coverage = consensus([GateVerdict(item.coverage) for item in inventories])
-        if coverage is not GateVerdict.MET:
-            return coverage, ()
+        if not all(item.extraction_complete for item in inventories):
+            return GateVerdict.UNKNOWN, ()
         requirements = reconcile_inventories(
             inventories,
             (*history, question),
