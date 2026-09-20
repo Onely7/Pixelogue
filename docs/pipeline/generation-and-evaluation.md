@@ -1,5 +1,7 @@
 # Generate and evaluate dialogue
 
+The decomposed evaluator, planned-length requirement, and historical examples on this page describe `evaluation.mode: detailed`. The current default is `holistic`: two whole-turn reviews with optional retention of accepted prefixes of at least two turns. See the [current workflow](../../README.md).
+
 The visible output of one turn is only a question and an answer. Reaching that pair takes several checks, and their order prevents later information from changing an earlier decision.
 
 [Previous: prepare images](data-and-ingestion.md) · [Back to contents](README.md) · [Next: select and export](selection-and-export.md)
@@ -199,3 +201,60 @@ uv run --locked pixelogue profile \
   --database /var/tmp/pixelogue/open-images-pilot-001/run.sqlite3 \
   --output artifacts/open-images-pilot-001/inference-profile.json
 ```
+
+
+### Requirement extraction protocol update
+
+Requirement inventories use the strict boolean `extraction_complete`, not the old
+`coverage` verdict. It means every explicit user requirement was extracted; it never
+scores an answer. No answer or image is supplied at this stage. Incomplete extraction
+abstains, even if both models report incomplete; it is not a failed answer.
+One content requirement represents one requested operation including its scope.
+Explicit format, language and style clauses are separate; target_language does not
+create a public language requirement. Quotes exclude outer whitespace and clause-ending
+punctuation. Exact source validation and agreement between independent inventories remain
+mandatory. Unknown fields and legacy coverage responses are rejected, not promoted.
+This changes the prompt and response schema: use a new run ID and output directory.
+An eight-question check on the standard model pair agreed in all eight cases, including
+three historical failures. This does not measure full-dialogue acceptance or resolve all
+structured-output failures in other stages.
+
+Text-only `R_REQUIREMENT` checks whether an answer addresses the requested operation, target,
+scope and explicit response constraints. It must not judge visual truth or abstain merely because
+no image is supplied. Image-aware factual and exhaustive-set criteria remain required independently.
+Requirement extraction retains introductory scope phrases with their content request. Evidence with
+a different image ID is regenerated within the existing structured-output attempt limit; the ID is
+never silently rewritten. Schema retries enumerate required top-level fields without quoting the
+invalid response. Use a new run ID and output directory when validating these prompt changes.
+
+Extraction validation now happens before downstream grading. Claim models select boundaries in a controller-supplied numbered token table instead of copying
+text, character offsets or source IDs. The controller reconstructs the exact original substring
+and attaches the single answer ID. Requirement extraction uses short local
+message references, mapped back to real public IDs only after source validation. Invalid references
+or altered quotes trigger bounded retries, never fuzzy acceptance. Courtesy prefixes (`Please`,
+`Can you`) and outer sentence punctuation are normalized only after validating the original span;
+negation, scope restrictions and different operations still require agreement.
+
+`C_COVERAGE` receives the validated claim union as `candidate_claim_inventory` and compares it with
+the answer text, without image input or other judges' verdicts. Other criteria cannot receive this
+field. Short direct answers need no extra sentence framing unless explicitly requested.
+
+Set extraction requires every field, including empty arrays. Count mode compares independently
+extracted expected and reported counts per question category rather than requiring answer member
+names. Member mode ignores list order while preserving duplicates and exact member agreement;
+arbitrary synonym matching is not allowed. Unreadable scope is not a zero count. Set checks do not
+replace image-aware factual or completeness judgments. `rating-decisions` private artifacts retain
+full votes and the controller's set/coverage result so an overridden verdict can be diagnosed.
+These protocol changes require a new run ID; do not resume an old run with the new contracts.
+
+Retryable HTTP 429/5xx responses retain up to 4096 characters of response text in private
+`transport-errors` artifacts with model, attempt and request hash, without request headers.
+Claim extraction has a 2048-token response budget; answer generation is instructed to avoid
+unrequested long enumerations. Token limits and bounded retries still apply.
+
+Count categories need not be literal question substrings: open-ended color grouping and per-ring
+counts may introduce visible labels such as `white` or `innermost ring`. Explicit category wording
+is reused when available; grouping must still follow the request, and independent inventories and
+image-aware checks must agree. Token-boundary extraction now sends answer-specific JSON Schema
+maximums (`start_token < token_count`, `end_token <= token_count`); an empty token table permits
+only an empty claim list. Post-generation validation still enforces ordered, nonempty spans.

@@ -1,10 +1,12 @@
 from fractions import Fraction
 
 import pytest
+from pydantic import ValidationError
 
 from pixelogue.errors import ExecutionError
 from pixelogue.rules import (
     ComputationInventory,
+    CountGroup,
     NumericValue,
     SetInventory,
     compare_complete_set,
@@ -32,6 +34,9 @@ def test_complete_set_rejects_an_unexplained_empty_scope() -> None:
 def test_dual_set_inventory_must_agree_before_comparison() -> None:
     inventory = SetInventory(
         coverage="MET",
+        mode="members",
+        counts=(),
+        empty_scope_is_explicit=False,
         expected_members=("red-left", "blue-right"),
         reported_members=("red-left",),
         reason="The closed scope is readable.",
@@ -82,3 +87,69 @@ def test_dual_computation_inventory_checks_reported_value_exactly() -> None:
     wrong = inventory.model_copy(update={"reported_result": NumericValue(value="3.6", unit="kg")})
     assert verify_computation_inventories((wrong, wrong)).verdict == "NOT_MET"
     assert verify_computation_inventories((inventory, wrong)).verdict == "UNKNOWN"
+
+
+def test_missing_set_members_are_not_an_empty_verified_set() -> None:
+    with pytest.raises(ValidationError):
+        SetInventory.model_validate_json('{"coverage":"MET","reason":"Complete"}')
+    with pytest.raises(ValidationError, match="empty expected scope"):
+        SetInventory(
+            coverage="MET",
+            mode="members",
+            counts=(),
+            expected_members=(),
+            reported_members=(),
+            empty_scope_is_explicit=False,
+            reason="Complete",
+        )
+
+
+def test_member_order_is_irrelevant_but_duplicates_are_not() -> None:
+    left = SetInventory(
+        coverage="MET",
+        mode="members",
+        counts=(),
+        expected_members=("cup", "spoon"),
+        reported_members=("spoon", "cup"),
+        empty_scope_is_explicit=False,
+        reason="Complete",
+    )
+    right = left.model_copy(
+        update={"expected_members": ("spoon", "cup"), "reported_members": ("cup", "spoon")}
+    )
+    result = verify_set_inventories((left, right))
+    assert result is not None and result.verdict == "MET"
+    duplicate = left.model_copy(update={"reported_members": ("cup", "spoon", "spoon")})
+    assert verify_set_inventories((left, duplicate)) is None
+    result = verify_set_inventories((duplicate, duplicate))
+    assert result is not None and result.verdict == "NOT_MET"
+
+
+def test_count_answers_need_no_list_of_names_and_wrong_counts_fail() -> None:
+    inventory = SetInventory(
+        coverage="MET",
+        mode="count",
+        counts=(
+            CountGroup(scope="white", expected=2, reported=2),
+            CountGroup(scope="silver", expected=1, reported=1),
+        ),
+        expected_members=(),
+        reported_members=(),
+        empty_scope_is_explicit=False,
+        reason="Complete",
+    )
+    result = verify_set_inventories((inventory, inventory))
+    assert result is not None and result.verdict == "MET"
+    wrong = inventory.model_copy(
+        update={
+            "counts": (
+                CountGroup(scope="white", expected=2, reported=3),
+                CountGroup(scope="silver", expected=1, reported=1),
+            )
+        }
+    )
+    result = verify_set_inventories((wrong, wrong))
+    assert result is not None and result.verdict == "NOT_MET"
+    assert verify_set_inventories((inventory, wrong)) is None
+    unknown = inventory.model_copy(update={"coverage": "UNKNOWN", "counts": ()})
+    assert verify_set_inventories((unknown, unknown)) is None

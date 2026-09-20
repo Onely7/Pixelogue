@@ -23,13 +23,23 @@ class SetCheck(StrictModel):
     duplicates: tuple[str, ...]
 
 
+class CountGroup(StrictModel):
+    """A count for a question-defined category, not an enumeration of answer members."""
+
+    scope: str = Field(min_length=1)
+    expected: int = Field(ge=0)
+    reported: int = Field(ge=0)
+
+
 class SetInventory(StrictModel):
     """One judge's member bindings for an exhaustive question and answer."""
 
     coverage: Literal["MET", "NOT_MET", "UNKNOWN"]
-    expected_members: tuple[str, ...] = Field(default=(), max_length=256)
-    reported_members: tuple[str, ...] = Field(default=(), max_length=256)
-    empty_scope_is_explicit: bool = False
+    mode: Literal["members", "count"]
+    counts: tuple[CountGroup, ...] = Field(max_length=32)
+    expected_members: tuple[str, ...] = Field(max_length=256)
+    reported_members: tuple[str, ...] = Field(max_length=256)
+    empty_scope_is_explicit: bool
     reason: str = Field(min_length=1, max_length=240)
 
     @model_validator(mode="after")
@@ -38,6 +48,22 @@ class SetInventory(StrictModel):
         has_expression = bool(self.expected_members or self.reported_members)
         if self.coverage != "MET" and (has_expression or self.empty_scope_is_explicit):
             raise ValueError("Incomplete extraction must not supply partial set bindings")
+        if self.coverage != "MET" and self.counts:
+            raise ValueError("Incomplete extraction must not supply partial counts")
+        if self.mode == "count":
+            if has_expression or self.empty_scope_is_explicit:
+                raise ValueError("Count mode uses counts, not member lists or an empty-scope flag")
+            if self.coverage == "MET" and not self.counts:
+                raise ValueError("Complete count extraction requires at least one count")
+            if len({item.scope for item in self.counts}) != len(self.counts):
+                raise ValueError("Count scopes must be unique")
+        elif self.counts:
+            raise ValueError("Member mode must not supply counts")
+        elif self.coverage == "MET":
+            if not self.expected_members and not self.empty_scope_is_explicit:
+                raise ValueError("An empty expected scope must be explicit")
+            if self.expected_members and self.empty_scope_is_explicit:
+                raise ValueError("An explicit empty scope cannot contain members")
         return self
 
 
@@ -127,13 +153,25 @@ def verify_set_inventories(inventories: Sequence[SetInventory]) -> SetCheck | No
     """Compare a closed set only after two blind member inventories agree."""
     if len(inventories) != 2 or any(item.coverage != "MET" for item in inventories):
         return None
-    bindings = [
-        inventory.model_dump(mode="json", exclude={"reason", "coverage"})
-        for inventory in inventories
-    ]
+    bindings = []
+    for inventory in inventories:
+        value = inventory.model_dump(mode="json", exclude={"reason", "coverage"})
+        value["expected_members"] = sorted(value["expected_members"])
+        value["reported_members"] = sorted(value["reported_members"])
+        value["counts"] = sorted(value["counts"], key=lambda item: item["scope"])
+        bindings.append(value)
     if bindings[0] != bindings[1]:
         return None
     inventory = inventories[0]
+    if inventory.mode == "count":
+        missing = tuple(item.scope for item in inventory.counts if item.reported < item.expected)
+        unexpected = tuple(item.scope for item in inventory.counts if item.reported > item.expected)
+        return SetCheck(
+            verdict="NOT_MET" if missing or unexpected else "MET",
+            missing=missing,
+            unexpected=unexpected,
+            duplicates=(),
+        )
     try:
         return compare_complete_set(
             inventory.expected_members,

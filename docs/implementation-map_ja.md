@@ -10,7 +10,8 @@
 | stage ごとの入力制限を持つローカル構造化推論 | `prompts.py`, `serving.py` | hash 付き request・response・token 数・model lock | `synthesize`, `rate-existing` |
 | 画像単位の有界並列化とモデル呼び出し時間の記録 | `pipeline.py`, `store.py`, `profiling.py` | 入力順の対話とstage別時間集計 | `synthesize`, `profile` |
 | 質問・回答より前の指示候補選択 | `planner.py`, `pipeline.py` | 候補集合と選択応答 | `synthesize` |
-| 質問適合、公開要求、主張、計算、集合、修復後の全再評価 | `pipeline.py`, `ledger.py`, `evaluation.py`, `rules.py` | turn 評価と変更不能な試行 artifact | `synthesize`, `rate-existing` |
+| holistic方式の2モデル総合評価、合格済み部分の保持 | `pipeline.py`, `evaluation.py`, `store.py` | `Q_HOLISTIC`, `conversation-stops`, `conversation_commit` | `synthesize`, `rate-existing` |
+| 旧detailed方式の質問適合、公開要求、主張、計算、集合、修復後の全再評価 | `pipeline.py`, `ledger.py`, `evaluation.py`, `rules.py` | turn 評価と変更不能な試行 artifact | `synthesize`, `rate-existing` |
 | ローカル実行状態、再生、バックアップ、復元 | `store.py` | SQLite 台帳と hash 付き artifact tree | `replay`, `backup`, `restore` |
 | 固定 pool の CP-SAT 選抜と独立再計数 | `selection.py`, `operations.py` | pool hash、selection manifest、audit hash | `freeze-pool`, `select`, `audit` |
 | 検証用出典を除外した公開文だけの学習出力 | `export.py` | training・rating・provenance・selection の分離ファイル | `export` |

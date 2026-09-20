@@ -9,7 +9,7 @@ Pixelogue separates instruction choice from dialogue generation. The standard pr
 | Generator and evaluator A | `Qwen/Qwen3.8-27B-FP8` | `http://127.0.0.1:8002/v1` |
 | Generator and evaluator B | `google/gemma-4-31B-it-qat-w4a16-ct` | `http://127.0.0.1:8003/v1` |
 
-In `configs/standard.yaml`, Qwen3.8-27B-FP8 and Gemma 4 31B generate an equal share of conversations. The assigned model remains fixed for the entire conversation, including its one allowed repair. Both models also judge every conversation through separate blind calls.
+In `configs/standard.yaml`, Qwen3.8-27B-FP8 and Gemma 4 31B generate an equal share of conversations. The assigned model remains fixed for the entire conversation, including its one allowed repair in detailed mode. Both models also judge every turn through separate blind calls. By default (`evaluation.mode: holistic`), each model reviews the whole question/answer against the image and public history once; both must return MET. No requirement, claim, or set extraction is performed. `evaluation.mode: detailed` retains the legacy rubric for controlled comparisons.
 
 `configs/pilot.yaml` is a temporary validation override. It maps both logical roles to a shared `Qwen/Qwen3.5-9B` server on port 8002. The calls remain separate and blind, but the shared checkpoint means this profile tests pipeline wiring rather than evaluator-model diversity.
 
@@ -152,3 +152,18 @@ uv run --locked pixelogue evaluate-capabilities \
 Expected labels remain in the controller and are never sent to evaluator calls. Development and confirmation counts remain separate. A small fixture result checks wiring; it is not a natural-image accuracy claim.
 
 The [detailed pipeline guide](pipeline/README.md) explains how these servers participate in every generation and evaluation stage.
+
+
+## Evaluation regression checks
+
+After inspecting GPUs and confirming `doctor --check-servers`, the opt-in checks use already-running
+standard model servers. They do not launch or allocate another model server. Run in tmux with a log:
+
+```sh
+PIXELOGUE_LIVE_RUBRIC=1 uv run --locked pytest -q -s tests/test_rubric_semantics.py
+```
+
+Ordinary test runs skip these external checks. The holistic checks include both supported answers
+and deliberately false image claims. `rate-existing` can compare holistic review on immutable
+saved questions and answers; it does not regenerate previously missing turns. Compare against
+human-reviewed defects, not acceptance rate alone, before adopting a large production corpus.

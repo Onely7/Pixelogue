@@ -1,6 +1,9 @@
 version: "1.0"
 profile: standard
 seed: 20260915
+evaluation:
+  mode: holistic
+  retain_accepted_prefix: true
 data:
   target_dialogues: 30000
   min_turns: 2

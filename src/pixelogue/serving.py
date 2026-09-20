@@ -16,12 +16,25 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from pixelogue.config import ModelEndpoint, RuntimeConfig
-from pixelogue.errors import ExecutionError
+from pixelogue.contracts import ClaimExtraction, EvidenceInventory
+from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_payload
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
 from pixelogue.store import RunStore
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
+
+
+def _model_json_object(payload: str | bytes) -> dict[str, Any]:
+    """Translate malformed model JSON into a retryable execution failure.
+
+    Preserve strict parsing for envelopes and generated content, including duplicate
+    keys and non-finite values. Input-file parsing retains its external-input errors.
+    """
+    try:
+        return strict_json_object(payload)
+    except ExternalInputError as error:
+        raise ExecutionError("MODEL_SCHEMA_MISMATCH", f"{error.reason}: {error}") from error
 
 
 @dataclass(frozen=True)
@@ -88,6 +101,28 @@ class ModelAdapter:
                 "MODEL_REASONING_LEAK", "Gemma returned non-empty reasoning content"
             )
         return content
+
+
+def read_request_artifact(store: RunStore, artifact_hash: str) -> dict[str, Any]:
+    """Restore the exact request envelope from legacy or deduplicated audit storage."""
+    request = strict_json_object(store.read_artifact(artifact_hash))
+    version = request.pop("archive_format", None)
+    if version is None:
+        return request
+    if version != "image-refs-v1":
+        raise ExecutionError("REQUEST_ARCHIVE_FORMAT", f"Unsupported archive format: {version}")
+    for message in request["request"]["messages"]:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if part.get("type") == "image_url":
+                url = part["image_url"]["url"]
+                if url.startswith("pixelogue-image:"):
+                    part["image_url"]["url"] = store.read_artifact(
+                        url.removeprefix("pixelogue-image:")
+                    ).decode("utf-8")
+    return request
 
 
 class VllmClient:
@@ -205,7 +240,7 @@ class VllmClient:
                 response_model,
                 max_tokens=max_tokens,
             )
-            parsed = strict_json_object(raw_response.content)
+            parsed = _model_json_object(raw_response.content)
             _, usage = self._validate_completion(parsed)
             prompt_tokens = int(usage.get("prompt_tokens", 0))
             completion_tokens = int(usage.get("completion_tokens", 0))
@@ -254,14 +289,14 @@ class VllmClient:
         max_tokens: int,
     ) -> tuple[ResponseModel, str]:
         """Validate one saved or fresh completion and return its typed content."""
-        parsed = strict_json_object(raw_response)
+        parsed = _model_json_object(raw_response)
         content, usage = self._validate_completion(parsed)
         prompt_tokens = int(usage.get("prompt_tokens", 0))
         completion_tokens = int(usage.get("completion_tokens", 0))
         if prompt_tokens < 0 or completion_tokens < 0 or completion_tokens > max_tokens:
             raise ExecutionError("MODEL_USAGE_INVALID", "Token usage is outside request bounds")
         cleaned = self.adapter.clean_content(content)
-        strict_json_object(cleaned)
+        _model_json_object(cleaned)
         try:
             typed = response_model.model_validate_json(cleaned)
         except ValidationError as error:
@@ -303,6 +338,27 @@ class VllmClient:
         user_content.extend(
             {"type": "image_url", "image_url": {"url": image.data_uri()}} for image in images
         )
+        schema = response_model.model_json_schema()
+        if response_model is EvidenceInventory:
+            image_id = payload.get("image_id")
+            if not isinstance(image_id, str) or not image_id:
+                raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")
+            schema["properties"]["image_id"]["const"] = image_id
+        if response_model is ClaimExtraction:
+            tokens = payload.get("answer_tokens")
+            if not isinstance(tokens, list) or any(
+                not isinstance(token, dict) or token.get("index") != index
+                for index, token in enumerate(tokens)
+            ):
+                raise ExecutionError(
+                    "MODEL_PAYLOAD_FIELD", "Claim extraction requires indexed answer_tokens"
+                )
+            count = len(tokens)
+            properties = schema["$defs"]["ClaimSpan"]["properties"]
+            properties["start_token"]["maximum"] = max(0, count - 1)
+            properties["end_token"]["maximum"] = max(1, count)
+            if count == 0:
+                schema["properties"]["claims"]["maxItems"] = 0
         body: dict[str, Any] = {
             "model": self.endpoint.model_name,
             "messages": [
@@ -320,7 +376,7 @@ class VllmClient:
                 "json_schema": {
                     "name": response_model.__name__,
                     "strict": True,
-                    "schema": response_model.model_json_schema(),
+                    "schema": schema,
                 },
             },
         }
@@ -333,6 +389,18 @@ class VllmClient:
             try:
                 response = self.client.post("chat/completions", json=body)
                 if response.status_code == 429 or response.status_code >= 500:
+                    if self.store is not None:
+                        self.store.write_json_artifact(
+                            "transport-errors",
+                            {
+                                "request_hash": canonical_hash(body),
+                                "model_repo": self.endpoint.repo_id,
+                                "attempt": attempt + 1,
+                                "status_code": response.status_code,
+                                "response_body": response.text[:4096],
+                                "truncated": len(response.text) > 4096,
+                            },
+                        )
                     last_error = ExecutionError(
                         "MODEL_TRANSPORT_RETRYABLE",
                         f"Inference server returned {response.status_code}",
@@ -340,7 +408,7 @@ class VllmClient:
                 else:
                     response.raise_for_status()
                     return response
-            except (httpx.TimeoutException, httpx.NetworkError) as error:
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as error:
                 last_error = error
             except httpx.HTTPStatusError as error:
                 raise ExecutionError("MODEL_REQUEST_REJECTED", str(error)) from error
@@ -422,7 +490,21 @@ class VllmClient:
         status: Literal["COMPLETE", "INVALID"] = "COMPLETE",
     ) -> None:
         assert self.store is not None
-        request_artifact = self.store.write_artifact("requests", canonical_json(request))
+        archived = json.loads(canonical_json(request))
+        for message in archived["request"].get("messages", []):
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if part.get("type") == "image_url":
+                    url = part["image_url"]["url"]
+                    if url.startswith("data:image/"):
+                        image_hash = self.store.write_artifact(
+                            "request-images", url.encode("utf-8")
+                        )
+                        part["image_url"]["url"] = f"pixelogue-image:{image_hash}"
+                        archived["archive_format"] = "image-refs-v1"
+        request_artifact = self.store.write_artifact("requests", canonical_json(archived))
         response_artifact = self.store.write_artifact("responses", response)
         model_lock_hash = canonical_hash(request["model_lock"])
         call_id = canonical_hash({"run": self.run_id, "stage": stage, "request": request_hash})

@@ -1,6 +1,9 @@
 version: "1.0"
 profile: pilot
 seed: 20260915
+evaluation:
+  mode: holistic
+  retain_accepted_prefix: true
 data:
   target_dialogues: 50
   min_turns: 2

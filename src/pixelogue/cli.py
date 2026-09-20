@@ -344,20 +344,32 @@ def synthesize(
         )
         worker_count = workers or config.runtime.max_concurrent_images
         conversations: list[ConversationArtifact] = []
-        with synthesis_progress(
-            len(scheduled_images), worker_count, sys.stderr, enabled=not quiet
-        ) as record_progress:
-            for conversation in coordinator.synthesize_batch(
-                jobs,
-                artifact_root,
-                max_workers=worker_count,
-            ):
-                conversations.append(conversation)
-                write_jsonl(output, conversations)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with (
+            output.open("w", encoding="utf-8") as stream,
+            synthesis_progress(
+                len(scheduled_images), worker_count, sys.stderr, enabled=not quiet
+            ) as record_progress,
+        ):
+            try:
+                for conversation in coordinator.synthesize_batch(
+                    jobs,
+                    artifact_root,
+                    max_workers=worker_count,
+                ):
+                    stream.write(conversation.model_dump_json() + "\n")
+                    stream.flush()
+                    conversations.append(conversation)
+                    if len(conversations) == 1 or len(conversations) % 100 == 0:
+                        write_json(
+                            output.with_suffix(".summary.json"),
+                            summarize_conversations(conversations),
+                        )
+                    record_progress(conversation.status)
+            finally:
                 write_json(
                     output.with_suffix(".summary.json"), summarize_conversations(conversations)
                 )
-                record_progress(conversation.status)
     typer.echo(json.dumps({"conversations": len(conversations), "output": str(output)}))
 
 
