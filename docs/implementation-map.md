@@ -4,6 +4,7 @@ This page connects the pipeline promises to the code, saved artifacts, commands,
 
 | Promise | Main implementation | Saved or emitted evidence | Entry point |
 |---|---|---|---|
+| Versioned 72-operation admission, scoped evidence, parameter binding and required verifiers | `task_catalog.py`, `task_evidence.py`, `task_runtime.py`, `task_verification.py` | catalog identity, private bindings, operation checks, operation counts | `compile`, `synthesize` |
 | Strict configuration, exact quotas, and pinned model roles | `config.py`, `planner.py` | compiled config, quota table, model revisions | `compile` |
 | Rights checks, canonical images, duplicate groups, and split isolation | `images.py`, `operations.py`, `sscd.py` | image ledger, failures, split map, manifest hash | `ingest` |
 | Fixed Open Images V7 validation sample | `open_images.py`, `validation/open_images_v7_manifest.jsonl` | source and rights JSONL plus private download metadata | `prepare` |

@@ -17,23 +17,21 @@ uv run --locked pixelogue synthesize \
 
 `runtime.max_concurrent_images` controls how many independent images can be in flight. The checked-in profiles use four so vLLM can apply continuous batching. Use `--workers 1` for a serial diagnostic or `--workers N` for a measured override (1–64 workers). Pixelogue still processes the turns within one conversation in order and writes final conversation rows in input order.
 
-The coordinator assigns languages and the two generators with exact batch quotas. One generator is fixed for a complete conversation, including its one permitted answer repair. The sequence for each turn is:
+The coordinator assigns languages and generators with exact batch quotas. A conversation uses one generator throughout. The v7 flow is:
 
-1. observe bounded image capabilities;
-2. build compatible candidates from the 24-task catalog;
-3. ask the configured selector to choose a candidate using only the image and committed history;
-4. generate a concrete question;
-5. require question-fit agreement from evaluator roles A and B;
-6. have both judges independently inventory active public requirements before seeing an answer;
-7. generate an answer only after question fit and requirement inventory agree;
-8. extract claims and apply every relevant rubric item with both judges;
-9. exactly recompute agreed typed arithmetic and compare exhaustive answer sets without floats;
-10. if a clear failure is repairable, ask the same generator once and repeat all evaluation;
-11. commit the turn only after every required gate passes.
+1. extract scope-bound capability observations;
+2. build eligible templates from the 65 core candidates, excluding unavailable validators and all 7 specialized extensions;
+3. bind public parameters and eligibility checks within the answer budget;
+4. select using the image and exact committed public history;
+5. generate a question, reject prompt echoes and repeats, then obtain two blind operation/eligibility checks;
+6. generate the answer and obtain two blind holistic reviews including the expected operation;
+7. run every applicable declared validator before committing the turn.
 
-`NO_SUITABLE_CANDIDATE` ends that plan. It does not call the alternative selector. Disagreement, insufficient evidence, and transport or schema errors remain distinct from a clear failure. A requirement must point to an exact span in a public user message. Inventory disagreement ends the plan before answer generation, so an evaluator cannot weaken a requirement after seeing an answer.
+Holistic review covers language, explicit formats, safety and visual facts together. Detailed mode additionally extracts public requirements before the answer and applies the legacy claim/rubric process with one possible repair. V7 operation validators apply in both modes. See the [catalog guide](tasks/README.md) for availability and parameter restrictions.
 
-The command writes `conversations.jsonl` and `conversations.summary.json`. The summary groups counts by dataset, so Open Images is visible separately instead of being hidden in one mixed average. Evaluation conversations exercise the complete path but remain ineligible for training.
+`NO_SUITABLE_CANDIDATE` ends the plan without selector fallback. Holistic runs may retain at least two accepted turns when configured; failed tails remain private. Disagreement and insufficient evidence abstain, while operational errors remain errors. Use a new run ID for v7 or any configuration change.
+
+Outputs include `conversations.jsonl`, dataset-specific `conversations.summary.json`, and `conversations.operations.json`, which counts committed operations and the final committed primary operation. Evaluation sources remain ineligible for training.
 
 To inspect model-call latency and token use during or after a run, point `profile` at its local database:
 

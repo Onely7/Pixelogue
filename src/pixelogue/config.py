@@ -223,6 +223,29 @@ class RuntimeConfig(StrictModel):
     allow_external_inference: Literal[False] = False
 
 
+class TaskRuntimeConfig(StrictModel):
+    """Bound candidate and evidence work independently of taxonomy size."""
+
+    catalog_version: Literal["7.0"] = "7.0"
+    candidate_limit: Annotated[int, Field(ge=1, le=32)] = 8
+    max_scopes: Annotated[int, Field(ge=1, le=8)] = 4
+    max_observations_per_scope: Annotated[int, Field(ge=1, le=50)] = 20
+    evidence_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
+    binding_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
+    answer_max_tokens: Annotated[int, Field(ge=256, le=8192)] = 1024
+    profiles: tuple[Literal["normal", "limitation", "false_premise"], ...] = ("normal",)
+    enabled_extensions: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_admission_settings(self) -> TaskRuntimeConfig:
+        """Fail closed on unsupported extensions and repeated profile settings."""
+        if not self.profiles or len(self.profiles) != len(set(self.profiles)):
+            raise ValueError("At least one unique task profile is required")
+        if self.enabled_extensions:
+            raise ValueError("Specialized extension validators are not installed and calibrated")
+        return self
+
+
 class StudentViewConfig(StrictModel):
     """Training-side image processor lock kept independent from teacher models."""
 
@@ -259,6 +282,7 @@ class PixelogueConfig(StrictModel):
     storage: StorageConfig = StorageConfig()
     runtime: RuntimeConfig = RuntimeConfig()
     student_view: StudentViewConfig = StudentViewConfig()
+    tasks: TaskRuntimeConfig = TaskRuntimeConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
 
     @model_validator(mode="after")
@@ -276,7 +300,15 @@ class PixelogueConfig(StrictModel):
     @property
     def config_hash(self) -> str:
         """Return a stable identity for all effective settings."""
-        return canonical_hash(self.model_dump(mode="json"))
+        from pixelogue.catalog import TASK_CONTRACT_VERSION, load_task_catalog
+
+        return canonical_hash(
+            {
+                "config": self.model_dump(mode="json"),
+                "task_catalog": load_task_catalog(),
+                "task_contract_version": TASK_CONTRACT_VERSION,
+            }
+        )
 
     @property
     def language_quotas(self) -> dict[str, int]:

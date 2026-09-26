@@ -101,6 +101,11 @@ def export_bundle(
                 "visual_group_id": item.image.visual_group_id,
                 "generation_model": item.generation_model,
                 "student_processor_lock": student_processor_lock,
+                "operation_ids": [turn.instruction.task_id for turn in item.turns],
+                "catalog_versions": [
+                    turn.instruction.catalog_version or "legacy-24" for turn in item.turns
+                ],
+                "primary_operation_id": item.turns[-1].instruction.task_id,
             }
             for item in selected
         ],

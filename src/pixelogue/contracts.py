@@ -12,6 +12,7 @@ from pixelogue.config import StrictModel
 from pixelogue.errors import ExecutionError
 from pixelogue.ledger import Requirement
 from pixelogue.serialization import canonical_hash
+from pixelogue.task_evidence import PublicParameter
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
@@ -134,6 +135,42 @@ class InstructionCandidate(StrictModel):
     visible_scope: str
     instruction_summary: str
     required_capabilities: tuple[str, ...]
+    catalog_version: Literal["7.0"] | None = None
+    scope_id: str | None = None
+    view_id: str | None = None
+    public_parameters: tuple[PublicParameter, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+    verification_contracts: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_operation(self) -> InstructionCandidate:
+        """Validate new contracts while preserving immutable legacy labels."""
+        if self.catalog_version is not None:
+            from pixelogue.catalog import task_catalog
+
+            catalog = task_catalog()
+            task = next((task for task in catalog.tasks if task.id == self.task_id), None)
+            if task is None or task.family != self.family:
+                raise ValueError("Unknown operation or incorrect family")
+            if self.required_capabilities != task.required_capabilities:
+                raise ValueError("V7 candidates cannot replace capability requirements")
+            if (
+                self.profile != "normal"
+                and self.task_id not in catalog.profile_contracts[self.profile].eligible_task_ids
+            ):
+                raise ValueError("Task does not support this answerability profile")
+            if len({parameter.name for parameter in self.public_parameters}) != len(
+                self.public_parameters
+            ):
+                raise ValueError("Public parameter names must be unique")
+            if not self.scope_id or not self.view_id or not self.evidence_refs:
+                raise ValueError("V7 candidates need scope, view, and evidence bindings")
+            required = (
+                task.verification_contracts if self.profile == "normal" else ("dual_visual_review",)
+            )
+            if self.verification_contracts != required:
+                raise ValueError("V7 candidates cannot omit or replace required verifiers")
+        return self
 
 
 class EvidenceInventory(StrictModel):

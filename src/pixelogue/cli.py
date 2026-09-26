@@ -37,6 +37,7 @@ from pixelogue.operations import (
     make_frozen_pool,
     prepare_sources,
     summarize_conversations,
+    summarize_operations,
 )
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.planner import exact_schedule
@@ -370,6 +371,9 @@ def synthesize(
                 write_json(
                     output.with_suffix(".summary.json"), summarize_conversations(conversations)
                 )
+                write_json(
+                    output.with_suffix(".operations.json"), summarize_operations(conversations)
+                )
     typer.echo(json.dumps({"conversations": len(conversations), "output": str(output)}))
 
 
@@ -408,6 +412,7 @@ def rate_existing(
         rated = [coordinator.rate_existing(item, artifact_root) for item in existing]
     write_jsonl(output, rated)
     write_json(output.with_suffix(".summary.json"), summarize_conversations(rated))
+    write_json(output.with_suffix(".operations.json"), summarize_operations(rated))
     typer.echo(json.dumps({"conversations": len(rated), "output": str(output)}))
 
 

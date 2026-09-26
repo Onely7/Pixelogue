@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from PIL import Image
 from pydantic import Field
 
-from pixelogue.catalog import load_rubric_catalog, load_task_catalog
+from pixelogue.catalog import load_legacy_migration, load_rubric_catalog, load_task_catalog
 from pixelogue.config import PixelogueConfig, StrictModel
 from pixelogue.contracts import (
     ClaimInventory,
@@ -41,6 +41,9 @@ from pixelogue.images import assign_split, canonicalize_image, group_visual_sour
 from pixelogue.ledger import Requirement, RequirementInventory
 from pixelogue.rules import ComputationInventory, NumericValue, SetCheck, SetInventory
 from pixelogue.serialization import canonical_hash
+from pixelogue.task_catalog import TaskCatalog
+from pixelogue.task_evidence import CandidateBindings, ScopedEvidenceInventory
+from pixelogue.task_runtime import admission_report
 
 
 class IngestFailure(StrictModel):
@@ -89,6 +92,9 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             HistorySnapshot,
             InstructionCandidate,
             EvidenceInventory,
+            ScopedEvidenceInventory,
+            CandidateBindings,
+            TaskCatalog,
             InstructionSelection,
             TextPayload,
             QuestionFit,
@@ -117,6 +123,8 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
         "language_quotas": config.language_quotas,
         "task_catalog": task_catalog,
         "rubric_catalog": rubric_catalog,
+        "task_admission": admission_report(),
+        "legacy_task_migration": load_legacy_migration(),
         "schemas": schemas,
     }
     return {**body, "compiled_hash": canonical_hash(body)}
@@ -276,7 +284,9 @@ def candidate_from_conversation(conversation: ConversationArtifact) -> Selection
         language=conversation.target_language,
         image_id=conversation.image.image_id,
         visual_group_id=conversation.image.visual_group_id,
-        task_family=families[0],
+        task_family=families[-1]
+        if conversation.turns[-1].instruction.catalog_version
+        else families[0],
         semantic_family=canonical_hash(tasks),
         pattern="/".join(profiles),
         purpose=conversation.image.purpose,
@@ -315,3 +325,22 @@ def summarize_conversations(
             turn.status == "COMMITTED" for turn in conversation.turns
         )
     return {source: dict(sorted(counts.items())) for source, counts in sorted(summary.items())}
+
+
+def summarize_operations(
+    conversations: Sequence[ConversationArtifact],
+) -> dict[str, dict[str, int]]:
+    """Count all committed operations and the final committed primary operation."""
+    committed: dict[str, int] = {}
+    primary: dict[str, int] = {}
+    for conversation in conversations:
+        turns = [turn for turn in conversation.turns if turn.status == "COMMITTED"]
+        for turn in turns:
+            version = turn.instruction.catalog_version or "legacy-24"
+            key = f"{version}:{turn.instruction.task_id}"
+            committed[key] = committed.get(key, 0) + 1
+        if turns:
+            last = turns[-1].instruction
+            key = f"{last.catalog_version or 'legacy-24'}:{last.task_id}"
+            primary[key] = primary.get(key, 0) + 1
+    return {"committed_turns": committed, "primary_conversations": primary}

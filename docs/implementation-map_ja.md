@@ -4,6 +4,7 @@
 
 | 約束 | 主な実装 | 保存・出力する根拠 | 入口 |
 |---|---|---|---|
+| 72操作の版管理、領域別の根拠、パラメータ束縛、必須検証器 | `task_catalog.py`, `task_evidence.py`, `task_runtime.py`, `task_verification.py` | カタログ識別、非公開の束縛・検証記録、操作集計 | `compile`, `synthesize` |
 | 厳密な設定、正確な件数配分、モデル役割の固定 | `config.py`, `planner.py` | 解決済み設定、件数表、model revision | `compile` |
 | 利用条件、画像正規化、重複 group、split 分離 | `images.py`, `operations.py`, `sscd.py` | 画像台帳、失敗理由、split、manifest hash | `ingest` |
 | 固定した Open Images V7 validation 標本 | `open_images.py`, `validation/open_images_v7_manifest.jsonl` | source・rights JSONL、非公開取得 metadata | `prepare` |

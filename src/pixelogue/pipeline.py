@@ -64,6 +64,14 @@ from pixelogue.rules import (
 from pixelogue.serialization import canonical_hash
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
+from pixelogue.task_evidence import CandidateBindings, ScopedEvidenceInventory
+from pixelogue.task_runtime import (
+    bind_candidates,
+    operation_contract,
+    selector_candidate,
+    validate_evidence,
+)
+from pixelogue.task_verification import verify_operation
 
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
 
@@ -256,22 +264,19 @@ class SynthesisCoordinator:
             {
                 "image_id": image.image_id,
                 "capability_vocabulary": capability_vocabulary,
+                "max_scopes": self.config.tasks.max_scopes,
+                "max_observations_per_scope": self.config.tasks.max_observations_per_scope,
                 "image_views": image_views,
             },
             (model_image,),
-            EvidenceInventory,
-            max_tokens=1024,
+            ScopedEvidenceInventory,
+            max_tokens=self.config.tasks.evidence_max_tokens,
             temperature=0.0,
             seed=self.config.seed,
         )
         if inventory.image_id != image.image_id:
             raise ExecutionError("EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image")
-        unknown_capabilities = sorted(set(inventory.capabilities) - capability_vocabulary.keys())
-        if unknown_capabilities:
-            raise ExecutionError(
-                "EVIDENCE_CAPABILITY_UNKNOWN",
-                f"Unknown evidence capabilities: {unknown_capabilities}",
-            )
+        validate_evidence(inventory, model_image.view_id, self.config.tasks)
 
         terminal_status: Literal["QUALITY_CANDIDATE", "REJECTED", "ABSTAINED", "ERROR"] = (
             "QUALITY_CANDIDATE"
@@ -282,7 +287,39 @@ class SynthesisCoordinator:
                 inventory,
                 seed=self.config.seed,
                 turn_index=turn_index,
+                limit=self.config.tasks.candidate_limit,
+                settings=self.config.tasks,
+                used_task_ids=frozenset(turn.instruction.task_id for turn in turns),
             )
+            if candidates:
+                bindings = self._invoke(
+                    generator,
+                    "candidate_binding",
+                    {
+                        "target_language": target_language,
+                        "public_history": self._history(snapshot.public_history),
+                        "candidates": [selector_candidate(candidate) for candidate in candidates],
+                        "scope_evidence": inventory.model_dump(mode="json"),
+                        "answer_max_tokens": self.config.tasks.answer_max_tokens,
+                        "image_views": image_views,
+                    },
+                    (model_image,),
+                    CandidateBindings,
+                    max_tokens=self.config.tasks.binding_max_tokens,
+                    temperature=0.0,
+                    seed=self.config.seed + turn_index,
+                )
+                self.store.write_json_artifact(
+                    "candidate-bindings", bindings.model_dump(mode="json")
+                )
+                candidates = bind_candidates(
+                    candidates,
+                    bindings,
+                    inventory,
+                    snapshot.public_history,
+                    self.config.tasks,
+                    frozenset(turn.instruction.candidate_id for turn in turns),
+                )
             if not candidates:
                 terminal_status = "REJECTED"
                 break
@@ -304,7 +341,7 @@ class SynthesisCoordinator:
                     "target_language": target_language,
                     "turn_index": turn_index,
                     "public_history": self._history(snapshot.public_history),
-                    "selected_instruction": selected.model_dump(mode="json"),
+                    "selected_instruction": operation_contract(selected),
                     "image_views": image_views,
                 },
                 (model_image,),
@@ -344,7 +381,7 @@ class SynthesisCoordinator:
                 terminal_status = "REJECTED"
                 break
             requirements: tuple[Requirement, ...] = ()
-            if self.config.evaluation.mode == "detailed":
+            if self.config.evaluation.mode == "detailed" or selected.catalog_version is not None:
                 fit = self._question_fit(
                     snapshot.public_history,
                     question,
@@ -357,6 +394,7 @@ class SynthesisCoordinator:
                 if fit is not GateVerdict.MET:
                     terminal_status = "ABSTAINED" if fit is GateVerdict.UNKNOWN else "REJECTED"
                     break
+            if self.config.evaluation.mode == "detailed":
                 requirement_status, requirements = self._extract_requirements(
                     snapshot.public_history,
                     question,
@@ -375,6 +413,7 @@ class SynthesisCoordinator:
                     "target_language": target_language,
                     "public_history": self._history(snapshot.public_history),
                     "question": question.content,
+                    "expected_operation": operation_contract(selected),
                     "active_requirements": [
                         requirement.model_dump(mode="json") for requirement in requirements
                     ],
@@ -382,7 +421,7 @@ class SynthesisCoordinator:
                 },
                 (model_image,),
                 TextPayload,
-                max_tokens=1024,
+                max_tokens=self.config.tasks.answer_max_tokens,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
             )
@@ -525,7 +564,10 @@ class SynthesisCoordinator:
                 transcript,
             )
             fit = GateVerdict.MET
-            if self.config.evaluation.mode == "detailed":
+            if (
+                self.config.evaluation.mode == "detailed"
+                or turn.instruction.catalog_version is not None
+            ):
                 fit = self._question_fit(
                     snapshot.public_history,
                     turn.question,
@@ -619,7 +661,7 @@ class SynthesisCoordinator:
             },
             (model_image,),
             TextPayload,
-            max_tokens=1024,
+            max_tokens=self.config.tasks.answer_max_tokens,
             temperature=0.0,
             seed=self.config.seed + turn_index + 10_000,
         )
@@ -698,7 +740,7 @@ class SynthesisCoordinator:
             {
                 "target_language": language,
                 "public_history": self._history(history.public_history),
-                "candidates": [candidate.model_dump(mode="json") for candidate in candidates],
+                "candidates": [selector_candidate(candidate) for candidate in candidates],
                 "image_views": image_views,
             },
             (model_image,),
@@ -768,7 +810,7 @@ class SynthesisCoordinator:
                 {
                     "target_language": language,
                     "public_history": self._history(history),
-                    "selected_instruction": instruction.model_dump(mode="json"),
+                    "selected_instruction": operation_contract(instruction),
                     "question": question.content,
                     "image_views": image_views,
                 },
@@ -797,6 +839,99 @@ class SynthesisCoordinator:
         turn_index: int,
         requirements: Sequence[Requirement],
     ) -> TurnRating:
+        """Require the configured base review and every applicable operation check."""
+        if instruction.catalog_version is not None and instruction.view_id != model_image.view_id:
+            raise ExecutionError(
+                "EVIDENCE_VIEW_MISMATCH", "Operation refers to a different image view"
+            )
+        rating = self._rate_base_turn(
+            conversation_id,
+            history_hash,
+            history,
+            question,
+            answer,
+            instruction,
+            language,
+            image_views,
+            model_image,
+            turn_index,
+            requirements,
+        )
+        if instruction.catalog_version is None or rating.aggregate != "PASS":
+            return rating
+        payload = {
+            "target_language": language,
+            "public_history": self._history(history),
+            "question": question.content,
+            "candidate_answer": answer.content,
+            "image_views": image_views,
+        }
+
+        def invoke(
+            stage: str, body: dict[str, Any], model: type[BaseModel], judge: int
+        ) -> BaseModel:
+            client = tuple(self.generators.values())[judge]
+            return self._invoke(
+                client,
+                stage,
+                body,
+                (model_image,),
+                model,
+                max_tokens=2048,
+                temperature=0.0,
+                seed=self.config.seed + turn_index,
+                bypass_cache=judge > 0,
+            )
+
+        items = list(rating.items)
+        for check in verify_operation(instruction, payload, invoke):
+            self.store.write_json_artifact(
+                "operation-checks",
+                {
+                    "conversation_id": conversation_id,
+                    "turn_index": turn_index,
+                    "contract": check.name,
+                    "candidate_id": instruction.candidate_id,
+                    "question_hash": canonical_hash(question.content),
+                    "answer_hash": canonical_hash(answer.content),
+                    "verdict": check.verdict.value,
+                    "independent_evidence": check.evidence,
+                },
+            )
+            items.append(
+                RubricItem(
+                    item_id=item_id(
+                        conversation_id,
+                        turn_index,
+                        0,
+                        check.name,
+                        instruction.candidate_id,
+                        canonical_hash(payload),
+                    ),
+                    template_id=check.name,
+                    axis="factual_correctness",
+                    verdict=check.verdict,
+                    reason=check.reason,
+                    actor="controller",
+                    history_hash=history_hash,
+                )
+            )
+        return aggregate_rating(items)
+
+    def _rate_base_turn(
+        self,
+        conversation_id: str,
+        history_hash: str,
+        history: Sequence[PublicMessage],
+        question: PublicMessage,
+        answer: PublicMessage,
+        instruction: InstructionCandidate,
+        language: str,
+        image_views: list[dict[str, str]],
+        model_image: ModelImage,
+        turn_index: int,
+        requirements: Sequence[Requirement],
+    ) -> TurnRating:
         if self.config.evaluation.mode == "holistic":
             return self._rate_holistic(
                 conversation_id,
@@ -808,6 +943,7 @@ class SynthesisCoordinator:
                 image_views,
                 model_image,
                 turn_index,
+                instruction,
             )
         inventories = [
             self._invoke(
@@ -852,7 +988,7 @@ class SynthesisCoordinator:
                 model_image,
                 turn_index,
             )
-            if instruction.family == "grounded_calculation"
+            if instruction.catalog_version is None and instruction.family == "grounded_calculation"
             else None
         )
         set_check = (
@@ -865,7 +1001,7 @@ class SynthesisCoordinator:
                 model_image,
                 turn_index,
             )
-            if instruction.family == "visible_count"
+            if instruction.catalog_version is None and instruction.family == "visible_count"
             else None
         )
         context = RubricContext(
@@ -881,7 +1017,7 @@ class SynthesisCoordinator:
                 if requirement.source_message_id != question.message_id
             ),
             exhaustive_scope_ids=(instruction.candidate_id,)
-            if instruction.family == "visible_count"
+            if instruction.catalog_version is None and instruction.family == "visible_count"
             else (),
         )
         rubric_items: list[RubricItem] = []
@@ -1007,6 +1143,7 @@ class SynthesisCoordinator:
         image_views: list[dict[str, str]],
         model_image: ModelImage,
         turn_index: int,
+        instruction: InstructionCandidate,
     ) -> TurnRating:
         """Make two blind whole-turn judgments without intermediate semantic extraction."""
         invalid = (
@@ -1023,6 +1160,8 @@ class SynthesisCoordinator:
             "candidate_answer": answer.content,
             "image_views": image_views,
         }
+        if instruction.catalog_version is not None:
+            payload["expected_operation"] = operation_contract(instruction)
         votes = (
             []
             if invalid
@@ -1328,7 +1467,7 @@ class SynthesisCoordinator:
             try:
                 response = client.invoke(stage, payload, images, model, **call_kwargs)
                 if (
-                    isinstance(response.value, EvidenceInventory)
+                    isinstance(response.value, (EvidenceInventory, ScopedEvidenceInventory))
                     and response.value.image_id != payload["image_id"]
                 ):
                     raise ExecutionError(

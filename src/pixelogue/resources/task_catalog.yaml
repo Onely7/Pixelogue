@@ -1,274 +1,3275 @@
-taxonomy_version: '6.0'
-labeling_unit: turn
-primary_dialogue_task: observed_task_of_focal_final_turn
-family_weights:
-  observation_attribute: 25
-  spatial_comparison: 20
-  visible_count: 15
-  ocr_reading: 15
-  document_chart: 15
-  grounded_calculation: 10
-within_family: equal_weight_over_declared_leaves
+version: '7.0'
+counts:
+  tasks: 72
+  core_candidates: 65
+  validator_gated_extensions: 7
+  families: 14
+families:
+  visual_description:
+    label_en: Visible recognition and description
+    task_ids:
+    - object_identification
+    - attribute_lookup
+    - visible_action_relation
+    - scene_categorization
+    - grounded_description
+    - visual_summary
+  reference_spatial:
+    label_en: Reference and spatial relations
+    task_ids:
+    - referring_object_resolution
+    - referring_expression_generation
+    - spatial_relation
+    - spatial_ordering
+    - attribute_comparison
+    - visual_correspondence
+  set_logic:
+    label_en: Sets, counts, and logic
+    task_ids:
+    - entity_count
+    - predicate_selection
+    - set_operation
+    - attribute_grouping
+    - set_cardinality_comparison
+    - quantified_statement_verification
+    - grounded_hypothetical_update
+  text_reading:
+    label_en: Text and notation reading
+    task_ids:
+    - text_transcription
+    - text_field_extraction
+    - text_reading_order
+    - label_value_linking
+    - text_visual_binding
+    - formula_transcription
+    - code_transcription
+  document_understanding:
+    label_en: Document semantics and structure
+    task_ids:
+    - document_extractive_qa
+    - document_evidence_synthesis
+    - document_summary
+    - document_structure_reconstruction
+    - cross_region_consistency_check
+    - document_layout_role
+  table_understanding:
+    label_en: Table lookup and reconstruction
+    task_ids:
+    - table_cell_lookup
+    - table_predicate_selection
+    - table_structure_reconstruction
+    - table_cross_reference
+  chart_map_understanding:
+    label_en: Charts and thematic maps
+    task_ids:
+    - chart_encoding_lookup
+    - chart_value_lookup
+    - chart_comparison
+    - chart_extremum_ranking
+    - chart_trend_summary
+    - chart_series_relation
+    - chart_data_reconstruction
+  quantitative_reasoning:
+    label_en: Grounded quantitative reasoning
+    task_ids:
+    - quantity_comparison
+    - grounded_arithmetic
+    - grounded_aggregation
+    - unit_conversion
+    - measurement_reading
+  diagram_graph:
+    label_en: Diagrams, graphs, and depicted processes
+    task_ids:
+    - diagram_element_lookup
+    - graph_connectivity
+    - graph_path_tracing
+    - diagram_process_description
+    - diagram_branch_evaluation
+  pattern_geometry:
+    label_en: Patterns and visible geometry
+    task_ids:
+    - geometric_relation_analysis
+    - pattern_rule_identification
+    - pattern_completion
+    - rule_based_exception
+  screen_ui:
+    label_en: Screen and UI understanding
+    task_ids:
+    - ui_element_grounding
+    - ui_state_reading
+    - screen_summary
+  multi_region:
+    label_en: Existing multi-panel images
+    task_ids:
+    - panel_comparison
+    - visible_sequence_description
+  evidence_verification:
+    label_en: Evidence and answerability
+    task_ids:
+    - visual_claim_verification
+    - evidence_localization
+    - answerability_assessment
+  validated_extensions:
+    label_en: Optional specialized transformations
+    task_ids:
+    - geometric_constraint_solving
+    - diagram_to_code
+    - screen_to_code
+    - music_notation_reading
+    - chemical_structure_reading
+    - circuit_structure_reading
+    - ui_action_specification
 capabilities:
-  bounded_complete_scope: The boundary is explicit and every qualifying instance inside it is visible.
-  bounded_region: A specific image region can be resolved without guessing.
-  comparable_attribute: At least two resolved objects expose the same visible attribute for comparison.
-  comparable_series: At least two chart series can be resolved and compared from visible marks or values.
-  compatible_units: The visible numeric operands have explicit compatible units.
-  countable_entities: Distinct qualifying instances can be enumerated without material occlusion or ambiguity.
-  multiple_entities: At least two entities are individually resolvable.
-  multiple_visible_facts: At least two distinct image-grounded facts are visible.
-  readable_chart: Chart marks, axes, labels, and any needed legend are legible enough for lookup.
-  readable_numbers: Numeric values needed for a task are legible.
-  readable_table: Required row labels, column labels, and cells are legible.
-  readable_text: Task-relevant text can be transcribed without guessing.
-  spatial_relation: Resolved objects have an unambiguous visible positional relation.
-  text_fields: Distinct labeled text fields can be resolved.
-  text_layout: Separate text regions have an unambiguous visible reading order.
-  two_entities: At least two relevant entities are individually resolvable.
-  typed_numeric_operands: Visible numeric operands have enough type or unit context for arithmetic.
-  visible_attribute: A task-relevant color, shape, state, or other attribute is clearly visible.
-  visible_entity: At least one task-relevant object is clearly visible.
-  visible_mapping: An explicit visual association links distinct labels, values, or objects; repetition or alignment alone is insufficient.
+  visible_entity: A relevant object is visibly resolvable within one bound scope.
+  visible_attribute: The requested appearance or external state can be read without inference about hidden
+    properties.
+  visible_interaction: Pose or contact visibly supports a still-image action or interaction description.
+  scene_context: Enough contextual features are visible for a broad scene account.
+  multiple_facts: At least two distinct relevant visible facts can be grounded in the same scope.
+  resolvable_region: A region can be publicly referred to without inventing a marker or coordinate.
+  multiple_entities: At least two relevant entities are individually resolvable.
+  discriminating_attributes: Visible features or relations distinguish the intended target within the
+    candidate set.
+  spatial_layout: Positions are readable in a declared spatial reference frame.
+  comparable_attributes: The same visible property of the compared objects is observable.
+  explicit_mapping: A visible key, line, label, or unambiguous encoding establishes a correspondence.
+  closed_scope: The scope boundary and all relevant members are observable; this is scope-specific, not
+    an image-wide guess.
+  countable_entities: Every relevant visible instance can be individuated under a declared counting unit.
+  interpretable_predicates: Requested membership predicates can be checked from visible facts.
+  readable_text: Task-relevant text is legible in the actual model/student view.
+  text_fields: Distinct labeled fields and their value regions can be resolved.
+  reading_order: The reading order is visible or explicitly marked.
+  text_object_alignment: Text can be linked to its depicted object or region without invented associations.
+  readable_formula: Required symbols and two-dimensional formula relations are legible.
+  readable_code: Required code tokens and indentation are legible.
+  readable_prose: Enough readable prose is visible to support the requested document operation.
+  multiple_evidence_regions: At least two relevant evidence regions are present in this same canvas.
+  document_layout: Document elements and structural boundaries are visible.
+  explicit_cross_references: Keys, labels, or text explicitly link the regions under comparison.
+  readable_table: Required rows, columns, and cell contents are legible.
+  table_headers: Column and row labels, including necessary ancestor headers, can be resolved.
+  multiple_tables: At least two distinct tables are visible in the same canvas.
+  table_join_keys: Explicit shared identifiers permit matching between visible tables.
+  readable_chart: The chart or thematic map supports an identified chart operation.
+  chart_encoding: Required axes, legend, scale type, and units are visible or explicitly resolved.
+  legible_values: Requested values are labeled or estimable at a declared precision.
+  ordered_series: Ordering along the relevant series axis is visible.
+  comparable_series: The required series can be compared in a common compatible scale.
+  complete_series: The full requested series or category set is visible.
+  calibrated_scale: Scale labels, tick spacing, units, and the reading indicator are visible.
+  typed_operands: The needed quantities have source bindings and enough type context; dimensionless values
+    are explicitly marked.
+  explicit_units: Required units are printed or dimensionless status is unambiguous.
+  readable_diagram: The relevant diagram elements, labels, and markings are legible.
+  graph_nodes_edges: Required nodes, edges, junctions, and endpoints can be distinguished.
+  edge_directions: Edge directions or an explicitly undirected convention can be resolved.
+  explicit_branch_conditions: Required branch labels and tested conditions are visible.
+  geometric_marks: Relevant shape structure, equality/angle markings, or geometric labels are visible.
+  repeated_structure: Several resolved examples display a potentially analyzable repeated structure.
+  answer_options_visible: All choices needed for the completion question are visible within the same image.
+  ui_controls: Relevant visible UI controls or fields can be individually located.
+  ui_state_indicators: The requested UI state has an explicit visible indication.
+  panels_resolvable: The existing image contains at least two identifiable panels.
+  visible_sequence_order: The order of the panels is explicitly marked or supported by the diagram convention.
+  notation_context: Necessary symbols, keys, and local notation context are present.
+  rendered_layout: The visible layout can be reproduced under a bounded rendering specification.
+eligibility_checks:
+  scope_resolved: Bind a public region/target expression to this image; reject nonexistent markers or
+    unbound targets.
+  visible_category_supported: The chosen ordinary category is justified by the image; do not guess named
+    identities or obscure fine-grained classes.
+  attribute_visible: The requested property is visually supported and not a hidden or sensitive personal
+    attribute.
+  action_visually_supported: Visible pose/contact supports the description; temporal or intentional claims
+    are excluded.
+  description_claims_visible: Every description clause has a visible basis within scope.
+  summary_entails_evidence: Compression preserves source meaning and does not introduce an ungrounded
+    fact.
+  unique_referent: Verify that the public reference identifies one target; if multiple match, revise the
+    question or use an ambiguity profile.
+  relation_frame_defined: Specify image-plane/depth frame and orientation; reject unsupported metric or
+    viewpoint-invariant claims.
+  complete_scope: Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable.
+    Unknown is not empty.
+  comparable_basis: Resolve units, scale, attribute, period, and comparison scope before comparing.
+  association_explicit: A visible association establishes the link; proximity alone is insufficient.
+  count_unit_defined: Fix the unit and inclusion rules, then independently count all members.
+  predicates_observable: Each selection predicate has a visible truth condition; retain AND/OR/NOT scope.
+  grouping_key_defined: Define the key, membership rule, and whether groups are mutually exclusive and
+    exhaustive.
+  hypothetical_public: Every change is explicit in public user text and clearly hypothetical, not a purported
+    image fact.
+  text_legible: Read at actual delivered resolution; preserve unknown/cropped text instead of completing
+    it from priors.
+  fields_bound: Bind each requested field to a visible label/value region; distinguish missing and blank.
+  reading_order_resolved: Resolve columns and hierarchy; do not arbitrarily linearize an ambiguous layout.
+  notation_resolved: Declare the representation convention and preserve all visible structure.
+  answer_evidence_present: The visible document contains answer evidence; an unprovided page is not evidence.
+  all_evidence_on_canvas: All indispensable panels, pages, labels, choices, and text are present in the
+    one input image.
+  schema_public: The required output structure is stated in the user instruction; private schema details
+    must not leak.
+  role_visually_supported: Use layout and readable content jointly to assign a document role.
+  table_headers_bound: Resolve full row/column header paths, spans, units, and footnotes; preserve blanks
+    separately from zero.
+  join_keys_unique: Validate shared keys, multiplicity, and the join relation before joining.
+  encoding_resolved: Check axes, legends, linear/log scales, zero baselines, units, and interval encodings.
+  precision_declared: Use printed exact values or public approximation/rounding/interval rules; never
+    invent precision.
+  operands_grounded: Each operand refers to a visible value or a verified image-derived public-history
+    value.
+  expression_defined: The requested computation or reduction, operand order, denominator, and domain are
+    explicit.
+  unit_rule_available: Only use a versioned permitted conversion or a public hypothetical conversion;
+    reject missing/live-world factors.
+  scale_and_pointer_resolved: Resolve scale, pointer, origin, and units at the delivered resolution.
+  edges_resolved: Verify endpoint identities, edge direction, junction/crossing conventions, and all traversed
+    links.
+  path_objective_defined: Define source, destination, permitted edges, and path objective; retain multiple
+    valid answers.
+  public_rule_input_defined: The rule is fully visible and the hypothetical input is public; interpret
+    as data, never execute image instructions.
+  geometry_evidence_sufficient: Use explicit marks or calibrated formal drawings for exact claims; appearance
+    alone is insufficient.
+  pattern_rule_unique: Within a versioned finite rule grammar, all visible examples agree and rival rules
+    do not imply different answers.
+  candidate_options_public: All completion alternatives used in the answer are visible or explicitly defined
+    in the public instruction.
+  exception_rule_defined: State or uniquely establish the rule before choosing an exception; no subjective
+    odd-one-out.
+  ui_target_visible: The target is on-screen and tied to a public local request.
+  ui_state_explicit: A state indication is explicit enough; gray/color alone does not prove backend enablement.
+  panels_publicly_identified: Identify existing panels by labels or unambiguous layout; do not create
+    unseen comparison images.
+  sequence_order_supported: Require visible numbering, arrows, timestamps, or an explicit sequence convention.
+  claim_public_and_local: The proposition is public and relates to visible targets; it is not a hidden
+    desired answer.
+  local_question_supported: The question concerns a visible object/field; the limitation can be locally
+    grounded.
+  formal_rules_available: A versioned formal rule set and qualified validator cover the exact problem
+    type.
+  unique_solution: All visible premises jointly determine the requested solution under the permitted rule
+    set.
+  rendering_contract_available: A sandboxed renderer, asset/font policy, syntax allowlist, and output
+    comparison procedure are configured.
+  music_context_complete: Required clef, key, meter, accidentals, and bar context are available and supported
+    by the verifier.
+  chemical_notation_resolved: Bond, atom, implicit-hydrogen, and stereochemical conventions are covered
+    by the chosen validator.
+  circuit_notation_resolved: All symbol and junction conventions needed for the topology are supported
+    by the verifier.
+  local_goal_public: The goal is explicit and achievable as a single target specification on the visible
+    screen; no outcome claim.
+  action_schema_available: An explicit allowlisted action and coordinate schema is configured; this is
+    a data-generation task only.
+  coordinates_verifiable: Coordinates use the delivered view dimensions and a verified target region;
+    arbitrary points cannot pass.
+verification_contracts:
+  dual_visual_review:
+    contract: Two blind judgments of material correctness, task realization, evidence coverage, scope,
+      language, and safety. Agreement is not a truth guarantee.
+    applies_when: 'Always: material correctness, grounding, task realization and public requirements.'
+  closed_set_check:
+    contract: Independent member or per-category count extraction; preserve duplicates, unknowns, and
+      closure; compare using deterministic set/count operations.
+    applies_when: The requested result depends on complete member coverage, cardinality, ordering, or
+      a quantified domain.
+  exact_arithmetic_check:
+    contract: Independently bind operands first, then recompute with decimal/rational arithmetic and explicit
+      unit/rounding rules. A calculator does not validate visual extraction.
+    applies_when: The public task requires arithmetic, numeric equality/order, reduction, or numeric branch
+      evaluation; not merely textual matching.
+  transcript_alignment:
+    contract: Independently compare output text against the visible source, including punctuation and
+      meaningful whitespace. Do not autocorrect source errors.
+    applies_when: The output copies or extracts visible text, code or textual labels.
+  schema_check:
+    contract: Check the publicly requested format; a valid JSON/HTML structure does not establish factual
+      correctness.
+    applies_when: An explicit public machine-readable output format is required.
+  formula_structure_check:
+    contract: Compare two-dimensional expression structure and a sandboxed normalized rendering/parse
+      where available; symbol errors cannot be repaired by algebraic equivalence.
+    applies_when: The output transcribes a visible mathematical expression.
+  evidence_binding_check:
+    contract: Bind every essential answer part to its visible region or exact text span; check cross-reference
+      consistency without importing outside facts.
+    applies_when: The answer identifies or integrates evidence from image regions or verified image-derived
+      history.
+  table_structure_check:
+    contract: Independently recover header paths and cell relationships, then check output completeness
+      and alignment.
+    applies_when: The task depends on row, column or header alignment, or table reconstruction.
+  chart_encoding_check:
+    contract: Independently validate legend/axis/scale resolution and permitted numerical precision before
+      checking outputs.
+    applies_when: The answer depends on chart/map encoding, scale interpretation or plotted values.
+  scale_check:
+    contract: Check label/pointer geometry, calibration, units, and tolerance under the delivered image
+      view.
+    applies_when: The answer reads a calibrated measurement, instrument, ruler or clock.
+  graph_check:
+    contract: Validate visual node/edge extraction independently, then compute graph relations and route
+      conditions deterministically.
+    applies_when: The task depends on topology, direction, paths or branches.
+  geometry_check:
+    contract: Check declared formal marks or approximate visual relations without turning approximate
+      drawings into exact premises.
+    applies_when: The answer states a geometric relation or shape property.
+  pattern_check:
+    contract: Enumerate the permitted finite rule grammar and verify all visible examples, counterexamples,
+      and candidate solutions; defer if nonunique.
+    applies_when: The task identifies a rule, completion or rule-relative exception.
+  ui_grounding_check:
+    contract: Independently resolve the visible UI target and public referring expression. Text-only localization
+      by default.
+    applies_when: The answer localizes or identifies a user interface element.
+  panel_comparison_check:
+    contract: Align only declared existing panels; ground every difference or sequence claim in the compared
+      panels.
+    applies_when: The task compares or sequences explicitly identifiable panels.
+  formal_geometry_validator:
+    contract: Specialized verification of all visual premises and a formal derivation under an allowlisted
+      theorem set.
+    applies_when: The geometric_constraint_solving extension is enabled.
+  sandbox_render_validator:
+    contract: Run only in a separate locked-down renderer with no network, arbitrary file access, scripts,
+      or unsafe TeX; compare the rendered appearance with public fidelity criteria.
+    applies_when: The diagram_to_code or screen_to_code extension is enabled.
+  music_notation_validator:
+    contract: Qualified notation-specific validation of symbols and context; audio is not inferred.
+    applies_when: The music_notation_reading extension is enabled.
+  chemical_graph_validator:
+    contract: Qualified independent chemical-graph extraction and notation verification; no procedural
+      chemistry generation.
+    applies_when: The chemical_structure_reading extension is enabled.
+  circuit_graph_validator:
+    contract: Qualified independent topology extraction and validation of symbol/junction conventions.
+    applies_when: The circuit_structure_reading extension is enabled.
+  ui_action_validator:
+    contract: Validate one allowlisted nonexecuted action, target, view, and coordinate transform; do
+      not assume backend state or execution success.
+    applies_when: The ui_action_specification extension is enabled.
+profile_contracts:
+  normal:
+    eligibility: all task capability and eligibility checks are MET for the bound scope
+    answer: satisfy the task at the declared precision
+  limitation:
+    eligible_task_ids:
+    - object_identification
+    - attribute_lookup
+    - entity_count
+    - text_transcription
+    - text_field_extraction
+    - document_extractive_qa
+    - table_cell_lookup
+    - chart_value_lookup
+    - measurement_reading
+    - ui_element_grounding
+    eligibility: The target/field is locally visible; independently verify a specific missing/cropped/ambiguous
+      evidence condition. Do not require normal answerability capabilities to be MET. Do not admit arbitrary
+      unrelated questions.
+    answer: state the precise limitation; retain any supported partial information and do not guess
+  false_premise:
+    eligible_task_ids:
+    - object_identification
+    - attribute_lookup
+    - spatial_relation
+    - entity_count
+    - text_transcription
+    - text_field_extraction
+    - table_cell_lookup
+    - chart_value_lookup
+    - visual_claim_verification
+    eligibility: Begin from a supported local target and a minimally changed public premise. Both judges
+      must independently establish the contradiction; absence claims require closed scope, not a failed
+      search.
+    answer: identify and correct only the refutable premise; do not silently switch targets
+facets:
+  input_domain:
+    values:
+    - photo
+    - sketch
+    - document
+    - table
+    - chart
+    - thematic_map
+    - diagram
+    - ui
+    - math_notation
+    - code_listing
+    - score
+    - chemical_diagram
+    - circuit
+    rule: Infer from image only. Domain is not a new semantic operation and must not enable an unsupported
+      task.
+  source_appearance:
+    values:
+    - printed
+    - handwritten
+    - stylized
+    - rotated
+    - low_contrast
+    - dense_layout
+    rule: Difficulty tags, not separate task IDs. Never degrade legibility to manufacture diversity.
+  output_form:
+    values:
+    - short_answer
+    - sentence
+    - list
+    - table
+    - json
+    - markdown
+    - latex
+    - static_code
+    rule: Require only public output constraints. Code, coordinates, and specialized schemas have additional
+      validators.
+  answer_language:
+    values:
+    - en
+    - ja
+    - zh-Hans
+    rule: Retain source script for verbatim OCR; target language applies to generated explanation. A requested
+      translation is an optional transformation, not an OCR correction.
+  scope:
+    values:
+    - single_target
+    - bounded_region
+    - whole_canvas
+    - existing_panels
+    rule: Binding and closure are region-specific; multi-page/multi-image context is not silently supplied.
+  composition:
+    values:
+    - direct
+    - filter_then_lookup
+    - relational_chain
+    - multi_region_synthesis
+    - verified_derived_value
+    rule: Label the requested final semantic operation; multiple independent operations require explicit
+      subtasks instead of ambiguous single labels.
+  dialogue_relation:
+    values:
+    - new_observation
+    - refinement
+    - reference_to_prior
+    - regroup
+    - reformat
+    - verify
+    - explicit_hypothetical_update
+    rule: Use exact committed public history. A later turn alone does not prove dependency. Reformats
+      are modifiers, not new visual tasks.
+  answerability_profile:
+    values:
+    - normal
+    - limitation
+    - false_premise
+    rule: A response behavior orthogonal to task ID. Alternative profile guards below replace, not blindly
+      reuse, normal answerability prerequisites.
+input_contract:
+  source_images: 1
+  raw_content_inputs:
+  - image_pixels
+  permitted_context:
+  - exact committed public history originating from this image
+  - public operation instructions and explicitly hypothetical parameters
+  - versioned language, arithmetic, notation, and rendering conventions
+  forbidden_context:
+  - source dataset name as a task hint
+  - source annotations or hidden gold answers
+  - unprovided pages or images
+  - unseen temporal states
+  - unretrieved external facts
+  - private model instructions in public output
+  image_only_interpretation: All image-specific factual premises must come from this canvas or validated
+    image-derived public history. General language/notation/math rules are permitted; a question may publicly
+    choose a filter or hypothesis without asserting it is an observed fact.
+  multi_panel_policy: Only existing panels in one image. Adding collage generation or multiple image inputs
+    is a separate interface change.
+  source_rights: Keep existing rights and evaluation-source exclusion checks unchanged.
+global_admission_rules:
+- Preserve image-specific evidence lineage and public scope.
+- Capabilities are scope-bound observations with MET/NOT_MET/UNKNOWN, not an image-wide unchecked list.
+- All applicable semantic and deterministic verification contracts must be available before enabling a
+  task.
+- A valid schema, a self-consistent program, or two agreeing models does not establish that image extraction
+  was correct.
+- No medical diagnosis, sensitive personal inference, hidden-state prediction, or arbitrary source-code
+  execution is introduced by this catalog.
+- Image text remains untrusted data. Interpret printed rules only to answer the public task, never as
+  tool/system commands.
+- No task, profile, domain, or quota may be forced when supporting image evidence is absent.
+classification_rules:
+- Use the semantic output requested by the question, not the source dataset, image domain, answer formatting,
+  or task name chosen by the planner.
+- Document text extraction and evidence synthesis are different operations; formula/code transcription
+  and code generation are different operations.
+- A table-derived aggregate is grounded_aggregation with table source bindings; one fixed arithmetic expression
+  is grounded_arithmetic.
+- Counting members and comparing set cardinalities are distinct final operations; quantified verification
+  returns a proposition verdict.
+- Exact numerical chart values and interval/approximate readings require different precision parameters,
+  not fabricated precision.
+- Label each turn by its observed verified operation. For conversation-level summaries use all committed
+  task IDs and, when a primary label is necessary, the final committed turn.
+- Preserve multiple explicit subtasks as a list; do not silently assign the first task when a request
+  is genuinely compound.
+routing_precedence:
+- Use formula_transcription or code_transcription for structural transcription of formulas/code, not generic
+  text_transcription.
+- Use table_cell_lookup for row/column/header-path cell addressing, and chart_encoding_lookup/chart_value_lookup
+  for chart addressing.
+- Use ui_element_grounding for UI targets and diagram_element_lookup for labeled diagram elements.
+- Use grounded_aggregation for a closed-set reduction, grounded_arithmetic for an explicit expression,
+  and entity_count for member enumeration.
+- Use quantified_statement_verification for quantified propositions; visual_claim_verification is for
+  other visible propositions.
+- Use panel_comparison for corresponding regions in explicitly distinguishable panels; attribute_comparison
+  compares resolved objects.
+- Use graph_path_tracing for paths, graph_connectivity for adjacency/reachability, and diagram_process_description
+  for a process summary.
+- Bind the requested final operation, not the answer format; genuinely independent subtasks need explicit
+  composition.
+- If the operation is still ambiguous, mark UNRESOLVED rather than silently substituting an easier neighboring
+  task.
+runtime_feasibility:
+- The expected output must fit the configured response and context budget. Otherwise choose a publicly
+  explicit bounded region, allocate a reviewed larger budget, or skip. Never truncate and certify completeness.
+- Check eligibility using the actual model/student image resolution and record any view transformation.
+  Coordinate checks must use the same view.
+- An unavailable applicable validator blocks admission; a registry entry in this proposal is not a running
+  implementation.
+- Pattern uniqueness is relative to an explicitly versioned finite rule grammar, made public when it changes
+  the task interpretation. Competing reasonable answers require abstention.
+provenance:
+  proposal_version: 7.0-proposal.1
+  proposal_sha256: 83af1e2681d88937fdad5f9c80d07bf2d9780cbea298719c8e4902f011487805
+  source_table:
+    filename: FineVision_185_Dataset_Task_Map.md
+    sha256: 327ed427d845f29d03d92d69613c16bcae99b61d80538c20015fb1b4b7ef02c9
+    subset_count: 185
+    operation_phrase_count: 527
+    limitations: Previous research table, not a full FineVision QA record audit. Source caveats are preserved
+      in finevision_mapping_185.json.
 tasks:
-- id: object_identification
-  family: observation_attribute
-  label_ja: 物体の特定
+- number: 1
+  id: object_identification
+  family: visual_description
+  label_en: Object identification
+  status: core_candidate
+  definition_en: Name a resolved visible object at the finest category supported by its appearance; do
+    not identify a person or infer an exact product model.
   required_capabilities:
   - visible_entity
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Identify visible objects in the specified scope.
-  operation_rule_ref: object_identification
-- id: attribute_lookup
-  family: observation_attribute
-  label_ja: 可視属性の取得
+  eligibility_checks:
+  - scope_resolved
+  - visible_category_supported
+  example_question_if_eligible: What object is on the left of the desk?
+  do_not_infer: Unseen brand, exact model, named identity, or private personal attributes.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 43
+  - 57
+  - 69
+  - 76
+  inspiration_subsets:
+  - cocoqa
+  - lvis_instruct4v
+  - vqav2
+  - objects365_qa
+  source_urls:
+  - https://arxiv.org/abs/1505.02074
+  - https://arxiv.org/abs/2311.07574
+  - https://arxiv.org/abs/1612.00837
+  - https://www.objects365.org/overview.html
+  - https://arxiv.org/html/2510.17269v2
+- number: 2
+  id: attribute_lookup
+  family: visual_description
+  label_en: Visible attribute lookup
+  status: core_candidate
+  definition_en: Report a visible property of a resolved object, including color, shape, material appearance,
+    posture, or externally visible state.
   required_capabilities:
   - visible_entity
   - visible_attribute
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Retrieve a visible attribute of a resolved object.
-  operation_rule_ref: attribute_lookup
-- id: region_description
-  family: observation_attribute
-  label_ja: 指定領域の記述
+  eligibility_checks:
+  - scope_resolved
+  - attribute_visible
+  example_question_if_eligible: What color is the lid?
+  do_not_infer: Internal emotion, material composition, intent, health, real-world dimensions, or hidden
+    state.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 1
+  - 43
+  - 55
+  - 69
+  inspiration_subsets:
+  - coco_colors
+  - cocoqa
+  - lnqa
+  - vqav2
+  source_urls:
+  - https://huggingface.co/datasets/hazal-karakus/mscoco-controlnet-canny-less-colors
+  - https://arxiv.org/abs/1505.02074
+  - https://vikhyat.net/posts/2024-08-17-lnqa.html
+  - https://arxiv.org/abs/1612.00837
+- number: 3
+  id: visible_action_relation
+  family: visual_description
+  label_en: Visible action or interaction
+  status: core_candidate
+  definition_en: Describe the action or interaction directly supported by body configuration and object
+    contact in this still image.
   required_capabilities:
-  - bounded_region
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Describe visible facts in a bounded region.
-  operation_rule_ref: region_description
-- id: visual_summary
-  family: observation_attribute
-  label_ja: 可視内容の要約
+  - visible_entity
+  - visible_interaction
+  eligibility_checks:
+  - scope_resolved
+  - action_visually_supported
+  example_question_if_eligible: What is the person holding?
+  do_not_infer: A preceding event, future action, intent, or speed inferred from a still frame.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 9
+  - 53
+  - 69
+  - 47
+  inspiration_subsets:
+  - sharegpt4v(coco)
+  - LLaVA_Instruct_150K
+  - vqav2
+  - drivelm
+  source_urls:
+  - https://arxiv.org/abs/2311.12793
+  - https://arxiv.org/abs/2304.08485
+  - https://arxiv.org/abs/1612.00837
+  - https://arxiv.org/abs/2312.14150
+- number: 4
+  id: scene_categorization
+  family: visual_description
+  label_en: Scene categorization
+  status: core_candidate
+  definition_en: Classify the broad visible scene using declared ordinary scene categories and observable
+    evidence.
   required_capabilities:
-  - multiple_visible_facts
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Summarize supported visible facts without outside knowledge.
-  operation_rule_ref: visual_summary
-- id: relation_lookup
-  family: spatial_comparison
-  label_ja: 位置関係の取得
+  - scene_context
+  eligibility_checks:
+  - scope_resolved
+  - visible_category_supported
+  example_question_if_eligible: Does this image show a kitchen, a bedroom, or an outdoor scene?
+  do_not_infer: A precise geographical location or landmark name from outside knowledge.
+  verification_contracts:
+  - dual_visual_review
+  parameters:
+    category_set: must be public in the question or a versioned ordinary-category vocabulary
+  inspiration_subset_numbers:
+  - 52
+  - 66
+  - 69
+  inspiration_subsets:
+  - indoor_qa
+  - vision_flan(filtered)
+  - vqav2
+  source_urls:
+  - https://huggingface.co/datasets/keremberke/indoor-scene-classification
+  - https://arxiv.org/html/2510.17269v2
+  - https://arxiv.org/abs/2402.11690
+  - https://arxiv.org/abs/1612.00837
+- number: 5
+  id: grounded_description
+  family: visual_description
+  label_en: Grounded scene or region description
+  status: core_candidate
+  definition_en: Describe the objects, attributes, visible interactions, spatial relations, and readable
+    text relevant to the specified scene or region.
   required_capabilities:
-  - two_entities
-  - spatial_relation
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Retrieve a supported spatial relation between resolved objects.
-  operation_rule_ref: relation_lookup
-- id: attribute_comparison
-  family: spatial_comparison
-  label_ja: 属性による対象比較
+  - resolvable_region
+  - multiple_facts
+  eligibility_checks:
+  - scope_resolved
+  - description_claims_visible
+  example_question_if_eligible: Describe the objects and their arrangement in the lower half of the image.
+  do_not_infer: Invented backstory, identity, hidden objects, or reasons for events.
+  verification_contracts:
+  - dual_visual_review
+  parameters:
+    scope: whole image or resolved region
+    detail_level:
+    - brief
+    - standard
+    - detailed
+  inspiration_subset_numbers:
+  - 2
+  - 5
+  - 6
+  - 7
+  - 8
+  - 11
+  - 12
+  - 13
+  inspiration_subsets:
+  - densefusion_1m
+  - image_textualization(filtered)
+  - laion_gpt4v
+  - localized_narratives
+  - sharegpt4o
+  - sharegpt4v(llava)
+  - sharegpt4v(sam)
+  - textcaps
+  source_urls:
+  - https://proceedings.neurips.cc/paper_files/paper/2024/hash/20ffc2b42c7de4a1960cfdadf305bbe2-Abstract-Datasets_and_Benchmarks_Track.html
+  - https://arxiv.org/abs/2406.07502
+  - https://huggingface.co/datasets/laion/gpt4v-dataset
+  - https://link.springer.com/10.1007/978-3-030-58558-7_38
+  - https://sharegpt4o.github.io/
+  - https://arxiv.org/abs/2311.12793
+  - https://arxiv.org/abs/2003.12462
+- number: 6
+  id: visual_summary
+  family: visual_description
+  label_en: Visual synthesis and summary
+  status: core_candidate
+  definition_en: Select and compress the main visible facts into a requested high-level account instead
+    of enumerating every detail.
   required_capabilities:
-  - two_entities
-  - comparable_attribute
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Compare the same visible attribute of resolved objects.
-  operation_rule_ref: attribute_comparison
-- id: spatial_ordering
-  family: spatial_comparison
-  label_ja: 画像上の順序付け
+  - scene_context
+  - multiple_facts
+  eligibility_checks:
+  - scope_resolved
+  - summary_entails_evidence
+  example_question_if_eligible: Summarize what is visible in this image in one sentence.
+  do_not_infer: An unstated event purpose or unsupported emotional narrative.
+  verification_contracts:
+  - dual_visual_review
+  parameters:
+    detail_level:
+    - brief
+    - standard
+  inspiration_subset_numbers:
+  - 2
+  - 5
+  - 8
+  - 53
+  inspiration_subsets:
+  - densefusion_1m
+  - image_textualization(filtered)
+  - sharegpt4o
+  - LLaVA_Instruct_150K
+  source_urls:
+  - https://proceedings.neurips.cc/paper_files/paper/2024/hash/20ffc2b42c7de4a1960cfdadf305bbe2-Abstract-Datasets_and_Benchmarks_Track.html
+  - https://arxiv.org/abs/2406.07502
+  - https://sharegpt4o.github.io/
+  - https://arxiv.org/abs/2304.08485
+- number: 7
+  id: referring_object_resolution
+  family: reference_spatial
+  label_en: Resolve a referring expression
+  status: core_candidate
+  definition_en: Identify the unique visible target satisfying a combination of attributes and relations
+    in the public referring expression.
   required_capabilities:
   - multiple_entities
-  - spatial_relation
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Order resolved objects by an explicit visible spatial key.
-  operation_rule_ref: spatial_ordering
-- id: correspondence_matching
-  family: spatial_comparison
-  label_ja: 可視対応関係の照合
+  - discriminating_attributes
+  eligibility_checks:
+  - scope_resolved
+  - unique_referent
+  example_question_if_eligible: Which cup is to the right of the plate and has a blue handle?
+  do_not_infer: Choosing among indistinguishable targets without acknowledging ambiguity.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 67
+  - 57
+  - 79
+  - 94
+  inspiration_subsets:
+  - visual7w
+  - lvis_instruct4v
+  - clevr
+  - super_clevr(mathv360k)
+  source_urls:
+  - https://arxiv.org/abs/1511.03416
+  - https://arxiv.org/abs/2311.07574
+  - https://arxiv.org/abs/1612.06890
+  - https://github.com/Lizw14/Super-CLEVR
+  - https://arxiv.org/abs/2406.17294
+- number: 8
+  id: referring_expression_generation
+  family: reference_spatial
+  label_en: Generate a discriminating reference
+  status: core_candidate
+  definition_en: Describe a visibly identified target so another reader can distinguish it from the other
+    candidates in the same scope.
   required_capabilities:
-  - visible_mapping
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Match objects or labels using a visible correspondence.
-  operation_rule_ref: correspondence_matching
-- id: visible_count
-  family: visible_count
-  label_ja: 範囲を限定した個数
+  - multiple_entities
+  - discriminating_attributes
+  eligibility_checks:
+  - scope_resolved
+  - unique_referent
+  example_question_if_eligible: Describe the highlighted object so it cannot be confused with the other
+    objects.
+  do_not_infer: Using private object IDs, invisible highlights, or non-discriminating descriptions.
+  verification_contracts:
+  - dual_visual_review
+  parameters:
+    target_binding: must already be publicly resolvable; no invented marker
+  inspiration_subset_numbers:
+  - 7
+  - 57
+  - 67
+  inspiration_subsets:
+  - localized_narratives
+  - lvis_instruct4v
+  - visual7w
+  source_urls:
+  - https://link.springer.com/10.1007/978-3-030-58558-7_38
+  - https://arxiv.org/abs/2311.07574
+  - https://arxiv.org/abs/1511.03416
+- number: 9
+  id: spatial_relation
+  family: reference_spatial
+  label_en: Spatial relation lookup
+  status: core_candidate
+  definition_en: State a relation between resolved visible targets in an explicitly declared image-plane
+    or supported depth frame.
   required_capabilities:
-  - bounded_complete_scope
+  - multiple_entities
+  - spatial_layout
+  eligibility_checks:
+  - scope_resolved
+  - relation_frame_defined
+  example_question_if_eligible: Where is the bicycle relative to the tree?
+  do_not_infer: Metric distance, camera-independent left/right, or uncertain depth ordering.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 64
+  - 70
+  - 79
+  inspiration_subsets:
+  - spatialsense
+  - vsr
+  - clevr
+  source_urls:
+  - https://openaccess.thecvf.com/content_ICCV_2019/html/Yang_SpatialSense_An_Adversarially_Crowdsourced_Benchmark_for_Spatial_Relation_Recognition_ICCV_2019_paper.html
+  - https://arxiv.org/abs/2205.00363
+  - https://arxiv.org/abs/1612.06890
+- number: 10
+  id: spatial_ordering
+  family: reference_spatial
+  label_en: Spatial ordering
+  status: core_candidate
+  definition_en: Order a finite set of visible targets by a specified spatial key and preserve ties or
+    ambiguity.
+  required_capabilities:
+  - multiple_entities
+  - spatial_layout
+  - closed_scope
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - relation_frame_defined
+  example_question_if_eligible: List the labeled boxes from left to right.
+  do_not_infer: Invented order between overlapping or unresolved positions.
+  verification_contracts:
+  - dual_visual_review
+  - closed_set_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 64
+  - 79
+  - 94
+  inspiration_subsets:
+  - spatialsense
+  - clevr
+  - super_clevr(mathv360k)
+  source_urls:
+  - https://openaccess.thecvf.com/content_ICCV_2019/html/Yang_SpatialSense_An_Adversarially_Crowdsourced_Benchmark_for_Spatial_Relation_Recognition_ICCV_2019_paper.html
+  - https://arxiv.org/abs/1612.06890
+  - https://github.com/Lizw14/Super-CLEVR
+  - https://arxiv.org/abs/2406.17294
+- number: 11
+  id: attribute_comparison
+  family: reference_spatial
+  label_en: Visible attribute comparison
+  status: core_candidate
+  definition_en: Compare the same directly observable attribute of two or more resolved objects, reporting
+    relevant similarities or differences.
+  required_capabilities:
+  - multiple_entities
+  - comparable_attributes
+  eligibility_checks:
+  - scope_resolved
+  - comparable_basis
+  example_question_if_eligible: How do the two bags differ in color and shape?
+  do_not_infer: Comparing real-world size from projected size, or unseen quality.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 58
+  - 60
+  - 69
+  - 79
+  inspiration_subsets:
+  - mimic_cgd
+  - mmra
+  - vqav2
+  - clevr
+  source_urls:
+  - https://huggingface.co/datasets/pufanyi/MIMICIT
+  - https://arxiv.org/abs/2306.05425
+  - https://arxiv.org/abs/2407.17379
+  - https://arxiv.org/abs/1612.00837
+  - https://arxiv.org/abs/1612.06890
+- number: 12
+  id: visual_correspondence
+  family: reference_spatial
+  label_en: Explicit visual correspondence
+  status: core_candidate
+  definition_en: Match targets using an explicit line, key, identifier, legend, or otherwise unambiguous
+    visual association.
+  required_capabilities:
+  - explicit_mapping
+  eligibility_checks:
+  - scope_resolved
+  - association_explicit
+  example_question_if_eligible: Which picture is connected to label B?
+  do_not_infer: Assuming repetition, proximity, or alignment alone establishes a semantic mapping.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 44
+  - 64
+  - 79
+  - 160
+  inspiration_subsets:
+  - CoSyn_400k_graphic
+  - spatialsense
+  - clevr
+  - ai2d_merged
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+  - https://openaccess.thecvf.com/content_ICCV_2019/html/Yang_SpatialSense_An_Adversarially_Crowdsourced_Benchmark_for_Spatial_Relation_Recognition_ICCV_2019_paper.html
+  - https://arxiv.org/abs/1612.06890
+  - https://huggingface.co/datasets/andito/ai2d-merged
+  - https://arxiv.org/html/2510.17269v2
+- number: 13
+  id: entity_count
+  family: set_logic
+  label_en: Count a bounded set
+  status: core_candidate
+  definition_en: Count every member satisfying the public predicates within a visible, closed scope; support
+    verified zero as distinct from unreadable scope.
+  required_capabilities:
+  - closed_scope
   - countable_entities
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Count all qualifying visible instances within a complete bounded
-    scope.
-  operation_rule_ref: visible_count
-- id: conditional_selection
-  family: visible_count
-  label_ja: 条件に合う集合の選択
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - count_unit_defined
+  example_question_if_eligible: How many red cups are visible on the table?
+  do_not_infer: Counting unseen instances or changing the unit from flowers to buds.
+  verification_contracts:
+  - dual_visual_review
+  - closed_set_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 43
+  - 77
+  - 78
+  - 79
+  inspiration_subsets:
+  - cocoqa
+  - oodvqa
+  - tallyqa
+  - clevr
+  source_urls:
+  - https://arxiv.org/abs/1505.02074
+  - https://arxiv.org/abs/2311.16101
+  - https://ojs.aaai.org/index.php/AAAI/article/view/4815
+  - https://arxiv.org/abs/1612.06890
+- number: 14
+  id: predicate_selection
+  family: set_logic
+  label_en: Predicate-based selection
+  status: core_candidate
+  definition_en: Return the complete set satisfying declared attribute, text, or spatial predicates within
+    a closed visible scope.
+  required_capabilities:
+  - multiple_entities
+  - interpretable_predicates
+  - closed_scope
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - predicates_observable
+  example_question_if_eligible: Which objects are red and to the left of the bowl?
+  do_not_infer: Unspecified criteria, hidden membership, or omitted qualifying members.
+  verification_contracts:
+  - dual_visual_review
+  - closed_set_check
+  parameters:
+    boolean_operator:
+    - and
+    - or
+    - not
+    negation_scope: explicit
+  inspiration_subset_numbers:
+  - 78
+  - 79
+  - 94
+  inspiration_subsets:
+  - tallyqa
+  - clevr
+  - super_clevr(mathv360k)
+  source_urls:
+  - https://ojs.aaai.org/index.php/AAAI/article/view/4815
+  - https://arxiv.org/abs/1612.06890
+  - https://github.com/Lizw14/Super-CLEVR
+  - https://arxiv.org/abs/2406.17294
+- number: 15
+  id: set_operation
+  family: set_logic
+  label_en: Union, intersection, or difference
+  status: core_candidate
+  definition_en: Apply a stated set operation to two publicly defined, image-grounded sets; resolve overlapping
+    instances once.
+  required_capabilities:
+  - multiple_entities
+  - interpretable_predicates
+  - closed_scope
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - predicates_observable
+  example_question_if_eligible: Which shapes are blue but not circles?
+  do_not_infer: A complement over an unbounded universe or double-counting the same instance.
+  verification_contracts:
+  - dual_visual_review
+  - closed_set_check
+  parameters:
+    operator:
+    - union
+    - intersection
+    - difference
+  inspiration_subset_numbers:
+  - 79
+  - 80
+  - 94
+  inspiration_subsets:
+  - clevr
+  - clevr_math
+  - super_clevr(mathv360k)
+  source_urls:
+  - https://arxiv.org/abs/1612.06890
+  - https://arxiv.org/abs/2208.05358
+  - https://github.com/Lizw14/Super-CLEVR
+  - https://arxiv.org/abs/2406.17294
+- number: 16
+  id: attribute_grouping
+  family: set_logic
+  label_en: Grouping and partitioning
+  status: core_candidate
+  definition_en: Partition a specified complete set by a visible key, associating every group with its
+    members or count.
   required_capabilities:
   - multiple_entities
   - visible_attribute
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Select objects satisfying visible predicates.
-  operation_rule_ref: conditional_selection
-- id: exclusion_selection
-  family: visible_count
-  label_ja: 指定集合を除く選択
+  - closed_scope
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - grouping_key_defined
+  example_question_if_eligible: Group the buttons by color and give the count in each group.
+  do_not_infer: A list of category names without member associations or unsupported categories.
+  verification_contracts:
+  - dual_visual_review
+  - closed_set_check
+  parameters:
+    return:
+    - members
+    - counts
+    group_key: visible and explicit
+  inspiration_subset_numbers:
+  - 1
+  - 78
+  - 79
+  - 94
+  inspiration_subsets:
+  - coco_colors
+  - tallyqa
+  - clevr
+  - super_clevr(mathv360k)
+  source_urls:
+  - https://huggingface.co/datasets/hazal-karakus/mscoco-controlnet-canny-less-colors
+  - https://ojs.aaai.org/index.php/AAAI/article/view/4815
+  - https://arxiv.org/abs/1612.06890
+  - https://github.com/Lizw14/Super-CLEVR
+  - https://arxiv.org/abs/2406.17294
+- number: 17
+  id: set_cardinality_comparison
+  family: set_logic
+  label_en: Compare set cardinalities
+  status: core_candidate
+  definition_en: Compare the sizes of two completely observable sets, without substituting area or visual
+    density for counting.
   required_capabilities:
-  - multiple_entities
-  - bounded_complete_scope
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Select a visible set after excluding a resolved subset.
-  operation_rule_ref: exclusion_selection
-- id: attribute_grouping
-  family: visible_count
-  label_ja: 可視属性による分類
+  - closed_scope
+  - countable_entities
+  - interpretable_predicates
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - count_unit_defined
+  example_question_if_eligible: Are there more cups than plates?
+  do_not_infer: Judging quantity from apparent occupied area.
+  verification_contracts:
+  - dual_visual_review
+  - closed_set_check
+  - exact_arithmetic_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 49
+  - 78
+  - 79
+  inspiration_subsets:
+  - iconqa
+  - tallyqa
+  - clevr
+  source_urls:
+  - https://arxiv.org/abs/2110.13214
+  - https://ojs.aaai.org/index.php/AAAI/article/view/4815
+  - https://arxiv.org/abs/1612.06890
+- number: 18
+  id: quantified_statement_verification
+  family: set_logic
+  label_en: Verify a quantified proposition
+  status: core_candidate
+  definition_en: Verify a proposition containing all, none, some, exactly, or a declared cardinality bound
+    over a closed visible domain.
   required_capabilities:
-  - multiple_entities
-  - visible_attribute
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Partition visible objects by the specified visible attribute.
-  operation_rule_ref: attribute_grouping
-- id: text_transcription
-  family: ocr_reading
-  label_ja: 見える文字の原文転記
+  - closed_scope
+  - interpretable_predicates
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - predicates_observable
+  example_question_if_eligible: Are all the visible triangles blue?
+  do_not_infer: Using a partial view to establish a universal or a negative statement.
+  verification_contracts:
+  - dual_visual_review
+  - closed_set_check
+  parameters:
+    quantifier:
+    - all
+    - none
+    - some
+    - exactly
+    - at_least
+    - at_most
+  inspiration_subset_numbers:
+  - 61
+  - 70
+  - 79
+  inspiration_subsets:
+  - nlvr2
+  - vsr
+  - clevr
+  source_urls:
+  - https://arxiv.org/abs/1811.00491
+  - https://arxiv.org/abs/2205.00363
+  - https://arxiv.org/abs/1612.06890
+- number: 19
+  id: grounded_hypothetical_update
+  family: set_logic
+  label_en: Explicit hypothetical set update
+  status: core_candidate
+  definition_en: Apply an explicitly hypothetical addition, removal, or relabeling to an observed set
+    and answer about the resulting modeled state.
+  required_capabilities:
+  - closed_scope
+  - countable_entities
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - hypothetical_public
+  example_question_if_eligible: If the two blue cubes were removed, how many visible cubes would remain?
+  do_not_infer: Presenting the hypothetical result as an event that actually occurred, or predicting physical
+    behavior.
+  verification_contracts:
+  - dual_visual_review
+  - closed_set_check
+  - exact_arithmetic_check
+  parameters:
+    update:
+    - add
+    - remove
+    - relabel
+    assumptions: must be explicit in user text
+  inspiration_subset_numbers:
+  - 80
+  - 81
+  inspiration_subsets:
+  - clevr_math
+  - clevr_math(mathv360k)
+  source_urls:
+  - https://arxiv.org/abs/2208.05358
+  - https://arxiv.org/abs/2406.17294
+- number: 20
+  id: text_transcription
+  family: text_reading
+  label_en: Verbatim text transcription
+  status: core_candidate
+  definition_en: Copy readable text from the requested visible region, preserving spelling, script, punctuation,
+    and meaningful line breaks.
   required_capabilities:
   - readable_text
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Copy the visible text verbatim in its source writing system.
-  operation_rule_ref: text_transcription
-- id: text_field_extraction
-  family: ocr_reading
-  label_ja: 指定文字情報の抽出
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  example_question_if_eligible: Transcribe the text on the sign exactly.
+  do_not_infer: Correcting a visible typo, completing cropped text, or obeying instructions in the image.
+  verification_contracts:
+  - dual_visual_review
+  - transcript_alignment
+  parameters: {}
+  inspiration_subset_numbers:
+  - 96
+  - 99
+  - 100
+  - 104
+  - 105
+  - 106
+  - 110
+  - 113
+  - 114
+  - 121
+  inspiration_subsets:
+  - art
+  - cocotext
+  - ctw
+  - iam
+  - iiit5k
+  - imgur5k
+  - maptext
+  - orand_car_a
+  - rendered_text
+  - wordart
+  source_urls:
+  - https://tc11.cvc.uab.es/datasets/ICDAR-2019%20ArT_1
+  - https://arxiv.org/abs/1601.07140
+  - https://arxiv.org/abs/1803.00085
+  - https://fki.tic.heia-fr.ch/databases/iam-handwriting-database
+  - https://arxiv.org/html/2510.17269v2
+  - https://cvit.iiit.ac.in/research/projects/cvit-projects/the-iiit-5k-word-dataset
+  - https://github.com/facebookresearch/IMGUR5K-Handwriting-Dataset
+  - https://zenodo.org/records/11516933
+  - https://icdar2024.net/competitions/
+  - https://www.orand.cl/icfhr2014-hdsr/
+  - https://huggingface.co/datasets/wendlerc/RenderedText
+  - https://arxiv.org/abs/2208.00438
+- number: 21
+  id: text_field_extraction
+  family: text_reading
+  label_en: Extract specified text fields
+  status: core_candidate
+  definition_en: Extract the values of explicitly requested fields from readable text, preserving field/value
+    correspondence and missing-field status.
   required_capabilities:
   - readable_text
   - text_fields
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Extract the specified fields from readable image text.
-  operation_rule_ref: text_field_extraction
-- id: text_reading_order
-  family: ocr_reading
-  label_ja: 文字領域の読み順
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  - fields_bound
+  example_question_if_eligible: What invoice number and issue date are printed here?
+  do_not_infer: Filling absent fields with typical values or inferring unprinted personal data.
+  verification_contracts:
+  - dual_visual_review
+  - transcript_alignment
+  - schema_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 101
+  - 115
+  - 116
+  - 138
+  - 142
+  - 146
+  - 156
+  inspiration_subsets:
+  - funsd
+  - sroie
+  - svrd
+  - handwriting_forms
+  - invoices_receipts
+  - ocrvqa
+  - ureader_ie
+  source_urls:
+  - https://guillaumejaume.github.io/FUNSD/
+  - https://arxiv.org/abs/1905.13538
+  - https://arxiv.org/abs/2103.10213
+  - https://arxiv.org/html/2510.17269v2
+  - https://arxiv.org/abs/2306.03287
+  - https://huggingface.co/datasets/ift/handwriting_forms
+  - https://huggingface.co/datasets/mychen76/invoices-and-receipts_ocr_v1
+  - https://ocr-vqa.github.io/
+  - https://arxiv.org/abs/2310.05126
+- number: 22
+  id: text_reading_order
+  family: text_reading
+  label_en: Reconstruct reading order
+  status: core_candidate
+  definition_en: Order readable text regions according to supported page, column, or explicitly labeled
+    sequence structure.
   required_capabilities:
   - readable_text
-  - text_layout
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Report text regions in a specified or visibly supported reading order.
-  operation_rule_ref: text_reading_order
-- id: label_value_linking
-  family: ocr_reading
-  label_ja: ラベルと値の対応
+  - reading_order
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  - reading_order_resolved
+  example_question_if_eligible: Read the text blocks in their intended reading order.
+  do_not_infer: Guessing an order when equally valid layouts exist.
+  verification_contracts:
+  - dual_visual_review
+  - transcript_alignment
+  parameters: {}
+  inspiration_subset_numbers:
+  - 118
+  - 122
+  - 123
+  - 135
+  inspiration_subsets:
+  - synthdog
+  - olmOCR-mix-0225-documents
+  - olmOCR-mix-0225-books
+  - DoclingMatix
+  source_urls:
+  - https://arxiv.org/abs/2111.15664
+  - https://arxiv.org/abs/2502.18443
+  - https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix
+  - https://arxiv.org/abs/2503.11576
+- number: 23
+  id: label_value_linking
+  family: text_reading
+  label_en: Link labels and values
+  status: core_candidate
+  definition_en: Recover explicit associations between readable labels and their values, including separated
+    form fields and legends.
   required_capabilities:
   - readable_text
-  - visible_mapping
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Associate visible labels with their visible values.
-  operation_rule_ref: label_value_linking
-- id: table_lookup
-  family: document_chart
-  label_ja: 表の行列対応による取得
+  - explicit_mapping
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  - association_explicit
+  example_question_if_eligible: Which value belongs to the label Net weight?
+  do_not_infer: Pairing nearby values with labels when the layout does not establish the link.
+  verification_contracts:
+  - dual_visual_review
+  - transcript_alignment
+  parameters: {}
+  inspiration_subset_numbers:
+  - 101
+  - 115
+  - 116
+  - 138
+  - 156
+  inspiration_subsets:
+  - funsd
+  - sroie
+  - svrd
+  - handwriting_forms
+  - ureader_ie
+  source_urls:
+  - https://guillaumejaume.github.io/FUNSD/
+  - https://arxiv.org/abs/1905.13538
+  - https://arxiv.org/abs/2103.10213
+  - https://arxiv.org/html/2510.17269v2
+  - https://arxiv.org/abs/2306.03287
+  - https://huggingface.co/datasets/ift/handwriting_forms
+  - https://arxiv.org/abs/2310.05126
+- number: 24
+  id: text_visual_binding
+  family: text_reading
+  label_en: Relate text and visual content
+  status: core_candidate
+  definition_en: Associate readable text with depicted objects or regions, or explain a directly visible
+    agreement or contrast between text and depiction.
+  required_capabilities:
+  - readable_text
+  - text_object_alignment
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  - association_explicit
+  example_question_if_eligible: Which displayed product is identified by the label Green tea?
+  do_not_infer: An inferred cultural joke, author intent, or unshown product-price association.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 13
+  - 42
+  - 54
+  - 137
+  - 151
+  - 153
+  - 154
+  inspiration_subsets:
+  - textcaps
+  - chinesememe
+  - llavar_gpt4_20k
+  - est_vqa
+  - st_vqa
+  - textocr(gpt4v)
+  - textvqa
+  source_urls:
+  - https://arxiv.org/abs/2003.12462
+  - https://huggingface.co/datasets/REILX/chinese-meme-description-dataset
+  - https://arxiv.org/abs/2306.17107
+  - https://arxiv.org/abs/2002.10215
+  - https://arxiv.org/abs/1905.13648
+  - https://huggingface.co/datasets/jimmycarter/textocr-gpt4v
+  - https://arxiv.org/abs/1904.08920
+- number: 25
+  id: formula_transcription
+  family: text_reading
+  label_en: Transcribe mathematical notation
+  status: core_candidate
+  definition_en: Convert a readable two-dimensional formula to a declared notation while preserving symbols,
+    grouping, scripts, and structure; do not solve it.
+  required_capabilities:
+  - readable_formula
+  eligibility_checks:
+  - scope_resolved
+  - notation_resolved
+  example_question_if_eligible: Transcribe the displayed equation into LaTeX without solving it.
+  do_not_infer: Repairing a source equation or substituting an equivalent but differently written formula.
+  verification_contracts:
+  - dual_visual_review
+  - formula_structure_check
+  parameters:
+    notation:
+    - latex
+    - unicode_math
+  inspiration_subset_numbers:
+  - 98
+  - 102
+  - 107
+  - 108
+  - 109
+  - 111
+  - 119
+  - 120
+  inspiration_subsets:
+  - chrome_writting
+  - hme100k
+  - k12_printing
+  - latex_handwritten
+  - latexformulas
+  - mathwriting-google
+  - SynthFormulaNet
+  - tal_ocr_eng
+  source_urls:
+  - https://arxiv.org/html/2510.17269v2
+  - https://ieeexplore.ieee.org/document/6628849
+  - https://ai.100tal.com/dataset
+  - https://huggingface.co/datasets/lmms-lab/LLaVA-OneVision-Data
+  - https://sujayr91.github.io/Im2Latex/
+  - https://huggingface.co/datasets/OleehyO/latex-formulas
+  - https://arxiv.org/abs/2404.10690
+  - https://arxiv.org/abs/2503.11576
+- number: 26
+  id: code_transcription
+  family: text_reading
+  label_en: Transcribe visible code
+  status: core_candidate
+  definition_en: Copy visible program text with its indentation, strings, punctuation, and line structure;
+    retain visible errors.
+  required_capabilities:
+  - readable_code
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  example_question_if_eligible: Transcribe the code in the image, preserving indentation.
+  do_not_infer: Executing code, silently fixing it, or adding hidden imports.
+  verification_contracts:
+  - dual_visual_review
+  - transcript_alignment
+  parameters:
+    execution: forbidden
+    source_errors: preserve
+  inspiration_subset_numbers:
+  - 117
+  - 135
+  inspiration_subsets:
+  - SynthCodeNet
+  - DoclingMatix
+  source_urls:
+  - https://arxiv.org/abs/2503.11576
+  - https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix
+- number: 27
+  id: document_extractive_qa
+  family: document_understanding
+  label_en: Extractive document question answering
+  status: core_candidate
+  definition_en: Find and return text in the visible document that answers the question, preserving qualifiers
+    and the requested scope.
+  required_capabilities:
+  - readable_prose
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  - answer_evidence_present
+  example_question_if_eligible: According to this notice, when does registration close?
+  do_not_infer: Answering from world knowledge or from a page not in the image.
+  verification_contracts:
+  - dual_visual_review
+  - transcript_alignment
+  parameters: {}
+  inspiration_subset_numbers:
+  - 103
+  - 127
+  - 136
+  - 147
+  - 149
+  - 158
+  inspiration_subsets:
+  - hw_squad
+  - bentham
+  - docvqa
+  - pdfvqa
+  - screenqa
+  - ureader_qa_processed
+  source_urls:
+  - https://www.docvqa.org/datasets/benthamqa-and-hw-squad
+  - https://arxiv.org/html/2510.17269v2
+  - https://arxiv.org/abs/2007.00398
+  - https://arxiv.org/abs/2304.06447
+  - https://arxiv.org/abs/2209.08199
+  - https://arxiv.org/abs/2310.05126
+- number: 28
+  id: document_evidence_synthesis
+  family: document_understanding
+  label_en: Synthesize distributed document evidence
+  status: core_candidate
+  definition_en: Combine at least two distinct visible text, table, or figure regions to answer one question
+    whose required result is not a single copied span.
+  required_capabilities:
+  - multiple_evidence_regions
+  - readable_prose
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  - all_evidence_on_canvas
+  example_question_if_eligible: Using the table and the note below it, explain which entries are included
+    in the total.
+  do_not_infer: Importing another page or causal claims not established by the visible document.
+  verification_contracts:
+  - dual_visual_review
+  - evidence_binding_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 21
+  - 25
+  - 33
+  - 34
+  - 139
+  - 150
+  - 159
+  inspiration_subsets:
+  - finqa
+  - multihiertt
+  - tat_dqa
+  - tat_qa
+  - infographic_vqa
+  - slidevqa
+  - visualmrc
+  source_urls:
+  - https://arxiv.org/abs/2109.00122
+  - https://arxiv.org/abs/2206.01347
+  - https://nextplusplus.github.io/TAT-DQA/
+  - https://arxiv.org/abs/2207.11871
+  - https://arxiv.org/abs/2105.07624
+  - https://arxiv.org/abs/2104.12756
+  - https://arxiv.org/abs/2301.04883
+  - https://arxiv.org/abs/2101.11272
+- number: 29
+  id: document_summary
+  family: document_understanding
+  label_en: Document summary or key points
+  status: core_candidate
+  definition_en: Summarize the important claims of a visible document in the requested scope, attributing
+    claims to the document rather than asserting external truth.
+  required_capabilities:
+  - readable_prose
+  - multiple_facts
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  - summary_entails_evidence
+  example_question_if_eligible: Summarize the three main points of this notice.
+  do_not_infer: Fabricated background, omitted negation, or interpreting document claims as independently
+    verified facts.
+  verification_contracts:
+  - dual_visual_review
+  - evidence_binding_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 135
+  - 152
+  - 155
+  - 157
+  - 159
+  inspiration_subsets:
+  - DoclingMatix
+  - sujet_finance
+  - ureader_cap
+  - ureader_kg_processed
+  - visualmrc
+  source_urls:
+  - https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix
+  - https://arxiv.org/abs/2503.11576
+  - https://huggingface.co/datasets/sujet-ai/Sujet-Finance-QA-Vision-100k
+  - https://arxiv.org/abs/2310.05126
+  - https://arxiv.org/abs/2101.11272
+- number: 30
+  id: document_structure_reconstruction
+  family: document_understanding
+  label_en: Reconstruct document structure
+  status: core_candidate
+  definition_en: Serialize visible headings, paragraphs, lists, tables, formulas, and their hierarchy
+    in a declared schema while retaining content and reading order.
+  required_capabilities:
+  - document_layout
+  - readable_text
+  - reading_order
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  - reading_order_resolved
+  - schema_public
+  example_question_if_eligible: Convert this visible page into structured Markdown, preserving headings,
+    lists, and tables.
+  do_not_infer: Inventing off-page sections, unseen table cells, or unsupported document metadata.
+  verification_contracts:
+  - dual_visual_review
+  - transcript_alignment
+  - schema_check
+  parameters:
+    format:
+    - markdown
+    - html_subset
+    - structured_json
+    scope: visible page or explicit bounded region
+  inspiration_subset_numbers:
+  - 118
+  - 122
+  - 123
+  - 135
+  inspiration_subsets:
+  - synthdog
+  - olmOCR-mix-0225-documents
+  - olmOCR-mix-0225-books
+  - DoclingMatix
+  source_urls:
+  - https://arxiv.org/abs/2111.15664
+  - https://arxiv.org/abs/2502.18443
+  - https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix
+  - https://arxiv.org/abs/2503.11576
+- number: 31
+  id: cross_region_consistency_check
+  family: document_understanding
+  label_en: Cross-region consistency checking
+  status: core_candidate
+  definition_en: Compare two explicitly linked statements or values within the same image and report whether
+    they agree, preserving units, dates, and scope.
+  required_capabilities:
+  - multiple_evidence_regions
+  - explicit_cross_references
+  eligibility_checks:
+  - scope_resolved
+  - all_evidence_on_canvas
+  - comparable_basis
+  example_question_if_eligible: Does the total stated in the paragraph match the total labeled in the
+    table?
+  do_not_infer: Equating unlike reporting periods or judging whether a financial claim is true outside
+    the document.
+  verification_contracts:
+  - dual_visual_review
+  - evidence_binding_check
+  - exact_arithmetic_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 21
+  - 25
+  - 33
+  - 34
+  - 139
+  - 152
+  inspiration_subsets:
+  - finqa
+  - multihiertt
+  - tat_dqa
+  - tat_qa
+  - infographic_vqa
+  - sujet_finance
+  source_urls:
+  - https://arxiv.org/abs/2109.00122
+  - https://arxiv.org/abs/2206.01347
+  - https://nextplusplus.github.io/TAT-DQA/
+  - https://arxiv.org/abs/2207.11871
+  - https://arxiv.org/abs/2105.07624
+  - https://arxiv.org/abs/2104.12756
+  - https://huggingface.co/datasets/sujet-ai/Sujet-Finance-QA-Vision-100k
+- number: 32
+  id: document_layout_role
+  family: document_understanding
+  label_en: Identify document element roles
+  status: core_candidate
+  definition_en: Identify visible titles, section headings, captions, body paragraphs, table headers,
+    lists, or footnotes from layout and content.
+  required_capabilities:
+  - document_layout
+  - readable_text
+  eligibility_checks:
+  - scope_resolved
+  - text_legible
+  - role_visually_supported
+  example_question_if_eligible: Which text is the caption for the figure?
+  do_not_infer: Inferring hidden document structure or assigning a role based only on font size.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 122
+  - 123
+  - 135
+  - 147
+  inspiration_subsets:
+  - olmOCR-mix-0225-documents
+  - olmOCR-mix-0225-books
+  - DoclingMatix
+  - pdfvqa
+  source_urls:
+  - https://arxiv.org/abs/2502.18443
+  - https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix
+  - https://arxiv.org/abs/2503.11576
+  - https://arxiv.org/abs/2304.06447
+- number: 33
+  id: table_cell_lookup
+  family: table_understanding
+  label_en: Table lookup with hierarchical headers
+  status: core_candidate
+  definition_en: Resolve row and column paths, including multilevel headers, and retrieve the requested
+    visible cell or cells without performing an aggregate.
   required_capabilities:
   - readable_table
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Retrieve table cells using explicit row/column correspondence.
-  operation_rule_ref: table_lookup
-- id: table_selection
-  family: document_chart
-  label_ja: 表の条件付き行列抽出
+  - table_headers
+  eligibility_checks:
+  - scope_resolved
+  - table_headers_bound
+  - text_legible
+  example_question_if_eligible: What value is listed for Europe, 2024, under Revenue?
+  do_not_infer: Ignoring a parent header, unit, footnote, or merged-cell scope.
+  verification_contracts:
+  - dual_visual_review
+  - table_structure_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 17
+  - 22
+  - 28
+  - 29
+  - 37
+  inspiration_subsets:
+  - CoSyn_400k_table
+  - hitab
+  - robut_wikisql
+  - robut_wtq
+  - vqaonbd
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+  - https://arxiv.org/abs/2108.06712
+  - https://arxiv.org/abs/2306.14321
+  - https://ilocr.iiit.ac.in/vqabd/dataset.html
+- number: 34
+  id: table_predicate_selection
+  family: table_understanding
+  label_en: Filter and order table records
+  status: core_candidate
+  definition_en: Select and optionally order complete table rows or columns according to explicit predicates
+    and visible cells.
   required_capabilities:
   - readable_table
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Select table entries using supported predicates.
-  operation_rule_ref: table_selection
-- id: chart_lookup
-  family: document_chart
-  label_ja: 図表の系列・凡例の読取
+  - table_headers
+  - closed_scope
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - table_headers_bound
+  - predicates_observable
+  example_question_if_eligible: Which rows have quantity above 10? Return their names in descending quantity
+    order.
+  do_not_infer: Filtering on a missing column or returning only some qualifying records.
+  verification_contracts:
+  - dual_visual_review
+  - table_structure_check
+  - closed_set_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 17
+  - 22
+  - 28
+  - 29
+  - 31
+  inspiration_subsets:
+  - CoSyn_400k_table
+  - hitab
+  - robut_wikisql
+  - robut_wtq
+  - tabmwp
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+  - https://arxiv.org/abs/2108.06712
+  - https://arxiv.org/abs/2306.14321
+  - https://arxiv.org/abs/2209.14610
+- number: 35
+  id: table_structure_reconstruction
+  family: table_understanding
+  label_en: Reconstruct a table
+  status: core_candidate
+  definition_en: Recover the visible table cells, row/column alignment, header hierarchy, and spans in
+    a declared structured representation.
+  required_capabilities:
+  - readable_table
+  - table_headers
+  eligibility_checks:
+  - scope_resolved
+  - table_headers_bound
+  - schema_public
+  example_question_if_eligible: Convert the table to JSON while preserving its grouped column headings.
+  do_not_infer: Inventing cells, collapsing meaningful headers, or treating blank as zero.
+  verification_contracts:
+  - dual_visual_review
+  - table_structure_check
+  - schema_check
+  parameters:
+    format:
+    - html_table
+    - structured_json
+    - markdown_simple_only
+  inspiration_subset_numbers:
+  - 17
+  - 22
+  - 37
+  - 135
+  inspiration_subsets:
+  - CoSyn_400k_table
+  - hitab
+  - vqaonbd
+  - DoclingMatix
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+  - https://arxiv.org/abs/2108.06712
+  - https://ilocr.iiit.ac.in/vqabd/dataset.html
+  - https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix
+  - https://arxiv.org/abs/2503.11576
+- number: 36
+  id: table_cross_reference
+  family: table_understanding
+  label_en: Join explicitly linked tables
+  status: core_candidate
+  definition_en: Follow explicit shared keys between two or more tables visible in the same image to retrieve
+    or assemble related records.
+  required_capabilities:
+  - multiple_tables
+  - table_join_keys
+  eligibility_checks:
+  - scope_resolved
+  - all_evidence_on_canvas
+  - join_keys_unique
+  example_question_if_eligible: Using the product IDs, match the items in the left table with their categories
+    in the right table.
+  do_not_infer: Joining unrelated rows by proximity or relying on another missing page.
+  verification_contracts:
+  - dual_visual_review
+  - table_structure_check
+  - evidence_binding_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 25
+  - 33
+  - 37
+  inspiration_subsets:
+  - multihiertt
+  - tat_dqa
+  - vqaonbd
+  source_urls:
+  - https://arxiv.org/abs/2206.01347
+  - https://nextplusplus.github.io/TAT-DQA/
+  - https://arxiv.org/abs/2207.11871
+  - https://ilocr.iiit.ac.in/vqabd/dataset.html
+- number: 37
+  id: chart_encoding_lookup
+  family: chart_map_understanding
+  label_en: Read chart or map encodings
+  status: core_candidate
+  definition_en: Identify the meaning of an axis, legend color, symbol, map bin, or series label from
+    an explicit readable encoding.
   required_capabilities:
   - readable_chart
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Retrieve an explicitly readable chart value, series or legend entry.
-  operation_rule_ref: chart_lookup
-- id: chart_comparison
-  family: document_chart
-  label_ja: 図表の明示値・大小の比較
+  - chart_encoding
+  eligibility_checks:
+  - scope_resolved
+  - encoding_resolved
+  example_question_if_eligible: What range does the darkest map color represent?
+  do_not_infer: Geographical or domain knowledge that is not provided by the labels or legend.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 18
+  - 24
+  - 26
+  - 143
+  - 144
+  inspiration_subsets:
+  - dvqa
+  - mmc_instruct
+  - plotqa
+  - mapqa
+  - mapqa(mathv360k)
+  source_urls:
+  - https://arxiv.org/abs/1801.08163
+  - https://arxiv.org/abs/2311.10774
+  - https://arxiv.org/abs/1909.00997
+  - https://arxiv.org/abs/2211.08545
+  - https://arxiv.org/abs/2406.17294
+- number: 38
+  id: chart_value_lookup
+  family: chart_map_understanding
+  label_en: Read an encoded value
+  status: core_candidate
+  definition_en: Retrieve a displayed value or a declared-precision estimate from a resolved chart mark
+    or thematic-map region.
+  required_capabilities:
+  - readable_chart
+  - chart_encoding
+  - legible_values
+  eligibility_checks:
+  - scope_resolved
+  - encoding_resolved
+  - precision_declared
+  example_question_if_eligible: What value is shown for series A in March?
+  do_not_infer: Fabricating exact decimals from pixels, ignoring logarithmic axes, or converting a color
+    interval into an exact value.
+  verification_contracts:
+  - dual_visual_review
+  - chart_encoding_check
+  parameters:
+    precision:
+    - explicit_label
+    - calibrated_estimate
+    - interval
+  inspiration_subset_numbers:
+  - 15
+  - 18
+  - 26
+  - 35
+  - 143
+  - 144
+  inspiration_subsets:
+  - chartqa
+  - dvqa
+  - plotqa
+  - Unichart
+  - mapqa
+  - mapqa(mathv360k)
+  source_urls:
+  - https://arxiv.org/abs/2203.10244
+  - https://arxiv.org/abs/1801.08163
+  - https://arxiv.org/abs/1909.00997
+  - https://arxiv.org/abs/2305.14761
+  - https://arxiv.org/abs/2211.08545
+  - https://arxiv.org/abs/2406.17294
+- number: 39
+  id: chart_comparison
+  family: chart_map_understanding
+  label_en: Compare chart values
+  status: core_candidate
+  definition_en: Compare explicitly specified values or categories in a shared compatible chart encoding,
+    without inventing an exact difference.
   required_capabilities:
   - readable_chart
   - comparable_series
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Compare chart series using legible values or unambiguous ordering.
-  operation_rule_ref: chart_comparison
-- id: grounded_sum
-  family: grounded_calculation
-  label_ja: 可視数値の加算
+  eligibility_checks:
+  - scope_resolved
+  - encoding_resolved
+  - comparable_basis
+  example_question_if_eligible: Which series is higher at the labeled year 2024?
+  do_not_infer: Comparing pixel height across incompatible axes.
+  verification_contracts:
+  - dual_visual_review
+  - chart_encoding_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 15
+  - 19
+  - 20
+  - 26
+  - 35
+  - 143
+  inspiration_subsets:
+  - chartqa
+  - figureqa
+  - figureqa(mathv360k)
+  - plotqa
+  - Unichart
+  - mapqa
+  source_urls:
+  - https://arxiv.org/abs/2203.10244
+  - https://arxiv.org/abs/1710.07300
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/1909.00997
+  - https://arxiv.org/abs/2305.14761
+  - https://arxiv.org/abs/2211.08545
+- number: 40
+  id: chart_extremum_ranking
+  family: chart_map_understanding
+  label_en: Find extrema or rank chart entries
+  status: core_candidate
+  definition_en: Identify all minima, maxima, ties, or a requested order over a complete visible series
+    or set of chart categories.
   required_capabilities:
-  - readable_numbers
-  - compatible_units
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Add verified compatible image-derived values.
-  operation_rule_ref: grounded_sum
-- id: grounded_difference
-  family: grounded_calculation
-  label_ja: 可視数値の差
+  - readable_chart
+  - complete_series
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - encoding_resolved
+  example_question_if_eligible: Which category has the maximum value? Include any ties.
+  do_not_infer: Selecting a local extremum as the global maximum when parts of the series are missing.
+  verification_contracts:
+  - dual_visual_review
+  - chart_encoding_check
+  - closed_set_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 14
+  - 16
+  - 19
+  - 20
+  - 36
+  inspiration_subsets:
+  - chart2text
+  - CoSyn_400k_chart
+  - figureqa
+  - figureqa(mathv360k)
+  - vistext
+  source_urls:
+  - https://arxiv.org/abs/2203.06486
+  - https://arxiv.org/abs/2502.14846
+  - https://huggingface.co/datasets/HuggingFaceM4/FineVision
+  - https://arxiv.org/abs/1710.07300
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/2307.05356
+- number: 41
+  id: chart_trend_summary
+  family: chart_map_understanding
+  label_en: Summarize a chart trend
+  status: core_candidate
+  definition_en: Describe visible rises, falls, plateaus, turning regions, or major comparisons over the
+    declared axis range.
   required_capabilities:
-  - readable_numbers
-  - compatible_units
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Subtract two ordered verified compatible image-derived values.
-  operation_rule_ref: grounded_difference
-- id: grounded_product_quotient
-  family: grounded_calculation
-  label_ja: 可視数値の積・商
+  - readable_chart
+  - ordered_series
+  eligibility_checks:
+  - scope_resolved
+  - encoding_resolved
+  - summary_entails_evidence
+  example_question_if_eligible: Describe the trend across the displayed years without speculating about
+    its cause.
+  do_not_infer: Forecasting outside the range or attributing a cause to correlation.
+  verification_contracts:
+  - dual_visual_review
+  - chart_encoding_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 14
+  - 16
+  - 35
+  - 36
+  inspiration_subsets:
+  - chart2text
+  - CoSyn_400k_chart
+  - Unichart
+  - vistext
+  source_urls:
+  - https://arxiv.org/abs/2203.06486
+  - https://arxiv.org/abs/2502.14846
+  - https://huggingface.co/datasets/HuggingFaceM4/FineVision
+  - https://arxiv.org/abs/2305.14761
+  - https://arxiv.org/abs/2307.05356
+- number: 42
+  id: chart_series_relation
+  family: chart_map_understanding
+  label_en: Analyze relations between series
+  status: core_candidate
+  definition_en: Determine intersections, relative dominance, or visibly supported variation of complete
+    series on comparable axes.
   required_capabilities:
-  - readable_numbers
-  - typed_numeric_operands
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Multiply or divide compatible verified values with explicit units.
-  operation_rule_ref: grounded_product_quotient
-- id: table_aggregation
-  family: grounded_calculation
-  label_ja: 指定表範囲の集計
+  - readable_chart
+  - comparable_series
+  - complete_series
+  eligibility_checks:
+  - scope_resolved
+  - encoding_resolved
+  - comparable_basis
+  - precision_declared
+  example_question_if_eligible: Do the two curves cross within the displayed interval? Where approximately?
+  do_not_infer: Exact intersection coordinates or curve integrals not recoverable at the available precision.
+  verification_contracts:
+  - dual_visual_review
+  - chart_encoding_check
+  parameters:
+    relation:
+    - intersection
+    - dominance
+    - variation
+    numeric_area: route to grounded_arithmetic with verified samples and explicit integration rule
+  inspiration_subset_numbers:
+  - 19
+  - 20
+  - 24
+  - 26
+  inspiration_subsets:
+  - figureqa
+  - figureqa(mathv360k)
+  - mmc_instruct
+  - plotqa
+  source_urls:
+  - https://arxiv.org/abs/1710.07300
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/2311.10774
+  - https://arxiv.org/abs/1909.00997
+- number: 43
+  id: chart_data_reconstruction
+  family: chart_map_understanding
+  label_en: Reconstruct chart data
+  status: core_candidate
+  definition_en: Recover visible category/series/value associations as a structured table, explicitly
+    marking intervals or approximations where exact values are not legible.
   required_capabilities:
-  - readable_table
-  - compatible_units
-  compatibility: all_required_capabilities_and_constraint_validator
-  weight_within_family: 1
-  definition_en: Aggregate an explicit subset of verified table values.
-  operation_rule_ref: table_aggregation
-classification_rules:
-- Use the requested final semantic operation, not the answer format.
-- Arithmetic aggregation of table cells is table_aggregation, not table_lookup.
-- Simple copying of digits without arithmetic is OCR/table/chart lookup.
-- An extra filter/order constraint does not replace the main requested operation.
-- An inherited image-grounded value may be used; its image lineage must be valid.
-- Multiple independent main tasks or ambiguous classification yield UNRESOLVED.
-- Profiles normal/limitation/false_premise are an orthogonal facet, never leaf labels.
+  - readable_chart
+  - chart_encoding
+  - complete_series
+  eligibility_checks:
+  - scope_resolved
+  - encoding_resolved
+  - precision_declared
+  - schema_public
+  example_question_if_eligible: Convert the labeled bars and their values into a table.
+  do_not_infer: Pretending an exact recovery of hidden source data from approximate graphics.
+  verification_contracts:
+  - dual_visual_review
+  - chart_encoding_check
+  - schema_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 24
+  - 30
+  - 35
+  inspiration_subsets:
+  - mmc_instruct
+  - SynthChartNet
+  - Unichart
+  source_urls:
+  - https://arxiv.org/abs/2311.10774
+  - https://arxiv.org/abs/2503.11576
+  - https://arxiv.org/abs/2305.14761
+- number: 44
+  id: quantity_comparison
+  family: quantitative_reasoning
+  label_en: Compare or rank quantities
+  status: core_candidate
+  definition_en: Compare quantities extracted from visible sources after resolving units, signs, scales,
+    dates, and the requested ordering.
+  required_capabilities:
+  - typed_operands
+  - explicit_units
+  eligibility_checks:
+  - scope_resolved
+  - operands_grounded
+  - comparable_basis
+  example_question_if_eligible: Which labeled package has the larger net weight?
+  do_not_infer: Comparing incomparable quantities, unlike periods, or currencies without a supplied exchange
+    rule.
+  verification_contracts:
+  - dual_visual_review
+  - exact_arithmetic_check
+  parameters:
+    dimensionless_values: allowed when explicitly identified as dimensionless
+  inspiration_subset_numbers:
+  - 15
+  - 21
+  - 29
+  - 37
+  - 133
+  inspiration_subsets:
+  - chartqa
+  - finqa
+  - robut_wtq
+  - vqaonbd
+  - CoSyn_400k_nutrition
+  source_urls:
+  - https://arxiv.org/abs/2203.10244
+  - https://arxiv.org/abs/2109.00122
+  - https://arxiv.org/abs/2306.14321
+  - https://ilocr.iiit.ac.in/vqabd/dataset.html
+  - https://arxiv.org/abs/2502.14846
+  - https://arxiv.org/html/2510.17269v2
+- number: 45
+  id: grounded_arithmetic
+  family: quantitative_reasoning
+  label_en: Grounded arithmetic expression
+  status: core_candidate
+  definition_en: Compute a finite expression over image-grounded operands, with an explicit public question
+    defining the operation, denominator, units, and rounding.
+  required_capabilities:
+  - typed_operands
+  eligibility_checks:
+  - scope_resolved
+  - operands_grounded
+  - expression_defined
+  - precision_declared
+  example_question_if_eligible: Using the two printed values, what is the percentage increase from the
+    first to the second?
+  do_not_infer: Unseen prices or conversion rates, an implicit denominator, or unsupported intermediate
+    values.
+  verification_contracts:
+  - dual_visual_review
+  - exact_arithmetic_check
+  parameters:
+    operators:
+    - add
+    - subtract
+    - multiply
+    - divide
+    derived_forms:
+    - ratio
+    - percentage
+    - percentage_change
+    division_by_zero: not answerable
+  inspiration_subset_numbers:
+  - 15
+  - 21
+  - 25
+  - 26
+  - 31
+  - 33
+  - 34
+  - 37
+  - 133
+  inspiration_subsets:
+  - chartqa
+  - finqa
+  - multihiertt
+  - plotqa
+  - tabmwp
+  - tat_dqa
+  - tat_qa
+  - vqaonbd
+  - CoSyn_400k_nutrition
+  source_urls:
+  - https://arxiv.org/abs/2203.10244
+  - https://arxiv.org/abs/2109.00122
+  - https://arxiv.org/abs/2206.01347
+  - https://arxiv.org/abs/1909.00997
+  - https://arxiv.org/abs/2209.14610
+  - https://nextplusplus.github.io/TAT-DQA/
+  - https://arxiv.org/abs/2207.11871
+  - https://arxiv.org/abs/2105.07624
+  - https://ilocr.iiit.ac.in/vqabd/dataset.html
+  - https://arxiv.org/abs/2502.14846
+  - https://arxiv.org/html/2510.17269v2
+- number: 46
+  id: grounded_aggregation
+  family: quantitative_reasoning
+  label_en: Aggregate a complete set of quantities
+  status: core_candidate
+  definition_en: Compute a declared reduction over a complete image-grounded set of values, retaining
+    selection criteria, units, and any visible weights.
+  required_capabilities:
+  - typed_operands
+  - closed_scope
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - operands_grounded
+  - expression_defined
+  example_question_if_eligible: What is the mean of the values in the three labeled rows?
+  do_not_infer: Omitted rows, treating blanks as zero, or supplying unprinted weights.
+  verification_contracts:
+  - dual_visual_review
+  - closed_set_check
+  - exact_arithmetic_check
+  parameters:
+    operator:
+    - sum
+    - mean
+    - median
+    - min
+    - max
+    - weighted_mean
+    weights: all visible or explicitly supplied as hypothetical parameters
+  inspiration_subset_numbers:
+  - 17
+  - 21
+  - 22
+  - 25
+  - 28
+  - 29
+  - 31
+  - 37
+  inspiration_subsets:
+  - CoSyn_400k_table
+  - finqa
+  - hitab
+  - multihiertt
+  - robut_wikisql
+  - robut_wtq
+  - tabmwp
+  - vqaonbd
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+  - https://arxiv.org/abs/2109.00122
+  - https://arxiv.org/abs/2108.06712
+  - https://arxiv.org/abs/2206.01347
+  - https://arxiv.org/abs/2306.14321
+  - https://arxiv.org/abs/2209.14610
+  - https://ilocr.iiit.ac.in/vqabd/dataset.html
+- number: 47
+  id: unit_conversion
+  family: quantitative_reasoning
+  label_en: Convert displayed units
+  status: core_candidate
+  definition_en: Express a visible quantity in another unit using a versioned exact conversion rule or
+    a conversion rule stated publicly in the question.
+  required_capabilities:
+  - typed_operands
+  - explicit_units
+  eligibility_checks:
+  - scope_resolved
+  - operands_grounded
+  - unit_rule_available
+  example_question_if_eligible: Convert the printed length of 2.5 m to centimeters.
+  do_not_infer: Exchange rates, serving sizes, density, calibration, or physical constants absent from
+    the permitted rule set.
+  verification_contracts:
+  - dual_visual_review
+  - exact_arithmetic_check
+  parameters:
+    conversion_rule: versioned allowlist; no live-world values
+  inspiration_subset_numbers:
+  - 31
+  - 37
+  - 133
+  inspiration_subsets:
+  - tabmwp
+  - vqaonbd
+  - CoSyn_400k_nutrition
+  source_urls:
+  - https://arxiv.org/abs/2209.14610
+  - https://ilocr.iiit.ac.in/vqabd/dataset.html
+  - https://arxiv.org/abs/2502.14846
+  - https://arxiv.org/html/2510.17269v2
+- number: 48
+  id: measurement_reading
+  family: quantitative_reasoning
+  label_en: Read a visual measuring scale
+  status: core_candidate
+  definition_en: Read a clock, ruler, gauge, or scale from unambiguous marks and pointers at the available
+    precision.
+  required_capabilities:
+  - calibrated_scale
+  eligibility_checks:
+  - scope_resolved
+  - scale_and_pointer_resolved
+  - precision_declared
+  example_question_if_eligible: What time is shown on the analog clock?
+  do_not_infer: An exact physical measurement without calibration or pretending a value is more precise
+    than the marks.
+  verification_contracts:
+  - dual_visual_review
+  - scale_check
+  parameters:
+    precision: must follow ticks, labels, and visible resolution
+  inspiration_subset_numbers:
+  - 49
+  - 50
+  - 63
+  inspiration_subsets:
+  - iconqa
+  - iconqa(mathv360k)
+  - spark
+  source_urls:
+  - https://arxiv.org/abs/2110.13214
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/2408.12114
+- number: 49
+  id: diagram_element_lookup
+  family: diagram_graph
+  label_en: Identify diagram elements
+  status: core_candidate
+  definition_en: Identify labeled components, geometric marks, nodes, or symbols using visible labels
+    and a declared notation convention.
+  required_capabilities:
+  - readable_diagram
+  - notation_context
+  eligibility_checks:
+  - scope_resolved
+  - notation_resolved
+  example_question_if_eligible: Which component is labeled B in the diagram?
+  do_not_infer: Unlabeled specialist functions or an unprovided legend.
+  verification_contracts:
+  - dual_visual_review
+  - graph_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 83
+  - 128
+  - 129
+  - 130
+  - 160
+  inspiration_subsets:
+  - geo170k(align)
+  - blockdiagramcomputerized
+  - blockdiagramhandwritten
+  - CoSyn_400k_diagram
+  - ai2d_merged
+  source_urls:
+  - https://arxiv.org/abs/2312.11370
+  - https://aclanthology.org/2022.findings-aacl.15/
+  - https://arxiv.org/abs/2502.14846
+  - https://huggingface.co/datasets/andito/ai2d-merged
+  - https://arxiv.org/html/2510.17269v2
+- number: 50
+  id: graph_connectivity
+  family: diagram_graph
+  label_en: Recover graph connectivity
+  status: core_candidate
+  definition_en: Determine adjacency, incoming/outgoing connections, or a visible edge set from resolved
+    nodes, arrows, and junction conventions.
+  required_capabilities:
+  - graph_nodes_edges
+  eligibility_checks:
+  - scope_resolved
+  - edges_resolved
+  example_question_if_eligible: Which nodes are directly connected to A?
+  do_not_infer: Treating every line crossing as a junction or using proximity as an edge.
+  verification_contracts:
+  - dual_visual_review
+  - graph_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 128
+  - 129
+  - 130
+  - 134
+  - 160
+  - 162
+  inspiration_subsets:
+  - blockdiagramcomputerized
+  - blockdiagramhandwritten
+  - CoSyn_400k_diagram
+  - diagram_image_to_text
+  - ai2d_merged
+  - CoSyn_400k_circuit
+  source_urls:
+  - https://aclanthology.org/2022.findings-aacl.15/
+  - https://arxiv.org/abs/2502.14846
+  - https://huggingface.co/datasets/Kamizuru00/diagram_image_to_text
+  - https://huggingface.co/datasets/andito/ai2d-merged
+  - https://arxiv.org/html/2510.17269v2
+- number: 51
+  id: graph_path_tracing
+  family: diagram_graph
+  label_en: Trace a visible path
+  status: core_candidate
+  definition_en: Follow one or more declared graph edges between visible endpoints, respecting direction
+    and explicitly reporting multiple valid paths.
+  required_capabilities:
+  - graph_nodes_edges
+  - edge_directions
+  eligibility_checks:
+  - scope_resolved
+  - edges_resolved
+  - path_objective_defined
+  example_question_if_eligible: Trace the directed path from Start to the labeled output.
+  do_not_infer: An unshown connection, real-world travel permission, or a shortest path without a defined
+    metric.
+  verification_contracts:
+  - dual_visual_review
+  - graph_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 128
+  - 129
+  - 130
+  - 134
+  - 160
+  inspiration_subsets:
+  - blockdiagramcomputerized
+  - blockdiagramhandwritten
+  - CoSyn_400k_diagram
+  - diagram_image_to_text
+  - ai2d_merged
+  source_urls:
+  - https://aclanthology.org/2022.findings-aacl.15/
+  - https://arxiv.org/abs/2502.14846
+  - https://huggingface.co/datasets/Kamizuru00/diagram_image_to_text
+  - https://huggingface.co/datasets/andito/ai2d-merged
+  - https://arxiv.org/html/2510.17269v2
+- number: 52
+  id: diagram_process_description
+  family: diagram_graph
+  label_en: Describe an explicit diagram process
+  status: core_candidate
+  definition_en: Explain the sequence, cycle, dependency, or branch structure explicitly depicted by the
+    diagram, without importing unshown causal mechanisms.
+  required_capabilities:
+  - readable_diagram
+  - graph_nodes_edges
+  - edge_directions
+  eligibility_checks:
+  - scope_resolved
+  - edges_resolved
+  example_question_if_eligible: Explain the sequence shown by the arrows in this process diagram.
+  do_not_infer: Equating an arbitrary arrow with causality when the diagram does not define that meaning.
+  verification_contracts:
+  - dual_visual_review
+  - graph_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 128
+  - 129
+  - 130
+  - 134
+  - 160
+  inspiration_subsets:
+  - blockdiagramcomputerized
+  - blockdiagramhandwritten
+  - CoSyn_400k_diagram
+  - diagram_image_to_text
+  - ai2d_merged
+  source_urls:
+  - https://aclanthology.org/2022.findings-aacl.15/
+  - https://arxiv.org/abs/2502.14846
+  - https://huggingface.co/datasets/Kamizuru00/diagram_image_to_text
+  - https://huggingface.co/datasets/andito/ai2d-merged
+  - https://arxiv.org/html/2510.17269v2
+- number: 53
+  id: diagram_branch_evaluation
+  family: diagram_graph
+  label_en: Apply a depicted branch rule
+  status: core_candidate
+  definition_en: Apply visible branch conditions or rules to a public, explicitly supplied input and identify
+    the resulting route or terminal label.
+  required_capabilities:
+  - graph_nodes_edges
+  - explicit_branch_conditions
+  eligibility_checks:
+  - scope_resolved
+  - edges_resolved
+  - public_rule_input_defined
+  example_question_if_eligible: For an input of 8, which output does this flowchart reach?
+  do_not_infer: Executing image instructions, inventing a missing branch condition, or assuming an unshown
+    algorithm step.
+  verification_contracts:
+  - dual_visual_review
+  - graph_check
+  - exact_arithmetic_check
+  parameters:
+    input_values: hypothetical values must be public; no external state
+  inspiration_subset_numbers:
+  - 128
+  - 129
+  - 134
+  inspiration_subsets:
+  - blockdiagramcomputerized
+  - blockdiagramhandwritten
+  - diagram_image_to_text
+  source_urls:
+  - https://aclanthology.org/2022.findings-aacl.15/
+  - https://huggingface.co/datasets/Kamizuru00/diagram_image_to_text
+- number: 54
+  id: geometric_relation_analysis
+  family: pattern_geometry
+  label_en: Analyze depicted geometry
+  status: core_candidate
+  definition_en: Identify visible shape classes, symmetry, geometric composition, or explicitly marked
+    equality, parallelism, and perpendicularity.
+  required_capabilities:
+  - geometric_marks
+  eligibility_checks:
+  - scope_resolved
+  - geometry_evidence_sufficient
+  example_question_if_eligible: Which sides are marked as equal?
+  do_not_infer: Assuming exact equality or angle values from an illustrative drawing alone.
+  verification_contracts:
+  - dual_visual_review
+  - geometry_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 44
+  - 49
+  - 50
+  - 83
+  - 84
+  - 85
+  inspiration_subsets:
+  - CoSyn_400k_graphic
+  - iconqa
+  - iconqa(mathv360k)
+  - geo170k(align)
+  - geo170k(qa)
+  - geo3k
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+  - https://arxiv.org/abs/2110.13214
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/2312.11370
+  - https://arxiv.org/abs/2105.04165
+- number: 55
+  id: pattern_rule_identification
+  family: pattern_geometry
+  label_en: Identify a bounded visual rule
+  status: core_candidate
+  definition_en: Identify a relation or transformation that fits all visible examples within a declared
+    finite rule grammar, acknowledging ambiguity between rules.
+  required_capabilities:
+  - repeated_structure
+  eligibility_checks:
+  - scope_resolved
+  - pattern_rule_unique
+  example_question_if_eligible: What change repeats from one panel to the next?
+  do_not_infer: Claiming a universally unique rule from a finite arbitrary sequence.
+  verification_contracts:
+  - dual_visual_review
+  - pattern_check
+  parameters:
+    rule_grammar:
+    - constant
+    - translation
+    - rotation
+    - reflection
+    - count_progression
+    - attribute_cycle
+    - set_composition
+  inspiration_subset_numbers:
+  - 49
+  - 50
+  - 93
+  inspiration_subsets:
+  - iconqa
+  - iconqa(mathv360k)
+  - raven
+  source_urls:
+  - https://arxiv.org/abs/2110.13214
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/1903.02741
+- number: 56
+  id: pattern_completion
+  family: pattern_geometry
+  label_en: Complete a visual pattern
+  status: core_candidate
+  definition_en: Choose or describe a missing element using a rule validated against all visible examples
+    and a declared finite candidate/rule set.
+  required_capabilities:
+  - repeated_structure
+  - answer_options_visible
+  eligibility_checks:
+  - scope_resolved
+  - pattern_rule_unique
+  - candidate_options_public
+  example_question_if_eligible: Which of the visible options completes the matrix?
+  do_not_infer: Using a hidden answer key or accepting one option while another fits equally well.
+  verification_contracts:
+  - dual_visual_review
+  - pattern_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 49
+  - 50
+  - 93
+  inspiration_subsets:
+  - iconqa
+  - iconqa(mathv360k)
+  - raven
+  source_urls:
+  - https://arxiv.org/abs/2110.13214
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/1903.02741
+- number: 57
+  id: rule_based_exception
+  family: pattern_geometry
+  label_en: Find a rule violation
+  status: core_candidate
+  definition_en: Identify the element that violates a visible or publicly stated rule within a complete
+    comparison set.
+  required_capabilities:
+  - repeated_structure
+  - closed_scope
+  eligibility_checks:
+  - scope_resolved
+  - complete_scope
+  - exception_rule_defined
+  example_question_if_eligible: Under the displayed color-alternation rule, which panel breaks the pattern?
+  do_not_infer: Subjective odd-one-out choices without an agreed rule or invented abnormalities.
+  verification_contracts:
+  - dual_visual_review
+  - pattern_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 49
+  - 50
+  - 93
+  inspiration_subsets:
+  - iconqa
+  - iconqa(mathv360k)
+  - raven
+  source_urls:
+  - https://arxiv.org/abs/2110.13214
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/1903.02741
+- number: 58
+  id: ui_element_grounding
+  family: screen_ui
+  label_en: Locate a UI target
+  status: core_candidate
+  definition_en: Identify a visible control that matches a public referring expression or locally supported
+    goal; return a textual location by default.
+  required_capabilities:
+  - ui_controls
+  eligibility_checks:
+  - scope_resolved
+  - unique_referent
+  - ui_target_visible
+  example_question_if_eligible: Where is the search box in this screenshot?
+  do_not_infer: An off-screen control, hidden DOM state, or a claim that an action was executed.
+  verification_contracts:
+  - dual_visual_review
+  - ui_grounding_check
+  parameters:
+    representation: textual_reference
+    coordinate_output: use ui_action_specification with a coordinate validator
+  inspiration_subset_numbers:
+  - 74
+  - 75
+  - 149
+  inspiration_subsets:
+  - aguvis-stage-1
+  - groundui
+  - screenqa
+  source_urls:
+  - https://arxiv.org/abs/2412.04454
+  - https://arxiv.org/html/2510.17269v2
+  - https://arxiv.org/abs/2403.17918
+  - https://arxiv.org/abs/2209.08199
+- number: 59
+  id: ui_state_reading
+  family: screen_ui
+  label_en: Read visible UI state
+  status: core_candidate
+  definition_en: Report the visibly indicated selected tab, checked option, displayed error, or control
+    state using the screenshot only.
+  required_capabilities:
+  - ui_controls
+  - ui_state_indicators
+  eligibility_checks:
+  - scope_resolved
+  - ui_state_explicit
+  example_question_if_eligible: Which tab is currently selected?
+  do_not_infer: Backend state, user permissions, or disabled/enabled status inferred from color alone.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 74
+  - 75
+  - 149
+  inspiration_subsets:
+  - aguvis-stage-1
+  - groundui
+  - screenqa
+  source_urls:
+  - https://arxiv.org/abs/2412.04454
+  - https://arxiv.org/html/2510.17269v2
+  - https://arxiv.org/abs/2403.17918
+  - https://arxiv.org/abs/2209.08199
+- number: 60
+  id: screen_summary
+  family: screen_ui
+  label_en: Summarize a screen
+  status: core_candidate
+  definition_en: Summarize the main visible content and apparent interface function from explicit controls,
+    headings, and text.
+  required_capabilities:
+  - ui_controls
+  - scene_context
+  eligibility_checks:
+  - scope_resolved
+  - summary_entails_evidence
+  example_question_if_eligible: What information and controls are shown on this screen?
+  do_not_infer: Hidden app features, the user goal, or a workflow not shown.
+  verification_contracts:
+  - dual_visual_review
+  parameters: {}
+  inspiration_subset_numbers:
+  - 71
+  - 148
+  - 149
+  inspiration_subsets:
+  - websight
+  - screen2words
+  - screenqa
+  source_urls:
+  - https://arxiv.org/abs/2403.09029
+  - https://arxiv.org/abs/2108.03353
+  - https://arxiv.org/abs/2209.08199
+- number: 61
+  id: panel_comparison
+  family: multi_region
+  label_en: Compare panels already in one image
+  status: core_candidate
+  definition_en: Describe visible similarities and differences between two or more explicitly resolved
+    panels of the same input canvas.
+  required_capabilities:
+  - panels_resolvable
+  eligibility_checks:
+  - scope_resolved
+  - all_evidence_on_canvas
+  - panels_publicly_identified
+  example_question_if_eligible: What differs between the left and right panels?
+  do_not_infer: Inventing a second image or presenting unrelated crops as before/after evidence.
+  verification_contracts:
+  - dual_visual_review
+  - panel_comparison_check
+  parameters:
+    canvas_policy: existing panels only; no implicit multi-image support
+  inspiration_subset_numbers:
+  - 58
+  - 60
+  - 61
+  - 65
+  - 73
+  inspiration_subsets:
+  - mimic_cgd
+  - mmra
+  - nlvr2
+  - spot_the_diff
+  - yesbut
+  source_urls:
+  - https://huggingface.co/datasets/pufanyi/MIMICIT
+  - https://arxiv.org/abs/2306.05425
+  - https://arxiv.org/abs/2407.17379
+  - https://arxiv.org/abs/1811.00491
+  - https://arxiv.org/abs/1808.10584
+  - https://arxiv.org/abs/2409.13592
+- number: 62
+  id: visible_sequence_description
+  family: multi_region
+  label_en: Describe an explicitly ordered panel sequence
+  status: core_candidate
+  definition_en: Describe the depicted changes across panels whose order is explicitly labeled or unambiguously
+    encoded, without filling in unseen events.
+  required_capabilities:
+  - panels_resolvable
+  - visible_sequence_order
+  eligibility_checks:
+  - scope_resolved
+  - all_evidence_on_canvas
+  - sequence_order_supported
+  example_question_if_eligible: Describe what changes from panel 1 to panel 3.
+  do_not_infer: Inferring chronology from unlabeled juxtaposition, hidden intermediate actions, or a causal
+    story.
+  verification_contracts:
+  - dual_visual_review
+  - panel_comparison_check
+  parameters: {}
+  inspiration_subset_numbers:
+  - 65
+  - 73
+  - 160
+  inspiration_subsets:
+  - spot_the_diff
+  - yesbut
+  - ai2d_merged
+  source_urls:
+  - https://arxiv.org/abs/1808.10584
+  - https://arxiv.org/abs/2409.13592
+  - https://huggingface.co/datasets/andito/ai2d-merged
+  - https://arxiv.org/html/2510.17269v2
+- number: 63
+  id: visual_claim_verification
+  family: evidence_verification
+  label_en: Verify a visible claim
+  status: core_candidate
+  definition_en: Determine whether a public claim is supported, contradicted, or not decidable from the
+    image, and name the relevant visible evidence when requested.
+  required_capabilities:
+  - resolvable_region
+  eligibility_checks:
+  - scope_resolved
+  - claim_public_and_local
+  example_question_if_eligible: Is the statement "the box is left of the chair" consistent with the image?
+  do_not_infer: A forced binary label when evidence is missing, or guessing unseen facts.
+  verification_contracts:
+  - dual_visual_review
+  - evidence_binding_check
+  parameters:
+    verdicts:
+    - supported
+    - contradicted
+    - not_determined
+  inspiration_subset_numbers:
+  - 51
+  - 55
+  - 56
+  - 61
+  - 64
+  - 70
+  inspiration_subsets:
+  - idk
+  - lnqa
+  - lrv_normal(filtered)
+  - nlvr2
+  - spatialsense
+  - vsr
+  source_urls:
+  - https://arxiv.org/abs/2402.09717
+  - https://vikhyat.net/posts/2024-08-17-lnqa.html
+  - https://arxiv.org/abs/2306.14565
+  - https://arxiv.org/abs/1811.00491
+  - https://openaccess.thecvf.com/content_ICCV_2019/html/Yang_SpatialSense_An_Adversarially_Crowdsourced_Benchmark_for_Spatial_Relation_Recognition_ICCV_2019_paper.html
+  - https://arxiv.org/abs/2205.00363
+- number: 64
+  id: evidence_localization
+  family: evidence_verification
+  label_en: Locate supporting evidence
+  status: core_candidate
+  definition_en: Identify the visible region, label, sentence, or connected elements that support an already
+    public question or proposition.
+  required_capabilities:
+  - resolvable_region
+  eligibility_checks:
+  - scope_resolved
+  - claim_public_and_local
+  example_question_if_eligible: Which part of the image shows the closing time?
+  do_not_infer: Private evidence IDs, an invented source, or a location without the claimed evidence.
+  verification_contracts:
+  - dual_visual_review
+  - evidence_binding_check
+  parameters:
+    default_output: natural-language region description or exact visible quote
+  inspiration_subset_numbers:
+  - 137
+  - 139
+  - 147
+  - 150
+  - 159
+  inspiration_subsets:
+  - est_vqa
+  - infographic_vqa
+  - pdfvqa
+  - slidevqa
+  - visualmrc
+  source_urls:
+  - https://arxiv.org/abs/2002.10215
+  - https://arxiv.org/abs/2104.12756
+  - https://arxiv.org/abs/2304.06447
+  - https://arxiv.org/abs/2301.04883
+  - https://arxiv.org/abs/2101.11272
+- number: 65
+  id: answerability_assessment
+  family: evidence_verification
+  label_en: Assess answerability
+  status: core_candidate
+  definition_en: Determine whether a specific locally anchored question can be answered from the image
+    and identify missing, unreadable, cropped, or ambiguous evidence.
+  required_capabilities:
+  - resolvable_region
+  eligibility_checks:
+  - scope_resolved
+  - local_question_supported
+  example_question_if_eligible: Can the exact price be read from this cropped label? Explain the visible
+    limitation.
+  do_not_infer: Generic refusal to any unrelated question or using unreadable evidence as a negative fact.
+  verification_contracts:
+  - dual_visual_review
+  parameters:
+    verdicts:
+    - answerable
+    - unreadable
+    - cropped
+    - ambiguous
+    - not_present
+  inspiration_subset_numbers:
+  - 51
+  - 68
+  - 149
+  inspiration_subsets:
+  - idk
+  - vizwiz(mathv360k)
+  - screenqa
+  source_urls:
+  - https://arxiv.org/abs/2402.09717
+  - https://arxiv.org/abs/1802.08218
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/2209.08199
+- number: 66
+  id: geometric_constraint_solving
+  family: validated_extensions
+  label_en: Solve explicit geometric constraints
+  status: validator_gated_extension
+  definition_en: Solve a numerical or logical geometry question using only visibly stated or marked constraints
+    and a versioned theorem/rule set.
+  required_capabilities:
+  - geometric_marks
+  - readable_formula
+  eligibility_checks:
+  - scope_resolved
+  - geometry_evidence_sufficient
+  - formal_rules_available
+  - unique_solution
+  example_question_if_eligible: Using the marked right angle and printed side lengths, find the requested
+    length.
+  do_not_infer: Reading exact measurements from an uncalibrated drawing or adding unstated geometric assumptions.
+  verification_contracts:
+  - dual_visual_review
+  - formal_geometry_validator
+  parameters:
+    enabled_by_default: false
+  inspiration_subset_numbers:
+  - 82
+  - 84
+  - 85
+  - 86
+  - 87
+  - 88
+  - 89
+  - 90
+  - 91
+  - 92
+  - 95
+  inspiration_subsets:
+  - CoSyn_400k_math
+  - geo170k(qa)
+  - geo3k
+  - geometry3k(mathv360k)
+  - geomverse
+  - geoqa+(mathv360k)
+  - geos(mathv360k)
+  - intergps
+  - mavis_math_metagen
+  - mavis_math_rule_geo
+  - unigeo(mathv360k)
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+  - https://arxiv.org/abs/2312.11370
+  - https://arxiv.org/abs/2105.04165
+  - https://arxiv.org/abs/2406.17294
+  - https://arxiv.org/abs/2312.12241
+  - https://aclanthology.org/2022.coling-1.130/
+  - https://aclanthology.org/D15-1171/
+  - https://arxiv.org/abs/2407.08739
+  - https://arxiv.org/abs/2212.02746
+- number: 67
+  id: diagram_to_code
+  family: validated_extensions
+  label_en: Reconstruct a diagram as code
+  status: validator_gated_extension
+  definition_en: Generate sandbox-renderable TikZ or SVG that reproduces the specified visible diagram,
+    accepting equivalent code instead of requiring the hidden original.
+  required_capabilities:
+  - readable_diagram
+  - rendered_layout
+  eligibility_checks:
+  - scope_resolved
+  - rendering_contract_available
+  example_question_if_eligible: Recreate this diagram in SVG, including the visible labels and arrows.
+  do_not_infer: Claiming recovery of the original source code, external assets, or arbitrary file/network
+    access.
+  verification_contracts:
+  - dual_visual_review
+  - sandbox_render_validator
+  parameters:
+    enabled_by_default: false
+    code_languages:
+    - svg
+    - tikz_subset
+  inspiration_subset_numbers:
+  - 45
+  - 46
+  inspiration_subsets:
+  - datik
+  - datikz
+  source_urls:
+  - https://arxiv.org/abs/2310.00367
+  - https://huggingface.co/datasets/nllg/datikz
+  - https://huggingface.co/datasets/HuggingFaceM4/datikz
+- number: 68
+  id: screen_to_code
+  family: validated_extensions
+  label_en: Reconstruct a screenshot as markup
+  status: validator_gated_extension
+  definition_en: Generate sandbox-renderable static HTML/CSS that reproduces the visible layout under
+    declared font, asset, viewport, and approximation rules.
+  required_capabilities:
+  - ui_controls
+  - rendered_layout
+  eligibility_checks:
+  - scope_resolved
+  - rendering_contract_available
+  example_question_if_eligible: Recreate the visible layout as static HTML and CSS.
+  do_not_infer: Inferring hidden JavaScript, app behavior, original DOM, credentials, or network assets.
+  verification_contracts:
+  - dual_visual_review
+  - sandbox_render_validator
+  parameters:
+    enabled_by_default: false
+    javascript: disabled
+    asset_policy: local allowlist or explicit placeholders
+  inspiration_subset_numbers:
+  - 71
+  inspiration_subsets:
+  - websight
+  source_urls:
+  - https://arxiv.org/abs/2403.09029
+- number: 69
+  id: music_notation_reading
+  family: validated_extensions
+  label_en: Read music notation
+  status: validator_gated_extension
+  definition_en: Read pitch, duration, rests, or note order from a score with visible clef, key, meter,
+    and accidental context, using a declared notation schema.
+  required_capabilities:
+  - notation_context
+  - readable_diagram
+  eligibility_checks:
+  - scope_resolved
+  - music_context_complete
+  example_question_if_eligible: What are the pitches of the notes in the first complete bar?
+  do_not_infer: Guessing an omitted clef or accidental context, audio properties, or musical intent.
+  verification_contracts:
+  - dual_visual_review
+  - music_notation_validator
+  parameters:
+    enabled_by_default: false
+  inspiration_subset_numbers:
+  - 132
+  inspiration_subsets:
+  - CoSyn_400k_music
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+- number: 70
+  id: chemical_structure_reading
+  family: validated_extensions
+  label_en: Read a chemical structure
+  status: validator_gated_extension
+  definition_en: Recover visible atom, bond, ring, or explicitly defined substructure information using
+    a declared chemical notation convention.
+  required_capabilities:
+  - notation_context
+  - readable_diagram
+  eligibility_checks:
+  - scope_resolved
+  - chemical_notation_resolved
+  example_question_if_eligible: Which atoms are connected by the marked double bond?
+  do_not_infer: Reaction conditions, synthesis instructions, biological effects, or unresolvable stereochemistry.
+  verification_contracts:
+  - dual_visual_review
+  - chemical_graph_validator
+  parameters:
+    enabled_by_default: false
+  inspiration_subset_numbers:
+  - 161
+  inspiration_subsets:
+  - CoSyn_400k_chemical
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+- number: 71
+  id: circuit_structure_reading
+  family: validated_extensions
+  label_en: Read a circuit topology
+  status: validator_gated_extension
+  definition_en: Identify circuit symbols and explicit electrical connections using known junction, crossover,
+    and component conventions.
+  required_capabilities:
+  - notation_context
+  - graph_nodes_edges
+  eligibility_checks:
+  - scope_resolved
+  - circuit_notation_resolved
+  example_question_if_eligible: Which components are connected in parallel in the shown circuit?
+  do_not_infer: Electrical performance from missing values or connections, or unshown safety conditions.
+  verification_contracts:
+  - dual_visual_review
+  - circuit_graph_validator
+  parameters:
+    enabled_by_default: false
+  inspiration_subset_numbers:
+  - 162
+  inspiration_subsets:
+  - CoSyn_400k_circuit
+  source_urls:
+  - https://arxiv.org/abs/2502.14846
+- number: 72
+  id: ui_action_specification
+  family: validated_extensions
+  label_en: Specify one local UI action
+  status: validator_gated_extension
+  definition_en: Produce a single action-schema record targeting a visible control for an explicit public
+    local goal, without executing it or claiming a result.
+  required_capabilities:
+  - ui_controls
+  eligibility_checks:
+  - scope_resolved
+  - unique_referent
+  - local_goal_public
+  - action_schema_available
+  - coordinates_verifiable
+  example_question_if_eligible: To focus the visible search field, specify one click target in normalized
+    coordinates.
+  do_not_infer: Multi-step planning through unseen screens, assumed action outcomes, or actual tool execution.
+  verification_contracts:
+  - dual_visual_review
+  - ui_action_validator
+  parameters:
+    enabled_by_default: false
+    action_scope: single locally grounded action; no execution
+  inspiration_subset_numbers:
+  - 74
+  - 75
+  inspiration_subsets:
+  - aguvis-stage-1
+  - groundui
+  source_urls:
+  - https://arxiv.org/abs/2412.04454
+  - https://arxiv.org/html/2510.17269v2
+  - https://arxiv.org/abs/2403.17918

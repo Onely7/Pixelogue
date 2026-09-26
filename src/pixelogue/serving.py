@@ -16,11 +16,12 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from pixelogue.config import ModelEndpoint, RuntimeConfig
-from pixelogue.contracts import ClaimExtraction, EvidenceInventory
+from pixelogue.contracts import ClaimExtraction, EvidenceInventory, TextPayload
 from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_payload
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
 from pixelogue.store import RunStore
+from pixelogue.task_evidence import ScopedEvidenceInventory
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 
@@ -291,6 +292,10 @@ class VllmClient:
         """Validate one saved or fresh completion and return its typed content."""
         parsed = _model_json_object(raw_response)
         content, usage = self._validate_completion(parsed)
+        if response_model is TextPayload and parsed["choices"][0]["finish_reason"] != "stop":
+            raise ExecutionError(
+                "MODEL_FINISH_REASON", "Public text must finish before its token limit"
+            )
         prompt_tokens = int(usage.get("prompt_tokens", 0))
         completion_tokens = int(usage.get("completion_tokens", 0))
         if prompt_tokens < 0 or completion_tokens < 0 or completion_tokens > max_tokens:
@@ -339,7 +344,7 @@ class VllmClient:
             {"type": "image_url", "image_url": {"url": image.data_uri()}} for image in images
         )
         schema = response_model.model_json_schema()
-        if response_model is EvidenceInventory:
+        if response_model in (EvidenceInventory, ScopedEvidenceInventory):
             image_id = payload.get("image_id")
             if not isinstance(image_id, str) or not image_id:
                 raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")

@@ -5,46 +5,97 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 
-from pixelogue.catalog import load_task_catalog
-from pixelogue.config import allocate_quotas
-from pixelogue.contracts import EvidenceInventory, InstructionCandidate
+from pixelogue.catalog import task_catalog
+from pixelogue.config import TaskRuntimeConfig, allocate_quotas
+from pixelogue.contracts import InstructionCandidate
+from pixelogue.task_evidence import ScopedEvidenceInventory
+from pixelogue.task_runtime import fingerprint, unavailable_reasons
 
 
 def instruction_candidates(
-    inventory: EvidenceInventory,
+    inventory: ScopedEvidenceInventory,
     *,
     seed: int,
     turn_index: int,
     limit: int = 8,
+    settings: TaskRuntimeConfig | None = None,
+    used_task_ids: frozenset[str] = frozenset(),
 ) -> tuple[InstructionCandidate, ...]:
-    """Build a bounded stable list of tasks supported by observed capabilities."""
-    capabilities = set(inventory.capabilities)
-    scopes = inventory.visible_scopes or ("the visible image",)
-    eligible: list[InstructionCandidate] = []
-    for task in load_task_catalog()["tasks"]:
-        required = tuple(task["required_capabilities"])
-        if not set(required).issubset(capabilities):
-            continue
-        scope = scopes[len(eligible) % len(scopes)]
-        candidate_id = hashlib.sha256(
-            f"{seed}:{inventory.image_id}:{turn_index}:{task['id']}:{scope}".encode()
-        ).hexdigest()
-        eligible.append(
-            InstructionCandidate(
-                candidate_id=candidate_id,
-                task_id=task["id"],
-                family=task["family"],
-                visible_scope=scope,
-                instruction_summary=task["definition_en"],
-                required_capabilities=required,
-            )
-        )
-    eligible.sort(
-        key=lambda candidate: hashlib.sha256(
-            f"{seed}:{inventory.image_id}:{turn_index}:{candidate.candidate_id}".encode()
-        ).digest()
-    )
-    return tuple(eligible[:limit])
+    """Route local evidence into bounded templates, rotating eligible families.
+
+    These templates still require focused parameter/eligibility binding before selection. Missing
+    capabilities are UNKNOWN; evidence from different scopes is never combined implicitly.
+    """
+    if limit < 1:
+        raise ValueError("Candidate limit must be positive")
+    settings = settings or TaskRuntimeConfig()
+    catalog = task_catalog()
+    families: dict[str, list[InstructionCandidate]] = {}
+    for scope in inventory.scopes:
+        supported = {item.capability for item in scope.observations if item.verdict == "MET"}
+        missing = {item.capability for item in scope.observations if item.verdict != "MET"}
+        for task in catalog.tasks:
+            if task.status != "core_candidate":
+                continue
+            for profile in settings.profiles:
+                if profile == "normal":
+                    if (
+                        unavailable_reasons(task)
+                        or not set(task.required_capabilities) <= supported
+                    ):
+                        continue
+                    verifiers = task.verification_contracts
+                else:
+                    if task.id not in catalog.profile_contracts[profile].eligible_task_ids:
+                        continue
+                    if not ({"resolvable_region", "visible_entity"} & supported):
+                        continue
+                    if profile == "limitation" and not (set(task.required_capabilities) & missing):
+                        continue
+                    if profile == "false_premise" and "closed_scope" not in supported:
+                        continue
+                    verifiers = ("dual_visual_review",)
+                refs = tuple(item.evidence_id for item in scope.observations)
+                candidate = InstructionCandidate(
+                    candidate_id="unbound",
+                    task_id=task.id,
+                    family=task.family,
+                    profile=profile,
+                    visible_scope=scope.public_description,
+                    instruction_summary=task.definition_en,
+                    required_capabilities=task.required_capabilities,
+                    catalog_version=catalog.version,
+                    scope_id=scope.scope_id,
+                    view_id=scope.view_id,
+                    evidence_refs=refs,
+                    verification_contracts=verifiers,
+                )
+                candidate = candidate.model_copy(
+                    update={"candidate_id": fingerprint(candidate, inventory.image_id)}
+                )
+                families.setdefault(task.family, []).append(candidate)
+
+    def rank(value: str) -> bytes:
+        return hashlib.sha256(f"{seed}:{inventory.image_id}:{value}".encode()).digest()
+
+    family_order = sorted(families, key=rank)
+    if not family_order:
+        return ()
+    offset = (turn_index - 1) % len(family_order)
+    family_order = family_order[offset:] + family_order[:offset]
+    for candidates in families.values():
+        candidates.sort(key=lambda c: (c.task_id in used_task_ids, rank(c.candidate_id)))
+    result: list[InstructionCandidate] = []
+    depth = 0
+    while len(result) < limit:
+        round_candidates = [
+            families[name][depth] for name in family_order if len(families[name]) > depth
+        ]
+        if not round_candidates:
+            break
+        result.extend(round_candidates[: limit - len(result)])
+        depth += 1
+    return tuple(result)
 
 
 def allocated_role(

@@ -156,3 +156,45 @@ def test_evaluation_image_can_never_be_training_output(image_artifact) -> None:
     with pytest.raises(AuditError) as caught:
         training_record(_conversation(image_artifact, SourcePurpose.EVALUATION))
     assert caught.value.reason == "EVALUATION_IMAGE_EXPORT"
+
+
+def test_v7_selection_uses_final_family_and_counts_all_committed_operations(image_artifact):
+    from pixelogue.catalog import task_catalog
+    from pixelogue.operations import candidate_from_conversation, summarize_operations
+
+    conversation = _conversation(image_artifact, SourcePurpose.TRAINING)
+    turns = []
+    for turn, task_id in zip(
+        conversation.turns, ("object_identification", "text_transcription"), strict=True
+    ):
+        task = next(task for task in task_catalog().tasks if task.id == task_id)
+        instruction = InstructionCandidate(
+            candidate_id=task_id,
+            task_id=task.id,
+            family=task.family,
+            visible_scope="image",
+            instruction_summary=task.definition_en,
+            required_capabilities=task.required_capabilities,
+            catalog_version="7.0",
+            scope_id="image",
+            view_id="view",
+            evidence_refs=("evidence",),
+            verification_contracts=task.verification_contracts,
+        )
+        turns.append(turn.model_copy(update={"instruction": instruction}))
+    conversation = conversation.model_copy(update={"turns": tuple(turns)})
+    assert candidate_from_conversation(conversation).task_family == "text_reading"
+    counts = summarize_operations((conversation,))
+    assert counts["committed_turns"] == {
+        "7.0:object_identification": 1,
+        "7.0:text_transcription": 1,
+    }
+    assert counts["primary_conversations"] == {"7.0:text_transcription": 1}
+    public = training_record(conversation).model_dump_json()
+    assert "catalog_version" not in public and "verification_contracts" not in public
+    stopped = conversation.model_copy(
+        update={"turns": (turns[0], turns[1].model_copy(update={"status": "REJECTED"}))}
+    )
+    assert summarize_operations((stopped,))["primary_conversations"] == {
+        "7.0:object_identification": 1
+    }

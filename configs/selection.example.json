@@ -1,9 +1,9 @@
 {
   "allow_evaluation_sources": false,
   "family_minimums": {
-    "document_chart": 1,
-    "observation_attribute": 1,
-    "visible_count": 1
+    "text_reading": 1,
+    "visual_description": 1,
+    "set_logic": 1
   },
   "language_quotas": {
     "en": 4,

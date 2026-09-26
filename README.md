@@ -8,7 +8,7 @@ The repository implements the pipeline and a diagnostic pilot. It does not conta
 
 - The active instruction selector is configured explicitly. The other selector is never called as an automatic fallback.
 - The default `evaluation.mode: holistic` generates a question and answer, then obtains one whole-turn review from each judge. Only two MET votes accept a turn; disagreement or uncertainty abstains.
-- Holistic review checks image facts, request fulfillment, history, target language, explicit formats, and safety together. It skips question-fit, requirement/claim/set extraction, per-item grading, and automatic answer repair.
+- Holistic review checks image facts, request fulfillment, history, target language, explicit formats, and safety together. V7 first checks the bound question with both judges and also requires the operation’s applicable validators. It skips detailed requirement/claim extraction, per-item grading, and automatic answer repair.
 - Empty text, exact repeated questions, and substantial private-prompt echoes fail controller checks. A requested regrouping can be useful without adding a new fact.
 - With `evaluation.retain_accepted_prefix: true`, a quality stop retains an accepted prefix of at least two turns. Failed tails stay in private `conversation-stops` artifacts, never training output. Operational errors are not converted to accepted conversations.
 - `evaluation.mode: detailed` retains the legacy decomposed evaluator for comparisons and requires completion of the planned conversation. Changing evaluation settings requires a new run ID.
@@ -33,7 +33,9 @@ uv run --locked pixelogue make-fixtures \
 uv run --locked pytest
 ```
 
-The first command validates the complete configuration and emits the 24-task catalog, 28 legacy detailed rating criteria, the effective evaluation settings, exact language quotas, and JSON Schemas. Model weights are not needed for these steps.
+The first command validates the complete configuration and emits the versioned 72-task catalog (65 core candidates and 7 gated extensions), 28 legacy detailed rating criteria, the effective evaluation settings, exact language quotas, and JSON Schemas. Model weights are not needed for these steps.
+
+See the [v7 catalog and runtime admission guide](docs/tasks/README.md) for scoped evidence, disabled validators, and migration. Currently 34 normal operations have an available verification path; the other definitions remain blocked until their required checks exist.
 
 ## Guides
 

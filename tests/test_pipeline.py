@@ -34,6 +34,16 @@ from pixelogue.prompts import STAGE_INSTRUCTIONS
 from pixelogue.rules import CountGroup, SetCheck, SetInventory, verify_set_inventories
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
+from pixelogue.task_evidence import (
+    CandidateBinding,
+    CandidateBindings,
+    CapabilityObservation,
+    EligibilityObservation,
+    ImageRegion,
+    PublicParameter,
+    ScopedEvidenceInventory,
+    ScopeEvidence,
+)
 
 
 class ScriptedClient:
@@ -90,7 +100,54 @@ class ScriptedClient:
             self.concurrency_probe.exit()
         self.calls.append((stage, payload))
         value: BaseModel
-        if response_model is EvidenceInventory:
+        if response_model is ScopedEvidenceInventory:
+            region = ImageRegion(left=0.0, top=0.0, right=1.0, bottom=1.0)
+            value = ScopedEvidenceInventory(
+                image_id=payload["image_id"],
+                reason="A visible entity is available.",
+                scopes=(
+                    ScopeEvidence(
+                        scope_id="blue",
+                        view_id=payload["image_views"][0]["view_id"],
+                        public_description="the blue region",
+                        region=region,
+                        observations=(
+                            CapabilityObservation(
+                                evidence_id="entity",
+                                capability="unsupported_capability"
+                                if self.unknown_capability
+                                else "visible_entity",
+                                verdict="MET",
+                                region=region,
+                                detail="A blue object is visible.",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        elif response_model is CandidateBindings:
+            value = CandidateBindings(
+                bindings=tuple(
+                    CandidateBinding(
+                        candidate_id=candidate["candidate_id"],
+                        public_parameters=(
+                            PublicParameter(
+                                name="target",
+                                value=f"the blue region, aspect {len(payload['public_history'])}",
+                                origin="instruction",
+                            ),
+                        ),
+                        checks=tuple(
+                            EligibilityObservation(check_id=key, verdict="MET", reason="Visible")
+                            for key in candidate["eligibility_checks"]
+                        ),
+                        evidence_refs=("entity",),
+                        estimated_answer_tokens=100,
+                    )
+                    for candidate in payload["candidates"]
+                )
+            )
+        elif response_model is EvidenceInventory:
             value = EvidenceInventory(
                 image_id=payload["image_id"],
                 capabilities=("unsupported_capability",)
@@ -910,7 +967,9 @@ def test_set_rating_preserves_failure_without_rescuing_uncertainty(
         store.close()
 
 
-def test_holistic_uses_only_two_blind_reviews_per_turn(tmp_path, image_artifact):
+def test_v7_holistic_checks_bound_question_and_two_blind_whole_turn_reviews(
+    tmp_path, image_artifact
+):
     image, root = image_artifact
     co, store, _, a, b = _coordinator(tmp_path, evaluation_mode="holistic")
     try:
@@ -919,8 +978,8 @@ def test_holistic_uses_only_two_blind_reviews_per_turn(tmp_path, image_artifact)
         for client in (a, b):
             stages = [stage for stage, _ in client.calls]
             assert stages.count("holistic_review") == len(conversation.turns)
+            assert stages.count("question_fit") == len(conversation.turns)
             assert not set(stages) & {
-                "question_fit",
                 "requirement_extraction",
                 "claim_inventory",
                 "set_inventory",
@@ -934,6 +993,7 @@ def test_holistic_uses_only_two_blind_reviews_per_turn(tmp_path, image_artifact)
                         "public_history",
                         "question",
                         "candidate_answer",
+                        "expected_operation",
                         "image_views",
                     }
         assert all(not turn.requirements for turn in conversation.turns)
@@ -1084,5 +1144,21 @@ def test_holistic_rerating_uses_new_votes_and_preserves_failed_tail_privately(
         assert len(rated.turns) == 2
         assert rated.public_messages == original.public_messages[:4]
         assert all(t.rating.items[0].template_id == "Q_HOLISTIC" for t in rated.turns)
+    finally:
+        store.close()
+
+
+def test_v7_holistic_wrong_operation_stops_before_answer_generation(
+    tmp_path, image_artifact, monkeypatch
+):
+    image, root = image_artifact
+    co, store, _, a, b = _coordinator(tmp_path, evaluation_mode="holistic")
+    monkeypatch.setattr(co, "_question_fit", lambda *args: GateVerdict.NOT_MET)
+    try:
+        result = co.synthesize_image(image, root)
+        assert result.status == "REJECTED"
+        assert not any(
+            stage == "answer_generation" for client in (a, b) for stage, _ in client.calls
+        )
     finally:
         store.close()

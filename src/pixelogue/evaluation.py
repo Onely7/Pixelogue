@@ -6,7 +6,7 @@ import unicodedata
 from collections.abc import Sequence
 from typing import Any
 
-from pixelogue.catalog import load_rubric_catalog
+from pixelogue.catalog import load_rubric_catalog, task_catalog
 from pixelogue.contracts import (
     GateVerdict,
     PublicMessage,
@@ -101,6 +101,7 @@ def aggregate_rating(items: Sequence[RubricItem]) -> TurnRating:
     catalog = load_rubric_catalog()
     uses = {item["template_id"]: item["default_use"] for item in catalog["items"]}
     uses["Q_HOLISTIC"] = "gate"
+    uses.update({name: "gate" for name in task_catalog().verification_contracts})
     gates = [item.verdict for item in items if uses[item.template_id] == "gate"]
     if GateVerdict.ERROR in gates:
         aggregate = "ERROR"
