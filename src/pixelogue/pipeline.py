@@ -885,6 +885,8 @@ class SynthesisCoordinator:
                     "chart_answer",
                     "graph_answer",
                     "scale_answer",
+                    "pattern_answer",
+                    "geometry_answer",
                 }
                 else (model_image,),
                 model,

@@ -101,6 +101,22 @@ REGISTRATIONS = {
             "1",
             supported_tasks=frozenset({"measurement_reading"}),
         ),
+        ValidatorRegistration(
+            "pattern_check",
+            "1",
+            supported_tasks=frozenset(
+                {
+                    "pattern_rule_identification",
+                    "pattern_completion",
+                    "rule_based_exception",
+                }
+            ),
+        ),
+        ValidatorRegistration(
+            "geometry_check",
+            "1",
+            supported_tasks=frozenset({"geometric_relation_analysis"}),
+        ),
     )
 }
 

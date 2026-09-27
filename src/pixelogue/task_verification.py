@@ -15,7 +15,9 @@ from pixelogue.document_verifiers import DOCUMENT_TASKS, DocumentSource, verify_
 from pixelogue.evaluation import consensus
 from pixelogue.finite_verifiers import FINITE_TASKS, FiniteAnswer, FiniteSource, verify_finite
 from pixelogue.formula_verifier import FormulaSource, verify_formula
+from pixelogue.geometry_verifier import GeometryAnswer, GeometrySource, verify_geometry
 from pixelogue.graph_verifiers import GRAPH_TASKS, GraphAnswer, GraphSource, verify_graph
+from pixelogue.pattern_verifiers import PATTERN_TASKS, PatternAnswer, PatternSource, verify_pattern
 from pixelogue.quantitative_verifiers import (
     QUANTITATIVE_TASKS,
     QuantityAnswer,
@@ -58,6 +60,87 @@ def verify_operation(
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id == "geometric_relation_analysis":
+        geometry_source_payload = {
+            key: value for key, value in public.items() if key != "candidate_answer"
+        }
+        geometry_answer_payload = {
+            key: public[key]
+            for key in ("target_language", "question", "candidate_answer", "expected_operation")
+            if key in public
+        }
+        geometry_sources = tuple(
+            GeometrySource.model_validate(
+                invoke("geometry_source", geometry_source_payload, GeometrySource, index)
+            )
+            for index in range(2)
+        )
+        geometry_answers = tuple(
+            GeometryAnswer.model_validate(
+                invoke("geometry_answer", geometry_answer_payload, GeometryAnswer, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        verdict = verify_geometry(
+            (geometry_sources[0], geometry_sources[1]),
+            (geometry_answers[0], geometry_answers[1]),
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        results.append(
+            OperationCheck(
+                "geometry_check",
+                verdict,
+                tuple(
+                    item.model_dump(mode="json") for item in (*geometry_sources, *geometry_answers)
+                ),
+                "Marked geometry controller check: " + verdict.value,
+            )
+        )
+    if instruction.task_id in PATTERN_TASKS:
+        pattern_source_payload = {
+            key: value for key, value in public.items() if key != "candidate_answer"
+        }
+        pattern_answer_payload = {
+            key: public[key]
+            for key in ("target_language", "question", "candidate_answer", "expected_operation")
+            if key in public
+        }
+        pattern_sources = tuple(
+            PatternSource.model_validate(
+                invoke("pattern_source", pattern_source_payload, PatternSource, index)
+            )
+            for index in range(2)
+        )
+        pattern_answers = tuple(
+            PatternAnswer.model_validate(
+                invoke("pattern_answer", pattern_answer_payload, PatternAnswer, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        verdict = verify_pattern(
+            instruction.task_id,
+            (pattern_sources[0], pattern_sources[1]),
+            (pattern_answers[0], pattern_answers[1]),
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        results.append(
+            OperationCheck(
+                "pattern_check",
+                verdict,
+                tuple(
+                    item.model_dump(mode="json") for item in (*pattern_sources, *pattern_answers)
+                ),
+                "Finite pattern rule check: " + verdict.value,
+            )
+        )
     if instruction.task_id == "measurement_reading":
         scale_source_payload = {
             key: value for key, value in public.items() if key != "candidate_answer"
@@ -385,6 +468,10 @@ def verify_operation(
         if instruction.task_id == "formula_transcription" and name == "formula_structure_check":
             continue
         if instruction.task_id == "measurement_reading" and name == "scale_check":
+            continue
+        if instruction.task_id in PATTERN_TASKS and name == "pattern_check":
+            continue
+        if instruction.task_id == "geometric_relation_analysis" and name == "geometry_check":
             continue
         if (
             instruction.task_id

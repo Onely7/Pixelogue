@@ -18,6 +18,25 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "geometry_source": """Read only the image, public question and bound geometric relation.
+Record exact shape and relation facts with their image regions and support type. Equality,
+parallelism, perpendicularity and exact symmetry require an explicit drawn mark or printed
+constraint; an approximate appearance is insufficient. Keep visible outline classification
+separate from stated geometry. Unclear marks or unsupported conventions are UNKNOWN. Never see
+the proposed answer.""",
+    "geometry_answer": """Parse only the candidate answer and public geometric question without an image.
+Quote the exact stated shape class, truth value or relation members. Missing or ambiguous
+subject labels and multiple conflicting claims are UNKNOWN. Do not infer geometry from the
+expected diagram result.""",
+    "pattern_source": """Read only the image, public question and bound finite pattern operation.
+Extract every visible panel and public completion option with exact observable position, quarter
+turn, mirror state, count, attribute and set-membership features. A missing feature is null, never
+guessed. The controller searches only seven registered rule families and requires a unique rule and
+solution. Preserve panel order, option labels and image regions; incomplete or occluded examples
+are UNKNOWN. Never see the candidate answer or a hidden answer key.""",
+    "pattern_answer": """Parse only the candidate answer and public question, without the image.
+Quote the literal rule-family name, chosen visible option label or exception panel label. Multiple
+or implicit choices are UNKNOWN. Do not infer a rule or option from expected pattern behavior.""",
     "scale_source": """Read only the image, public question and bound scale operation.
 For a linear ruler or gauge, extract at least two printed calibrated tick values, their positions,
 units, pointer position and visible resolution. For a clock, extract separate hour and minute hand
@@ -319,6 +338,18 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "geometry_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "geometry_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
+    "pattern_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "pattern_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
     "scale_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),
