@@ -114,7 +114,7 @@ tmux new-session -d -s pixelogue-gpu-watch -c "$PWD" -n monitor \
 tail -f artifacts/gpu-watch/monitor.log
 ```
 
-`artifacts/gpu-watch/state.json` records the active PID, GPU, phase, and accumulated GPU seconds. To stop and release a reservation, send `Ctrl-C` to the tmux pane. The watcher stops automatically before four GPU-hours; restarting it preserves the ledger. A live model run appears under `artifacts/gpu-watch/<run-id>/`. GPU 0–5 on this host are outside the visible Slurm GPU partition, so this watcher checks the actual local devices directly.
+`artifacts/gpu-watch/state.json` records the last scan, active PID, GPU, phase, and accumulated GPU seconds; the log also emits a periodic heartbeat. To stop and release a reservation, send `Ctrl-C` to the tmux pane. The watcher stops automatically before four GPU-hours; restarting it preserves the ledger. A live model run appears under `artifacts/gpu-watch/<run-id>/`. GPU 0–5 on this host are outside the visible Slurm GPU partition, so this watcher checks the actual local devices directly.
 
 ## 4. Wait for real readiness
 

@@ -114,7 +114,7 @@ tmux new-session -d -s pixelogue-gpu-watch -c "$PWD" -n monitor \
 tail -f artifacts/gpu-watch/monitor.log
 ```
 
-`artifacts/gpu-watch/state.json` は使用中のPID、GPU、段階、累積GPU秒数を記録します。停止して予約を解放するにはtmuxのpaneへ `Ctrl-C` を送ります。4 GPU時間に達する前に自動停止し、再起動しても記録済み時間を引き継ぎます。実行結果は `artifacts/gpu-watch/<run-id>/` に保存します。このホストのGPU 0〜5は見えているSlurmのGPU区画外なので、監視は実際のローカルGPUを直接確認します。
+`artifacts/gpu-watch/state.json` は最後の確認時刻、使用中のPID、GPU、段階、累積GPU秒数を記録し、ログにも定期的に生存状況を出します。停止して予約を解放するにはtmuxのpaneへ `Ctrl-C` を送ります。4 GPU時間に達する前に自動停止し、再起動しても記録済み時間を引き継ぎます。実行結果は `artifacts/gpu-watch/<run-id>/` に保存します。このホストのGPU 0〜5は見えているSlurmのGPU区画外なので、監視は実際のローカルGPUを直接確認します。
 
 ## 4. 実際に応答できるまで待つ
 

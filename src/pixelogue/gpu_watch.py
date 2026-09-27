@@ -282,6 +282,7 @@ def _watch(poll_seconds: int) -> None:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         state = _load()
         last: set[int] = set()
+        last_heartbeat = time.monotonic()
         print(
             f"watching local GPUs; remaining GPU-hours={_remaining(state) / 3600:.3f}", flush=True
         )
@@ -291,6 +292,16 @@ def _watch(poll_seconds: int) -> None:
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
                 print(f"GPU inspection failed: {exc}", flush=True)
                 current = set()
+            state["last_scan_at"] = time.time()
+            state["last_idle_indices"] = sorted(current)
+            _save(state)
+            if time.monotonic() - last_heartbeat >= 60:
+                print(
+                    f"watch heartbeat: idle={sorted(current)}, "
+                    f"remaining_gpu_hours={_remaining(state) / 3600:.3f}",
+                    flush=True,
+                )
+                last_heartbeat = time.monotonic()
             eligible = sorted(current & last)
             last = current
             if not eligible:
