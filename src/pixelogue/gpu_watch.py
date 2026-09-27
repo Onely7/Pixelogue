@@ -58,7 +58,30 @@ def _remaining(state: dict[str, Any]) -> float:
     active = state.get("active")
     if active is not None:
         used += max(0, time.time() - float(active["started_at"]))
-    return MAX_GPU_SECONDS - used
+    return float(state.get("authorized_gpu_seconds", MAX_GPU_SECONDS)) - used
+
+
+def _authorize_campaign(state: dict[str, Any], campaign_id: str, additional_hours: float) -> None:
+    """Extend the preserved GPU ledger once for an explicitly named validation round."""
+    additional_seconds = round(additional_hours * 3600)
+    campaigns = state.setdefault("campaigns", [])
+    previous = next((item for item in campaigns if item["id"] == campaign_id), None)
+    if previous is not None:
+        if previous["additional_gpu_seconds"] != additional_seconds:
+            raise RuntimeError("Campaign ID already has a different GPU budget")
+        return
+    if state.get("active") is not None:
+        raise RuntimeError("Cannot extend the budget during an active allocation")
+    state["authorized_gpu_seconds"] = (
+        float(state.get("authorized_gpu_seconds", MAX_GPU_SECONDS)) + additional_seconds
+    )
+    state["pilot_attempted"] = False
+    state["pilot_exit_code"] = None
+    campaigns.append(
+        {"id": campaign_id, "additional_gpu_seconds": additional_seconds, "started_at": time.time()}
+    )
+    _save(state)
+    print(f"authorized campaign {campaign_id}: +{additional_hours:.3f} GPU-hours", flush=True)
 
 
 def _begin(state: dict[str, Any], phase: str, gpu: int, pid: int) -> None:
@@ -300,13 +323,15 @@ def _hold_visible_gpu(memory_fraction: float, parent_pid: int) -> None:
         time.sleep(1)
 
 
-def _watch(poll_seconds: int) -> None:
+def _watch(poll_seconds: int, campaign_id: str | None, additional_hours: float) -> None:
     if not PYTHON_WITH_TORCH.is_file():
         raise RuntimeError("Install the separate runtime/vllm lock first")
     STATE.parent.mkdir(parents=True, exist_ok=True)
     with (STATE.parent / "watch.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         state = _load()
+        if campaign_id is not None and additional_hours > 0:
+            _authorize_campaign(state, campaign_id, additional_hours)
         last: set[int] = set()
         last_heartbeat = time.monotonic()
         print(
@@ -370,9 +395,15 @@ def main() -> None:
     parser.add_argument("--poll-seconds", type=int, default=15)
     parser.add_argument("--memory-fraction", type=float, default=0.90)
     parser.add_argument("--parent-pid", type=int)
+    parser.add_argument("--campaign-id")
+    parser.add_argument("--additional-gpu-hours", type=float, default=0.0)
     args = parser.parse_args()
     if not 5 <= args.poll_seconds <= 300 or not 0.85 <= args.memory_fraction <= 0.92:
         parser.error("Invalid polling or reservation fraction")
+    if not 0 <= args.additional_gpu_hours <= 4 or (
+        args.additional_gpu_hours and not args.campaign_id
+    ):
+        parser.error("Budget extension must be at most four GPU-hours with a campaign ID")
     signal.signal(signal.SIGTERM, _signal_stop)
     signal.signal(signal.SIGINT, _signal_stop)
     if args.mode == "hold":
@@ -380,7 +411,7 @@ def main() -> None:
             parser.error("Holder requires its supervising parent PID")
         _hold_visible_gpu(args.memory_fraction, args.parent_pid)
     else:
-        _watch(args.poll_seconds)
+        _watch(args.poll_seconds, args.campaign_id, args.additional_gpu_hours)
 
 
 if __name__ == "__main__":

@@ -116,6 +116,8 @@ tail -f artifacts/gpu-watch/monitor.log
 
 `artifacts/gpu-watch/state.json` は最後の確認時刻、使用中のPID、GPU、段階、累積GPU秒数を記録し、ログにも定期的に生存状況を出します。停止して予約を解放するにはtmuxのpaneへ `Ctrl-C` を送ります。4 GPU時間に達する前に自動停止し、再起動しても記録済み時間を引き継ぎます。実行結果は `artifacts/gpu-watch/<run-id>/` に保存します。このホストのGPU 0〜5は見えているSlurmのGPU区画外なので、監視は実際のローカルGPUを直接確認します。
 
+後から明示的に許可された検証では、`watch` コマンドへ `--campaign-id recheck-YYYYMMDD --additional-gpu-hours 2` を加えます。既存の累積台帳にこの時間をキャンペーンIDごとに1回だけ加算します。同じIDで再起動しても予算を再加算せず、完了済みのpilotも再実行しません。新しいキャンペーンはpilotを1回実行し、job後に空きGPUを再予約して延長予算の上限まで保持します。
+
 ## 4. 実際に応答できるまで待つ
 
 vLLMは重みを読み込んだ後も、compile、CUDA graphの準備、画像入力のウォームアップを行います。PIDが存在し、GPUメモリを確保していても、起動完了とは限りません。

@@ -62,6 +62,24 @@ def test_active_reservation_consumes_budget_and_stale_pid_is_counted(
     assert gpu_watch._remaining(state) == gpu_watch.MAX_GPU_SECONDS - 200
 
 
+def test_named_validation_campaign_extends_budget_only_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gpu_watch, "STATE", tmp_path / "state.json")
+    monkeypatch.setattr(gpu_watch.time, "time", lambda: 1000.0)
+    state = {"used_gpu_seconds": 14340.0, "active": None, "pilot_attempted": True}
+    gpu_watch._authorize_campaign(state, "recheck-20260928", 2.0)
+    assert state["authorized_gpu_seconds"] == 21600.0
+    assert gpu_watch._remaining(state) == 7260.0
+    assert state["pilot_attempted"] is False
+    state["pilot_attempted"] = True
+    gpu_watch._authorize_campaign(state, "recheck-20260928", 2.0)
+    assert state["authorized_gpu_seconds"] == 21600.0
+    assert state["pilot_attempted"] is True
+    with pytest.raises(RuntimeError, match="different GPU budget"):
+        gpu_watch._authorize_campaign(state, "recheck-20260928", 3.0)
+
+
 def test_pilot_summary_requires_all_rows_without_execution_errors(tmp_path: Path) -> None:
     output = tmp_path / "pilot"
     output.mkdir()
