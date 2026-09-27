@@ -19,10 +19,6 @@ from pixelogue.task_registry import REGISTRATIONS, registration
 IMPLEMENTED_VERIFIERS = frozenset(REGISTRATIONS)
 # The current member/count comparator and primitive arithmetic engine cannot certify these modes.
 UNSUPPORTED_OPERATIONS = {
-    "spatial_ordering": "ordered-member verification is unavailable",
-    "set_cardinality_comparison": "cardinality comparison verification is unavailable",
-    "quantified_statement_verification": "quantifier verification is unavailable",
-    "grounded_hypothetical_update": "hypothetical-set verification is unavailable",
     "quantity_comparison": "typed numeric ordering verification is unavailable",
     "grounded_aggregation": "aggregate-expression verification is unavailable",
     "unit_conversion": "versioned unit-conversion rules are unavailable",

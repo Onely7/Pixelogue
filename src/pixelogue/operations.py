@@ -42,6 +42,7 @@ from pixelogue.contracts import (
     TurnRating,
 )
 from pixelogue.errors import ExternalInputError
+from pixelogue.finite_verifiers import FiniteAnswer, FiniteSource
 from pixelogue.images import assign_split, canonicalize_image, group_visual_sources
 from pixelogue.ledger import Requirement, RequirementInventory
 from pixelogue.rules import ComputationInventory, NumericValue, SetCheck, SetInventory
@@ -103,6 +104,8 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             CalibrationObservation,
             CalibrationCertificate,
             CalibrationManifest,
+            FiniteSource,
+            FiniteAnswer,
             InstructionSelection,
             TextPayload,
             QuestionFit,

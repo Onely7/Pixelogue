@@ -18,6 +18,16 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "finite_source": """Read only the supplied image, public question, public history and bound operation.
+Extract every member of the declared closed scope with unique visual identities, source regions,
+groups, predicate status and order where relevant. Parse the operation requested by the public
+question into query. Never see or predict the candidate answer. MET coverage and closed=true require
+all relevant members visible; cropped or hidden members mean UNKNOWN. An 'add' update may name only
+new hypothetical IDs explicitly stated in the question. Never invent missing visual objects.""",
+    "finite_answer": """Parse only the candidate_answer against the public question and operation.
+Return exactly one complete result form: members, count, boolean or relation. Preserve list order
+for ordering tasks. Do not consult an image or expected source inventory. Missing, ambiguous or
+compound results are UNKNOWN. Do not infer what the correct image answer should have been.""",
     "evidence_extraction": """Route the single image into a few publicly identifiable bounded
 scopes. Report only relevant capability observations, never the entire vocabulary. Each observation
 has a unique evidence_id, a MET/NOT_MET/UNKNOWN verdict, a visible detail, and a normalized region
@@ -247,6 +257,12 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "finite_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "finite_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
     "evidence_extraction": frozenset(
         {
             "image_id",

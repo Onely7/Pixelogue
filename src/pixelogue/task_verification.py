@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from pixelogue.catalog import task_catalog
 from pixelogue.contracts import GateVerdict, InstructionCandidate
 from pixelogue.evaluation import consensus
+from pixelogue.finite_verifiers import FINITE_TASKS, FiniteAnswer, FiniteSource, verify_finite
 from pixelogue.rules import (
     ComputationInventory,
     SetInventory,
@@ -45,7 +46,49 @@ def verify_operation(
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id in FINITE_TASKS:
+        source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
+        answer_payload = {
+            key: public[key]
+            for key in ("target_language", "question", "candidate_answer", "expected_operation")
+        }
+        sources = tuple(
+            FiniteSource.model_validate(
+                invoke("finite_source", source_payload, FiniteSource, index)
+            )
+            for index in range(2)
+        )
+        answers = tuple(
+            FiniteAnswer.model_validate(
+                invoke("finite_answer", answer_payload, FiniteAnswer, index)
+            )
+            for index in range(2)
+        )
+        parameters = {item.name: item.value for item in instruction.public_parameters}
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        verdict = verify_finite(
+            instruction.task_id,
+            (sources[0], sources[1]),
+            (answers[0], answers[1]),
+            parameters,
+            instruction.scope_id,
+            instruction.view_id,
+        )
+        evidence = tuple(item.model_dump(mode="json") for item in (*sources, *answers))
+        for name in instruction.verification_contracts:
+            if name in {"closed_set_check", "exact_arithmetic_check"}:
+                results.append(
+                    OperationCheck(
+                        name, verdict, evidence, "Finite-source controller check: " + verdict.value
+                    )
+                )
     for name in instruction.verification_contracts:
+        if instruction.task_id in FINITE_TASKS and name in {
+            "closed_set_check",
+            "exact_arithmetic_check",
+        }:
+            continue
         if name == "dual_visual_review":
             continue
         models: list[BaseModel]
