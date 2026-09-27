@@ -28,6 +28,7 @@ from pixelogue.rules import (
     verify_computation_inventories,
     verify_set_inventories,
 )
+from pixelogue.scale_verifier import ScaleAnswer, ScaleSource, verify_scale
 from pixelogue.table_verifiers import TABLE_TASKS, TableAnswer, TableSource, verify_table
 from pixelogue.task_evidence import TranscriptInventory, VisualContractReview
 from pixelogue.task_runtime import operation_contract
@@ -57,6 +58,48 @@ def verify_operation(
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id == "measurement_reading":
+        scale_source_payload = {
+            key: value for key, value in public.items() if key != "candidate_answer"
+        }
+        scale_answer_payload = {
+            key: public[key]
+            for key in ("target_language", "question", "candidate_answer", "expected_operation")
+            if key in public
+        }
+        scale_sources = tuple(
+            ScaleSource.model_validate(
+                invoke("scale_source", scale_source_payload, ScaleSource, index)
+            )
+            for index in range(2)
+        )
+        scale_answers = tuple(
+            ScaleAnswer.model_validate(
+                invoke("scale_answer", scale_answer_payload, ScaleAnswer, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        precision = next(
+            (item.value for item in instruction.public_parameters if item.name == "precision"), None
+        )
+        verdict = verify_scale(
+            (scale_sources[0], scale_sources[1]),
+            (scale_answers[0], scale_answers[1]),
+            precision,
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        results.append(
+            OperationCheck(
+                "scale_check",
+                verdict,
+                tuple(item.model_dump(mode="json") for item in (*scale_sources, *scale_answers)),
+                "Calibrated scale controller check: " + verdict.value,
+            )
+        )
     if instruction.task_id in GRAPH_TASKS:
         graph_source_payload = {
             key: value for key, value in public.items() if key != "candidate_answer"
@@ -340,6 +383,8 @@ def verify_operation(
                 )
     for name in instruction.verification_contracts:
         if instruction.task_id == "formula_transcription" and name == "formula_structure_check":
+            continue
+        if instruction.task_id == "measurement_reading" and name == "scale_check":
             continue
         if (
             instruction.task_id

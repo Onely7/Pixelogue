@@ -18,6 +18,16 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "scale_source": """Read only the image, public question and bound scale operation.
+For a linear ruler or gauge, extract at least two printed calibrated tick values, their positions,
+units, pointer position and visible resolution. For a clock, extract separate hour and minute hand
+positions clockwise from 12. Use UNKNOWN for ambiguous hands, non-linear scales, missing labels,
+unclear units or insufficient pixel resolution. Never see the candidate answer or add decimals not
+supported by marks. Keep every pointer and tick inside the bound image scope.""",
+    "scale_answer": """Parse only the candidate answer and public question without the image.
+Quote the exact numeric value with unit or the clock time as written. Ambiguous numbers, absent
+units, multiple incompatible readings or an unclear time are UNKNOWN. Do not infer the correct
+pointer position or calibration from the answer.""",
     "graph_source": """Read only the image, public question, history and bound graph operation.
 Identify every relevant node, visible label, directed or undirected edge, arrowhead, connection
 point and branch label with image regions. Resolve crossings only when dots or the public notation
@@ -309,6 +319,12 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "scale_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "scale_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
     "graph_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),

@@ -96,6 +96,11 @@ REGISTRATIONS = {
                 }
             ),
         ),
+        ValidatorRegistration(
+            "scale_check",
+            "1",
+            supported_tasks=frozenset({"measurement_reading"}),
+        ),
     )
 }
 

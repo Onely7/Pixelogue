@@ -51,6 +51,7 @@ from pixelogue.images import assign_split, canonicalize_image, group_visual_sour
 from pixelogue.ledger import Requirement, RequirementInventory
 from pixelogue.quantitative_verifiers import QuantityAnswer, QuantitySource
 from pixelogue.rules import ComputationInventory, NumericValue, SetCheck, SetInventory
+from pixelogue.scale_verifier import ScaleAnswer, ScaleSource
 from pixelogue.serialization import canonical_hash
 from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_catalog import TaskCatalog
@@ -122,6 +123,8 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             FormulaSource,
             GraphSource,
             GraphAnswer,
+            ScaleSource,
+            ScaleAnswer,
             InstructionSelection,
             TextPayload,
             QuestionFit,
