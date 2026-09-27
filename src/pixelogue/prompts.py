@@ -18,6 +18,16 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "quantity_source": """Read the image, public history and question without seeing any answer.
+Extract only printed numeric lexemes inside the bound image scope, with exact units and individual
+regions. Identify the public operation and ordered operand IDs. A complete aggregate requires a
+closed set and explicit selection rule; missing rows or obscured values mean UNKNOWN. Comparison
+requires the same unit and reporting basis. Use only the fixed si-simple-1 conversion table for
+convert. Never infer a number, unit, precision or hypothetical weight from the proposed answer.""",
+    "quantity_answer": """Read only the candidate answer, public question and operation; no image.
+Quote the exact answer substring and parse one numeric value with unit, truth value or relation.
+Unknown or conflicting number punctuation, missing units and ambiguous statements are UNKNOWN.
+Do not infer the correct source operands or compute an expected result.""",
     "finite_source": """Read only the supplied image, public question, public history and bound operation.
 Extract every member of the declared closed scope with unique visual identities, source regions,
 groups, predicate status and order where relevant. Parse the operation requested by the public
@@ -257,6 +267,12 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "quantity_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "quantity_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
     "finite_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),

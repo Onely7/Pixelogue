@@ -45,6 +45,7 @@ from pixelogue.errors import ExternalInputError
 from pixelogue.finite_verifiers import FiniteAnswer, FiniteSource
 from pixelogue.images import assign_split, canonicalize_image, group_visual_sources
 from pixelogue.ledger import Requirement, RequirementInventory
+from pixelogue.quantitative_verifiers import QuantityAnswer, QuantitySource
 from pixelogue.rules import ComputationInventory, NumericValue, SetCheck, SetInventory
 from pixelogue.serialization import canonical_hash
 from pixelogue.task_catalog import TaskCatalog
@@ -106,6 +107,8 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             CalibrationManifest,
             FiniteSource,
             FiniteAnswer,
+            QuantitySource,
+            QuantityAnswer,
             InstructionSelection,
             TextPayload,
             QuestionFit,

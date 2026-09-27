@@ -12,6 +12,12 @@ from pixelogue.catalog import task_catalog
 from pixelogue.contracts import GateVerdict, InstructionCandidate
 from pixelogue.evaluation import consensus
 from pixelogue.finite_verifiers import FINITE_TASKS, FiniteAnswer, FiniteSource, verify_finite
+from pixelogue.quantitative_verifiers import (
+    QUANTITATIVE_TASKS,
+    QuantityAnswer,
+    QuantitySource,
+    verify_quantitative,
+)
 from pixelogue.rules import (
     ComputationInventory,
     SetInventory,
@@ -46,11 +52,55 @@ def verify_operation(
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id in QUANTITATIVE_TASKS:
+        source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
+        answer_payload = {
+            key: public[key]
+            for key in ("target_language", "question", "candidate_answer", "expected_operation")
+            if key in public
+        }
+        quantity_sources = tuple(
+            QuantitySource.model_validate(
+                invoke("quantity_source", source_payload, QuantitySource, index)
+            )
+            for index in range(2)
+        )
+        quantity_answers = tuple(
+            QuantityAnswer.model_validate(
+                invoke("quantity_answer", answer_payload, QuantityAnswer, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        verdict = verify_quantitative(
+            instruction.task_id,
+            (quantity_sources[0], quantity_sources[1]),
+            (quantity_answers[0], quantity_answers[1]),
+            {item.name: item.value for item in instruction.public_parameters},
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        evidence = tuple(
+            item.model_dump(mode="json") for item in (*quantity_sources, *quantity_answers)
+        )
+        for name in instruction.verification_contracts:
+            if name in {"closed_set_check", "exact_arithmetic_check"}:
+                results.append(
+                    OperationCheck(
+                        name,
+                        verdict,
+                        evidence,
+                        "Exact quantitative controller check: " + verdict.value,
+                    )
+                )
     if instruction.task_id in FINITE_TASKS:
         source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
         answer_payload = {
             key: public[key]
             for key in ("target_language", "question", "candidate_answer", "expected_operation")
+            if key in public
         }
         sources = tuple(
             FiniteSource.model_validate(
@@ -84,7 +134,7 @@ def verify_operation(
                     )
                 )
     for name in instruction.verification_contracts:
-        if instruction.task_id in FINITE_TASKS and name in {
+        if instruction.task_id in FINITE_TASKS | QUANTITATIVE_TASKS and name in {
             "closed_set_check",
             "exact_arithmetic_check",
         }:

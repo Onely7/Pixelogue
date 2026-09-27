@@ -17,15 +17,6 @@ from pixelogue.task_registry import REGISTRATIONS, registration
 
 # Keep this public view for existing catalog checks; registrations own implementation status.
 IMPLEMENTED_VERIFIERS = frozenset(REGISTRATIONS)
-# The current member/count comparator and primitive arithmetic engine cannot certify these modes.
-UNSUPPORTED_OPERATIONS = {
-    "quantity_comparison": "typed numeric ordering verification is unavailable",
-    "grounded_aggregation": "aggregate-expression verification is unavailable",
-    "unit_conversion": "versioned unit-conversion rules are unavailable",
-    "cross_region_consistency_check": "conditional arithmetic applicability is unavailable",
-}
-
-
 # These describe output vocabularies or fixed policies, never a value to choose as a desired answer.
 POLICY_PARAMETERS = frozenset(
     {
@@ -112,8 +103,6 @@ def unavailable_reasons(
             reasons.append("specialized extension is not enabled")
         elif not certified_domains(task, settings, models):
             reasons.append("no calibration for the active models and validator")
-    if task.id in UNSUPPORTED_OPERATIONS:
-        reasons.append(UNSUPPORTED_OPERATIONS[task.id])
     return tuple(reasons)
 
 

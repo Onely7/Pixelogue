@@ -216,8 +216,14 @@ def test_length_terminated_public_text_is_not_certified_as_complete():
 def test_arithmetic_recomputes_only_the_bound_public_operator(
     extracted_operator, reported, expected
 ):
-    from pixelogue.rules import ComputationInventory, NumericValue
-    from pixelogue.task_evidence import PublicParameter
+    from pixelogue.quantitative_verifiers import (
+        QuantityAnswer,
+        QuantityOperand,
+        QuantityQuery,
+        QuantitySource,
+    )
+    from pixelogue.rules import NumericValue
+    from pixelogue.task_evidence import ImageRegion, PublicParameter
 
     candidate = operation("grounded_arithmetic").model_copy(
         update={
@@ -228,16 +234,43 @@ def test_arithmetic_recomputes_only_the_bound_public_operator(
     )
 
     def invoke(stage, payload, model, judge):
-        assert stage == "computation_inventory"
-        return ComputationInventory(
+        if stage == "quantity_answer":
+            assert "image_views" not in payload
+            return QuantityAnswer(
+                coverage="MET",
+                answer_quote=f"{reported} kg",
+                value=NumericValue(value=reported, unit="kg"),
+                reason="Literal answer",
+            )
+        assert stage == "quantity_source"
+        assert "candidate_answer" not in payload
+        region = ImageRegion(left=0, top=0, right=1, bottom=1)
+        return QuantitySource(
+            task_id="grounded_arithmetic",
             coverage="MET",
-            operation=extracted_operator,
-            operands=(NumericValue(value="3", unit="kg"), NumericValue(value="2", unit="kg")),
-            reported_result=NumericValue(value=reported, unit="kg"),
+            closed=True,
+            scope_id="canvas",
+            view_id="view",
+            scope_region=region,
+            operands=(
+                QuantityOperand(
+                    operand_id="a",
+                    value=NumericValue(value="3", unit="kg"),
+                    printed_text="3 kg",
+                    region=region,
+                ),
+                QuantityOperand(
+                    operand_id="b",
+                    value=NumericValue(value="2", unit="kg"),
+                    printed_text="2 kg",
+                    region=region,
+                ),
+            ),
+            query=QuantityQuery(operation=extracted_operator, operand_ids=("a", "b")),
             reason="Visible quantities",
         )
 
     result = verify_operation(
-        candidate, {"question": "What is the sum?", "candidate_answer": reported}, invoke
+        candidate, {"question": "What is the sum?", "candidate_answer": f"{reported} kg"}, invoke
     )
     assert result[0].verdict.value == expected

@@ -30,7 +30,7 @@ REGISTRATIONS = {
     for entry in (
         ValidatorRegistration("dual_visual_review", "1"),
         ValidatorRegistration("closed_set_check", "1"),
-        ValidatorRegistration("exact_arithmetic_check", "1"),
+        ValidatorRegistration("exact_arithmetic_check", "2"),
         ValidatorRegistration("transcript_alignment", "1"),
         ValidatorRegistration("evidence_binding_check", "1"),
         ValidatorRegistration("ui_grounding_check", "1"),
