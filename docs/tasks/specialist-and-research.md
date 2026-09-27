@@ -1,0 +1,67 @@
+# Specialist verification and research runs
+
+[日本語](specialist-and-research_ja.md) · [Task catalog](README.md)
+
+## Admission and environments
+
+The 65 core tasks have normal verification paths. Seven extensions have first-version validators. `configs/specialist-pilot.yaml` names all seven, but naming an extension does not admit it. `compile`, `doctor` and `task-status` report each validator's version, environment, calibration domain and selection reason. Normal selection requires a certificate for the **exact active generator/processor pair**, validator version and supported domain. The per-image capability and scope checks and eight-candidate limit still apply.
+
+```bash
+uv sync --locked --extra cpu --group dev
+uv sync --locked --directory runtime/validators
+uv run --locked pixelogue compile --config configs/specialist-pilot.yaml --output artifacts/specialist-compile.json
+uv run --locked pixelogue task-status --config configs/specialist-pilot.yaml --output-stem artifacts/task-status
+```
+
+The specialist lock contains SymPy, music21, RDKit and Playwright. It is separate from the application and `runtime/vllm/` environments. The registered rules cover explicit rational geometry, single-voice complete score bars, nonstereo atom/bond graphs, resolved two-terminal circuit nets, one visible UI action, static SVG or limited TikZ, and static HTML/CSS. Unsupported notation, incomplete source evidence and disagreement between two blind image readings produce `UNKNOWN`. A passing syntax check alone cannot certify a visual task.
+
+The render worker accepts a small static syntax grammar, disables JavaScript and Service Workers, blocks browser requests, and runs behind `bwrap` with no network and read-only system mounts. The controller compares the isolated screenshot with the delivered image view under the published RGB and foreground thresholds. If OS isolation or Chromium is unavailable, both render tasks are environment-blocked. Never launch candidate code outside this path. UI actions are checked as declarative data and are never performed.
+
+## Held-out evaluation and calibration
+
+`evaluate-specialist` is the only route for exercising an uncalibrated extension. Its JSONL input uses `SpecialistEvaluationCase` from the `compile` Schemas, an evaluation-only `ImageArtifact`, a public question and answer, and an independently sourced gold label for confirmation images. The gold label is kept out of every model request. Each evaluator makes a separate blind source extraction; the specialist controller check and evidence hashes are stored privately. Evaluation artifacts never enter the normal training export.
+
+```bash
+nvidia-smi
+uv run --locked pixelogue doctor --config configs/specialist-pilot.yaml --output artifacts/doctor.json
+uv run --locked pixelogue evaluate-specialist --config configs/specialist-pilot.yaml --cases validation/local-specialist-cases.jsonl --artifact-root artifacts/prepared --output-dir artifacts/specialist-evaluation --run-id specialist-eval-v1
+uv run --locked pixelogue calibration-build --results-dir artifacts/specialist-evaluation/results --output artifacts/specialist-calibration.json --report artifacts/specialist-calibration-report.json
+```
+
+Use the above model command only after confirming an idle device and explicitly selecting it. Long jobs and servers belong in `tmux` with logs and output progress checks. One available GPU is enough for sequential pilot calls; no four-GPU reservation is required. Count loading and every allocated device toward the cumulative four GPU-hour initial budget. The one-GPU pilot's two calls to the same `Qwen/Qwen3.5-9B` endpoint are blind calls, not model diversity or evidence for the standard Qwen3.8/Gemma pair. Do not silently quantize a BF16 configuration.
+
+`calibration-build` computes one-sided 95% Clopper–Pearson bounds from independent confirmation image groups. Eligibility requires a false-accept upper bound at most 5% and a positive-accept lower bound at least 80%. `UNKNOWN` is not positive acceptance. Failed calls, invalid output, development cases and groups lacking a positive or negative label remain pending in the report. Keep development and confirmation images separate. After a certificate is eligible, set `tasks.calibration_manifest` in a copied config to its path and re-run `compile`; never edit a certificate by hand. A pilot certificate cannot authorize the standard model pair.
+
+`evaluate-specialist`, `research-history`, and `research-ablation` reuse completed trial records on resume. Failed records remain visible; use `--retry-failed` to attempt them again. Specialist evaluation also saves each model stage independently, so evaluator endpoints can be brought up sequentially across retries with the same input and configuration identity.
+
+## Research-only commands
+
+`research-exposure` fixes image, question, public history, operation, plausible answer, incorrect answer and trial order before any calls. It evaluates hidden, plausible and incorrect conditions through a separate five-item question assessment. Each condition and repetition makes an independent model request. Complete trial files are reused on resume; failures and absent prices remain explicit. The paired plausible-minus-hidden result and AIAS on independently labelled invalid questions are reported in JSON, CSV and Markdown. Run generator A and B in separate output directories when only one endpoint can be loaded at a time.
+
+```bash
+uv run --locked pixelogue research-exposure --cases validation/local-exposure-cases.jsonl --artifact-root artifacts/prepared --output-dir artifacts/research-exposure-a --evaluator generator_a --plan-only
+uv run --locked pixelogue research-exposure --cases validation/local-exposure-cases.jsonl --artifact-root artifacts/prepared --output-dir artifacts/research-exposure-a --evaluator generator_a
+uv run --locked pixelogue research-exposure-report --output-dir artifacts/research-exposure-a
+```
+
+`audit-pack` samples accepted, rejected and abstained outputs separately, recording the source population and actual sampling rate. `questions.html` omits candidate answers; `answers.html` shows them on a separate sheet. Both hide methods, model names, automatic verdicts and error-injection types. The JSONL templates must be completed by independent raters. `audit-resolve` defaults to three raters, keeps every original vote and preserves unreviewed, unknown and disagreement states until adjudication. Automatic verdicts never become human gold labels.
+
+```bash
+uv run --locked pixelogue audit-pack --cases validation/local-audit-cases.jsonl --output-dir artifacts/audit --rate 0.1
+uv run --locked pixelogue audit-resolve --pack artifacts/audit/pack.json --question-votes artifacts/audit/question-votes.jsonl --answer-votes artifacts/audit/answer-votes.jsonl --output artifacts/audit/resolution.json
+```
+
+`research-history` binds an exact span in a committed public message. For coreference and public-constraint changes it substitutes a plausible alternative before showing the candidate answer, then checks whether that same answer holds under the original history and fails under the alternative. Independent turns receive no witness. Both stages use separate evaluator calls. A turn index alone never establishes dependency.
+
+`research-ablation` freezes questions and compares 18 cells: question gate before/after answer or omitted; evaluator A, B or both; and verified-only or all generated history. Repair is disabled. Holistic plus task-specific answer review remains active. All generated history, including failed turns, is stored only in a research trace and cannot enter normal export. Its reports include every starting case and reached depth, including stopped conversations. This first version fixes questions to isolate gate timing; it does not measure question-generation changes.
+
+The ablation `depth.csv` includes human-label false accept and false reject counts, plus overlapping evaluator errors where both evaluators voted. These fields stay zero without independently supplied human labels. The history study and audit resolution each write JSON, CSV, and Markdown reports.
+
+```bash
+uv run --locked pixelogue research-history --cases validation/local-history-cases.jsonl --artifact-root artifacts/prepared --output-dir artifacts/research-history
+uv run --locked pixelogue research-ablation --cases validation/local-ablation-cases.jsonl --artifact-root artifacts/prepared --output-dir artifacts/research-ablation --plan-only
+uv run --locked pixelogue research-ablation --cases validation/local-ablation-cases.jsonl --artifact-root artifacts/prepared --output-dir artifacts/research-ablation
+uv run --locked pixelogue research-ablation-report --output-dir artifacts/research-ablation
+```
+
+These commands require locally prepared cases and model servers; the repository does not contain image bytes or human labels. CPU fixtures verify controller logic and fail-closed behavior, not natural-image extraction accuracy. Costs are `null` without a price schedule. Large corpus generation, multi-student SFT, learning curves and full contamination analysis are later work.

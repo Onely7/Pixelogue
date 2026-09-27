@@ -35,7 +35,7 @@ uv run --locked pytest
 
 The first command validates the complete configuration and emits the versioned 72-task catalog (65 core candidates and 7 gated extensions), 28 legacy detailed rating criteria, the effective evaluation settings, exact language quotas, and JSON Schemas. Model weights are not needed for these steps.
 
-See the [v7 catalog and runtime admission guide](docs/tasks/README.md) for scoped evidence, disabled validators, and migration. Currently 34 normal operations have an available verification path; the other definitions remain blocked until their required checks exist.
+See the [v7 catalog and runtime admission guide](docs/tasks/README.md) for scoped evidence, validator status, and migration. All 65 core operations have CPU verification paths. The 7 specialist extensions require exact model-bound calibration and their runtime dependencies before normal selection.
 
 ## Guides
 

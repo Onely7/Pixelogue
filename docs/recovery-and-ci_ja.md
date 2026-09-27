@@ -36,6 +36,8 @@ uv run --locked pixelogue restore \
 
 継続前に復元 run へ `replay` を実行します。設定 hash が変わっていれば再開を拒否するため、意図した設定変更には新しい run ID を使います。
 
+設定hashにはアプリのコード、プロンプト、Schema、タスク資源、専門workerとlock、モデル・processorの設定、seed、固定したOpen Images入力を含めます。`synthesize` は準備時の `manifest.json` も必須とし、元のsource・権利manifestの識別を含めます。指定した `images.jsonl` は準備済みmanifestと完全一致する必要があります。契約や入力が変わったら新しいrun IDを使ってください。研究実験の固定planと完了済み試行は `artifacts/` 内に別保存し、通常の対話commitにはしません。
+
 ## ローカル検査と GitHub Actions
 
 ```sh

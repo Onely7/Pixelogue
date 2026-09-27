@@ -36,6 +36,8 @@ uv run --locked pixelogue restore \
 
 Run `replay` against the restored run before continuing. A changed configuration hash is rejected; start a new run ID for an intentional configuration change.
 
+The configuration hash now binds application code, prompts, Schemas, task resources, specialist worker and lock files, model and processor settings, seed and pinned Open Images input. `synthesize` also requires the prepared `manifest.json`; its identity includes the original source and rights manifests. The provided `images.jsonl` must match that prepared manifest exactly. A changed contract or input therefore requires a new run ID. Research experiment plans and completed trials use separate frozen files under `artifacts/` and are not normal conversation commits.
+
 ## Local and GitHub checks
 
 The required local sequence is:

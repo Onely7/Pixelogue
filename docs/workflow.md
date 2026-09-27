@@ -20,7 +20,7 @@ uv run --locked pixelogue synthesize \
 The coordinator assigns languages and generators with exact batch quotas. A conversation uses one generator throughout. The v7 flow is:
 
 1. extract scope-bound capability observations;
-2. build eligible templates from the 65 core candidates, excluding unavailable validators and all 7 specialized extensions;
+2. build eligible templates from the 65 core candidates and any enabled specialist extensions with a working environment and exact model-bound calibration;
 3. bind public parameters and eligibility checks within the answer budget;
 4. select using the image and exact committed public history;
 5. generate a question, reject prompt echoes and repeats, then obtain two blind operation/eligibility checks;
