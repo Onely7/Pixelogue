@@ -260,9 +260,7 @@ def bind_candidates(
                 if item.capability in template.required_capabilities and item.verdict == "MET"
             }
             if not required_refs <= set(binding.evidence_refs):
-                raise ExecutionError(
-                    "CANDIDATE_EVIDENCE_MISSING", "Required capability evidence is omitted"
-                )
+                continue
         expected_checks = set(operation_contract(template)["eligibility_checks"])
         if {check.check_id for check in binding.checks} != expected_checks:
             raise ExecutionError(

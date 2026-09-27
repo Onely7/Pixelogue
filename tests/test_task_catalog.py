@@ -214,6 +214,25 @@ def test_binding_cannot_borrow_refs_or_ignore_unknown_eligibility():
         )
 
 
+def test_missing_required_evidence_rejects_only_that_candidate() -> None:
+    data = inventory(scope("left", visible_entity="MET", visible_attribute="MET"))
+    available = candidates(data)
+    object_candidate = next(item for item in available if item.task_id == "object_identification")
+    attribute_candidate = next(item for item in available if item.task_id == "attribute_lookup")
+    incomplete = binding(attribute_candidate, evidence_refs=("left:visible_attribute",))
+
+    admitted = bind_candidates(
+        (object_candidate, attribute_candidate),
+        CandidateBindings(bindings=(binding(object_candidate), incomplete)),
+        data,
+        (),
+        TaskRuntimeConfig(),
+    )
+
+    assert len(admitted) == 1
+    assert admitted[0].task_id == "object_identification"
+
+
 def test_budget_and_semantic_fingerprints_precede_selector_calls():
     data = inventory(scope("left", visible_entity="MET"))
     template = candidates(data)[0]
