@@ -44,6 +44,7 @@ GUARD_PARAMETERS = {
     "local_question_supported": "local_question",
     "precision_declared": "precision",
     "relation_frame_defined": "frame",
+    "fields_bound": "fields",
 }
 
 
@@ -296,6 +297,11 @@ def bind_candidates(
             if not required_choices <= parameters.keys():
                 continue
             if task.id == "grounded_arithmetic" and "derived_forms" in parameters:
+                continue
+            if (
+                task.id == "document_structure_reconstruction"
+                and parameters["format"].value != "structured_json"
+            ):
                 continue
         candidate = template.model_copy(
             update={

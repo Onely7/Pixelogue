@@ -18,6 +18,12 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "document_source": """Read only the image, public history, question and bound operation.
+For field extraction, identify every explicitly requested field and its visible value, label and
+image region; mark missing fields with null, never guessed values. For document structure, recover
+the complete bounded page as ordered heading, paragraph, list, table, formula, caption and footnote
+nodes with parent links and regions. Hidden or unreadable content makes coverage UNKNOWN. The output
+format is strict structured_json. Never see the proposed answer.""",
     "chart_source": """Read only the image, question, public history and bound operation.
 Recover the y-axis scale, units and labeled ticks, legend and requested marks. Give each mark its
 series, category, image region, value interval and honest precision. Exact values require visible
@@ -287,6 +293,9 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "document_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
     "chart_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),

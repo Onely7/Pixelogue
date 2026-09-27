@@ -1300,7 +1300,10 @@ tasks:
   - dual_visual_review
   - transcript_alignment
   - schema_check
-  parameters: {}
+  parameters:
+    format:
+    - structured_json
+    fields: explicit requested field names; at most 64
   inspiration_subset_numbers:
   - 101
   - 115

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from pixelogue.catalog import task_catalog
 from pixelogue.chart_verifiers import CHART_TASKS, ChartAnswer, ChartSource, verify_chart
 from pixelogue.contracts import GateVerdict, InstructionCandidate
+from pixelogue.document_verifiers import DOCUMENT_TASKS, DocumentSource, verify_document
 from pixelogue.evaluation import consensus
 from pixelogue.finite_verifiers import FINITE_TASKS, FiniteAnswer, FiniteSource, verify_finite
 from pixelogue.quantitative_verifiers import (
@@ -54,6 +55,38 @@ def verify_operation(
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id in DOCUMENT_TASKS:
+        document_source_payload = {
+            key: value for key, value in public.items() if key != "candidate_answer"
+        }
+        document_sources = tuple(
+            DocumentSource.model_validate(
+                invoke("document_source", document_source_payload, DocumentSource, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        content, schema = verify_document(
+            instruction.task_id,
+            (document_sources[0], document_sources[1]),
+            {item.name: item.value for item in instruction.public_parameters},
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        document_evidence = tuple(item.model_dump(mode="json") for item in document_sources)
+        for name in instruction.verification_contracts:
+            if name in {"transcript_alignment", "schema_check"}:
+                verdict = schema if name == "schema_check" else content
+                results.append(
+                    OperationCheck(
+                        name,
+                        verdict,
+                        document_evidence,
+                        "Document controller check: " + verdict.value,
+                    )
+                )
     if instruction.task_id in CHART_TASKS:
         chart_source_payload = {
             key: value for key, value in public.items() if key != "candidate_answer"
@@ -235,7 +268,8 @@ def verify_operation(
                 )
     for name in instruction.verification_contracts:
         if (
-            instruction.task_id in FINITE_TASKS | QUANTITATIVE_TASKS | TABLE_TASKS | CHART_TASKS
+            instruction.task_id
+            in FINITE_TASKS | QUANTITATIVE_TASKS | TABLE_TASKS | CHART_TASKS | DOCUMENT_TASKS
             and name
             in {
                 "closed_set_check",
@@ -243,6 +277,7 @@ def verify_operation(
                 "table_structure_check",
                 "schema_check",
                 "chart_encoding_check",
+                "transcript_alignment",
             }
         ):
             continue

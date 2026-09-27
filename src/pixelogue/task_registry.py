@@ -56,7 +56,12 @@ REGISTRATIONS = {
             "schema_check",
             "1",
             supported_tasks=frozenset(
-                {"table_structure_reconstruction", "chart_data_reconstruction"}
+                {
+                    "table_structure_reconstruction",
+                    "chart_data_reconstruction",
+                    "text_field_extraction",
+                    "document_structure_reconstruction",
+                }
             ),
         ),
         ValidatorRegistration(

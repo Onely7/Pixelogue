@@ -42,6 +42,7 @@ from pixelogue.contracts import (
     TurnArtifact,
     TurnRating,
 )
+from pixelogue.document_verifiers import DocumentSource
 from pixelogue.errors import ExternalInputError
 from pixelogue.finite_verifiers import FiniteAnswer, FiniteSource
 from pixelogue.images import assign_split, canonicalize_image, group_visual_sources
@@ -115,6 +116,7 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             TableAnswer,
             ChartSource,
             ChartAnswer,
+            DocumentSource,
             InstructionSelection,
             TextPayload,
             QuestionFit,
