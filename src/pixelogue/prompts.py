@@ -131,7 +131,10 @@ scopes. Report only relevant capability observations, never the entire vocabular
 has a unique evidence_id, a MET/NOT_MET/UNKNOWN verdict, a visible detail, and a normalized region
 inside its scope. Do not combine capabilities from unrelated regions. Missing evidence is UNKNOWN,
 not absence. Copy image_id and each view_id exactly. Respect max_scopes and
-max_observations_per_scope. Use the actual supplied resolution. Do not infer domains from source
+max_observations_per_scope. Within one scope, report each capability at most once: a capability
+describes support for an operation across the scope, not one observation per visible object.
+Summarize multiple instances in that observation's detail. Use the actual supplied resolution.
+Use only capability names from capability_vocabulary. Do not infer domains from source
 names or annotations. Broad discovery is followed by focused binding of eligible operations.""",
     "candidate_binding": """Bind only the controller-provided candidates to locally supported
 public operation choices BEFORE any answer exists. Return at most one binding per candidate ID.
@@ -139,6 +142,8 @@ Use that candidate's scope evidence only. Provide a target parameter for every b
 count_unit for counting; predicate for selection, group_key for grouping, frame for spatial
 relations, precision for numerical readings, claim for verification/localization, local_question for
 answerability, category_set for scene classification and target_binding for referring expressions.
+Include only parameters relevant to that candidate's parameter_contract and operation; never add
+scope_id or every example parameter to each binding. Parameter names and check IDs must be unique.
 The verdicts field is an allowed output vocabulary, NEVER a desired answer parameter. Fixed policies
 such as execution/source_errors/coordinate_output are not bindable public choices.
 Bind enumerated input operation choices (except optional derived_forms and output/policy vocabularies)
@@ -146,6 +151,9 @@ to one permitted value. Choose concrete public predicates, targets, precision an
 never put the answer or a hidden factual operand into a parameter. Each parameter names its origin:
 instruction for a public choice/hypothesis, image for observed facts, history for committed messages.
 Factual origins need references to this scope's evidence IDs or exact public message IDs.
+An instruction choice has no evidence_refs. An image or history fact must include at least one
+matching evidence_id or public message ID. The binding's evidence_refs must include every MET
+observation for its required_capabilities, with no duplicate IDs.
 Include exactly the named eligibility checks. MET requires visible support for the actual operation
 and parameters, NOT_MET is a definite failure, and missing evidence is UNKNOWN. For limitation and
 false_premise use the alternative profile_guard instead of normal answerability prerequisites.

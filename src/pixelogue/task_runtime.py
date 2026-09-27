@@ -172,7 +172,11 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
 
 def selector_candidate(candidate: InstructionCandidate) -> dict[str, Any]:
     """Keep candidate identity while withholding private evidence observations."""
-    return {"candidate_id": candidate.candidate_id, **operation_contract(candidate)}
+    return {
+        "candidate_id": candidate.candidate_id,
+        "required_capabilities": list(candidate.required_capabilities),
+        **operation_contract(candidate),
+    }
 
 
 def fingerprint(candidate: InstructionCandidate, image_id: str) -> str:
