@@ -18,6 +18,12 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "formula_source": """Read the visible two-dimensional formula and public notation without seeing
+the proposed answer. Recover literal symbols, order, parentheses, scripts, stacked fractions and
+radicals as a FormulaNode tree. A missing script uses symbol ∅ in the script node. Do not solve,
+simplify, repair or replace the expression by an algebraically equivalent one. Unsupported symbols,
+unreadable marks and ambiguous grouping are UNKNOWN. Bind the formula to its exact image view and
+scope region.""",
     "document_source": """Read only the image, public history, question and bound operation.
 For field extraction, identify every explicitly requested field and its visible value, label and
 image region; mark missing fields with null, never guessed values. For document structure, recover
@@ -293,6 +299,9 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "formula_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
     "document_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),

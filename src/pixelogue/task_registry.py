@@ -78,6 +78,11 @@ REGISTRATIONS = {
                 }
             ),
         ),
+        ValidatorRegistration(
+            "formula_structure_check",
+            "1",
+            supported_tasks=frozenset({"formula_transcription"}),
+        ),
     )
 }
 

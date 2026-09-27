@@ -153,7 +153,7 @@ def test_supported_tables_enter_candidates_while_missing_verifiers_stay_blocked(
     data = inventory(scope("all", **observations))
     selected = {item.task_id for item in candidates(data, limit=100)}
     assert "object_identification" in selected
-    assert "formula_transcription" not in selected
+    assert "formula_transcription" in selected
     assert "table_structure_reconstruction" in selected
     assert "graph_path_tracing" not in selected
     assert not (
