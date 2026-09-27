@@ -46,6 +46,7 @@ from pixelogue.document_verifiers import DocumentSource
 from pixelogue.errors import ExternalInputError
 from pixelogue.finite_verifiers import FiniteAnswer, FiniteSource
 from pixelogue.formula_verifier import FormulaSource
+from pixelogue.graph_verifiers import GraphAnswer, GraphSource
 from pixelogue.images import assign_split, canonicalize_image, group_visual_sources
 from pixelogue.ledger import Requirement, RequirementInventory
 from pixelogue.quantitative_verifiers import QuantityAnswer, QuantitySource
@@ -119,6 +120,8 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             ChartAnswer,
             DocumentSource,
             FormulaSource,
+            GraphSource,
+            GraphAnswer,
             InstructionSelection,
             TextPayload,
             QuestionFit,

@@ -18,6 +18,16 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "graph_source": """Read only the image, public question, history and bound graph operation.
+Identify every relevant node, visible label, directed or undirected edge, arrowhead, connection
+point and branch label with image regions. Resolve crossings only when dots or the public notation
+make junctions explicit; ambiguity is UNKNOWN. Interpret a public numeric branch input using only
+printed comparison thresholds. For path and process tasks, certify the relevant graph is closed.
+Never see the candidate answer or infer a hidden edge from proximity.""",
+    "graph_answer": """Parse only the candidate answer and public graph objective, without an image.
+Quote the exact substring and extract one label, neighbor set, edge set or ordered paths. Preserve
+all reported alternatives. Ambiguous or incomplete text is UNKNOWN. Do not infer graph topology
+from an expected route or result.""",
     "formula_source": """Read the visible two-dimensional formula and public notation without seeing
 the proposed answer. Recover literal symbols, order, parentheses, scripts, stacked fractions and
 radicals as a FormulaNode tree. A missing script uses symbol ∅ in the script node. Do not solve,
@@ -299,6 +309,12 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "graph_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "graph_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
     "formula_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),

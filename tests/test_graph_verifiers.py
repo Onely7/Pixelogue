@@ -1,0 +1,124 @@
+"""Diagram edges, routes, crossings and public branch inputs."""
+
+from __future__ import annotations
+
+from pixelogue.contracts import GateVerdict
+from pixelogue.graph_verifiers import (
+    BranchCondition,
+    GraphAnswer,
+    GraphEdge,
+    GraphNode,
+    GraphQuery,
+    GraphSource,
+    verify_graph,
+)
+from pixelogue.task_evidence import ImageRegion
+
+REGION = ImageRegion(left=0, top=0, right=1, bottom=1)
+
+
+def _node(key: str) -> GraphNode:
+    return GraphNode(node_id=key, label=key, kind="box", region=REGION)
+
+
+def _edge(a: str, b: str, condition: BranchCondition | None = None) -> GraphEdge:
+    return GraphEdge(source=a, target=b, directed=True, condition=condition, region=REGION)
+
+
+def _source(task: str, operation: str, **query: object) -> GraphSource:
+    return GraphSource.model_validate(
+        {
+            "task_id": task,
+            "coverage": "MET",
+            "closed": True,
+            "junctions_resolved": True,
+            "scope_id": "scope",
+            "view_id": "view",
+            "scope_region": REGION,
+            "nodes": (_node("A"), _node("B"), _node("C")),
+            "edges": (_edge("A", "B"), _edge("B", "C"), _edge("A", "C")),
+            "query": {"operation": operation, **query},
+            "reason": "All arrows and endpoints visible",
+        }
+    )
+
+
+def _answer(quote: str, **result: object) -> GraphAnswer:
+    return GraphAnswer.model_validate(
+        {"coverage": "MET", "answer_quote": quote, "reason": "literal", **result}
+    )
+
+
+def _check(source: GraphSource, answer: GraphAnswer, **parameters: object) -> GateVerdict:
+    return verify_graph(
+        source.task_id,
+        (source, source),
+        (answer, answer),
+        parameters,
+        source.scope_id,
+        source.view_id,
+        answer.answer_quote,
+    )
+
+
+def test_element_lookup_and_directed_neighbors() -> None:
+    lookup = _source("diagram_element_lookup", "element", node_id="B")
+    assert _check(lookup, _answer("B", label="B")) is GateVerdict.MET
+    outgoing = _source("graph_connectivity", "neighbors", node_id="A")
+    assert _check(outgoing, _answer("B and C", members=("B", "C"))) is GateVerdict.MET
+    incoming = outgoing.model_copy(
+        update={
+            "query": GraphQuery(operation="neighbors", node_id="C", neighbor_direction="incoming")
+        }
+    )
+    assert _check(incoming, _answer("A and B", members=("A", "B"))) is GateVerdict.MET
+
+
+def test_all_paths_include_every_visible_alternative() -> None:
+    source = _source("graph_path_tracing", "paths", start="A", end="C")
+    correct = _answer("A B C; A C", paths=(("A", "B", "C"), ("A", "C")))
+    assert _check(source, correct) is GateVerdict.MET
+    missing = _answer("A C", paths=(("A", "C"),))
+    assert _check(source, missing) is GateVerdict.NOT_MET
+
+
+def test_process_description_checks_all_explicit_edges() -> None:
+    source = _source("diagram_process_description", "process")
+    answer = _answer("A to B, B to C, A to C", edges=(("A", "B"), ("B", "C"), ("A", "C")))
+    assert _check(source, answer) is GateVerdict.MET
+    incomplete = _answer("A to B, B to C", edges=(("A", "B"), ("B", "C")))
+    assert _check(source, incomplete) is GateVerdict.NOT_MET
+
+
+def test_public_numeric_branch_uses_printed_conditions() -> None:
+    high = BranchCondition(operator="ge", threshold="5", printed_text="input >= 5")
+    low = BranchCondition(operator="lt", threshold="5", printed_text="input < 5")
+    base = _source("diagram_branch_evaluation", "branch", start="A", input_value="8")
+    source = base.model_copy(update={"edges": (_edge("A", "B", high), _edge("A", "C", low))})
+    answer = _answer("A to B", paths=(("A", "B"),))
+    assert _check(source, answer, input_values="8") is GateVerdict.MET
+    assert _check(source, answer, input_values="7") is GateVerdict.UNKNOWN
+    overlapping = source.model_copy(
+        update={"edges": (_edge("A", "B", high), _edge("A", "C", high))}
+    )
+    assert _check(overlapping, answer, input_values="8") is GateVerdict.UNKNOWN
+
+
+def test_unresolved_crossing_and_source_disagreement_abstain() -> None:
+    source = _source("graph_connectivity", "neighbors", node_id="A")
+    answer = _answer("B and C", members=("B", "C"))
+    crossing = source.model_copy(update={"junctions_resolved": False})
+    assert _check(crossing, answer) is GateVerdict.UNKNOWN
+    other = source.model_copy(update={"edges": source.edges[:-1]})
+    assert (
+        verify_graph(
+            source.task_id,
+            (source, other),
+            (answer, answer),
+            {},
+            source.scope_id,
+            source.view_id,
+            answer.answer_quote,
+        )
+        is GateVerdict.UNKNOWN
+    )

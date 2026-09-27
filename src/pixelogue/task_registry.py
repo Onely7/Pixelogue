@@ -83,6 +83,19 @@ REGISTRATIONS = {
             "1",
             supported_tasks=frozenset({"formula_transcription"}),
         ),
+        ValidatorRegistration(
+            "graph_check",
+            "1",
+            supported_tasks=frozenset(
+                {
+                    "diagram_element_lookup",
+                    "graph_connectivity",
+                    "graph_path_tracing",
+                    "diagram_process_description",
+                    "diagram_branch_evaluation",
+                }
+            ),
+        ),
     )
 }
 

@@ -877,7 +877,14 @@ class SynthesisCoordinator:
                 stage,
                 body,
                 ()
-                if stage in {"finite_answer", "quantity_answer", "table_answer", "chart_answer"}
+                if stage
+                in {
+                    "finite_answer",
+                    "quantity_answer",
+                    "table_answer",
+                    "chart_answer",
+                    "graph_answer",
+                }
                 else (model_image,),
                 model,
                 max_tokens=2048,

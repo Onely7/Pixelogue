@@ -45,6 +45,7 @@ GUARD_PARAMETERS = {
     "precision_declared": "precision",
     "relation_frame_defined": "frame",
     "fields_bound": "fields",
+    "public_rule_input_defined": "input_values",
 }
 
 

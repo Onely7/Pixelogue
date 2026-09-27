@@ -155,7 +155,7 @@ def test_supported_tables_enter_candidates_while_missing_verifiers_stay_blocked(
     assert "object_identification" in selected
     assert "formula_transcription" in selected
     assert "table_structure_reconstruction" in selected
-    assert "graph_path_tracing" not in selected
+    assert "graph_path_tracing" in selected
     assert not (
         selected
         & {task.id for task in task_catalog().tasks if task.status == "validator_gated_extension"}

@@ -15,6 +15,7 @@ from pixelogue.document_verifiers import DOCUMENT_TASKS, DocumentSource, verify_
 from pixelogue.evaluation import consensus
 from pixelogue.finite_verifiers import FINITE_TASKS, FiniteAnswer, FiniteSource, verify_finite
 from pixelogue.formula_verifier import FormulaSource, verify_formula
+from pixelogue.graph_verifiers import GRAPH_TASKS, GraphAnswer, GraphSource, verify_graph
 from pixelogue.quantitative_verifiers import (
     QUANTITATIVE_TASKS,
     QuantityAnswer,
@@ -56,6 +57,48 @@ def verify_operation(
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id in GRAPH_TASKS:
+        graph_source_payload = {
+            key: value for key, value in public.items() if key != "candidate_answer"
+        }
+        graph_answer_payload = {
+            key: public[key]
+            for key in ("target_language", "question", "candidate_answer", "expected_operation")
+            if key in public
+        }
+        graph_sources = tuple(
+            GraphSource.model_validate(
+                invoke("graph_source", graph_source_payload, GraphSource, index)
+            )
+            for index in range(2)
+        )
+        graph_answers = tuple(
+            GraphAnswer.model_validate(
+                invoke("graph_answer", graph_answer_payload, GraphAnswer, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        verdict = verify_graph(
+            instruction.task_id,
+            (graph_sources[0], graph_sources[1]),
+            (graph_answers[0], graph_answers[1]),
+            {item.name: item.value for item in instruction.public_parameters},
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        graph_evidence = tuple(
+            item.model_dump(mode="json") for item in (*graph_sources, *graph_answers)
+        )
+        for name in instruction.verification_contracts:
+            if name in {"graph_check", "exact_arithmetic_check"}:
+                results.append(
+                    OperationCheck(
+                        name, verdict, graph_evidence, "Graph controller check: " + verdict.value
+                    )
+                )
     if instruction.task_id == "formula_transcription":
         formula_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
         formula_sources = tuple(
@@ -300,7 +343,12 @@ def verify_operation(
             continue
         if (
             instruction.task_id
-            in FINITE_TASKS | QUANTITATIVE_TASKS | TABLE_TASKS | CHART_TASKS | DOCUMENT_TASKS
+            in FINITE_TASKS
+            | QUANTITATIVE_TASKS
+            | TABLE_TASKS
+            | CHART_TASKS
+            | DOCUMENT_TASKS
+            | GRAPH_TASKS
             and name
             in {
                 "closed_set_check",
@@ -310,6 +358,7 @@ def verify_operation(
                 "chart_encoding_check",
                 "transcript_alignment",
                 "formula_structure_check",
+                "graph_check",
             }
         ):
             continue
