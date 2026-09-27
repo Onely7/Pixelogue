@@ -1568,8 +1568,9 @@ class SynthesisCoordinator:
                             )
                         elif stage == "candidate_binding":
                             retry_feedback += (
-                                " Include only operation-relevant parameters, use each name once,"
-                                " and match origin with evidence_refs."
+                                " Every binding needs a parameter named exactly target. Include"
+                                " only operation-relevant parameters, use each name once, and"
+                                " match origin with evidence_refs."
                             )
                     elif error.reason == "EVIDENCE_IMAGE_MISMATCH":
                         retry_feedback = (

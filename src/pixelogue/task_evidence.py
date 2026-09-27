@@ -116,7 +116,9 @@ class CandidateBinding(StrictModel):
 
     @model_validator(mode="after")
     def validate_unique_names(self) -> CandidateBinding:
-        """Reject contradictory duplicate parameters or eligibility checks."""
+        """Require a target and reject duplicate parameters or checks."""
+        if not any(parameter.name == "target" for parameter in self.public_parameters):
+            raise ValueError("Every binding requires a target parameter")
         for names in (
             [parameter.name for parameter in self.public_parameters],
             [check.check_id for check in self.checks],

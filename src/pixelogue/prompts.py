@@ -138,7 +138,9 @@ Use only capability names from capability_vocabulary. Do not infer domains from 
 names or annotations. Broad discovery is followed by focused binding of eligible operations.""",
     "candidate_binding": """Bind only the controller-provided candidates to locally supported
 public operation choices BEFORE any answer exists. Return at most one binding per candidate ID.
-Use that candidate's scope evidence only. Provide a target parameter for every binding and a
+Use that candidate's scope evidence only. Every binding MUST include a public_parameters entry
+whose name is exactly target. target_binding, object, or category_set cannot replace target.
+Use target_binding only as an additional parameter for referring_expression_generation. Provide a
 count_unit for counting; predicate for selection, group_key for grouping, frame for spatial
 relations, precision for numerical readings, claim for verification/localization, local_question for
 answerability, category_set for scene classification and target_binding for referring expressions.

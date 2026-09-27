@@ -303,6 +303,19 @@ def test_semantic_contract_failure_retries_without_accepting_invalid_result(
     assert "parameter_contract" in (client.retry_feedback[1] or "")
 
 
+def test_candidate_binding_requires_exact_target_parameter() -> None:
+    with pytest.raises(ValueError, match="requires a target parameter"):
+        CandidateBinding(
+            candidate_id="candidate",
+            public_parameters=(
+                PublicParameter(name="target_binding", value="the object", origin="instruction"),
+            ),
+            checks=(),
+            evidence_refs=("obs_1",),
+            estimated_answer_tokens=10,
+        )
+
+
 class ConcurrencyProbe:
     """Track overlapping scripted model calls across test clients."""
 
