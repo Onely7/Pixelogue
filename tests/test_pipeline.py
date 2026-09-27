@@ -21,12 +21,17 @@ from pixelogue.contracts import (
     InstructionSelection,
     PublicMessage,
     QuestionFit,
+    QuestionIntent,
     RubricContext,
     RubricVerdict,
     TextPayload,
 )
 from pixelogue.errors import ExecutionError
-from pixelogue.evaluation import applicable_rubric_items, has_natural_language_content
+from pixelogue.evaluation import (
+    applicable_rubric_items,
+    has_natural_language_content,
+    repeated_answered_request,
+)
 from pixelogue.export import training_record
 from pixelogue.ledger import RequirementInventory, RequirementSpec
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
@@ -36,13 +41,15 @@ from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import (
     CandidateBinding,
-    CandidateBindings,
-    CapabilityObservation,
+    CandidateBindingReport,
+    CandidateBindingsReport,
+    CapabilityReport,
     EligibilityObservation,
     ImageRegion,
     PublicParameter,
-    ScopedEvidenceInventory,
-    ScopeEvidence,
+    ScopedEvidenceReport,
+    ScopeEvidenceReport,
+    TargetReport,
 )
 
 
@@ -75,6 +82,7 @@ class ScriptedClient:
         self.schema_failed = False
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.retry_feedback: list[str | None] = []
+        self.intent_by_question: dict[tuple[str, str], str] = {}
 
     def invoke[OutputModel: BaseModel](
         self,
@@ -100,43 +108,40 @@ class ScriptedClient:
             self.concurrency_probe.exit()
         self.calls.append((stage, payload))
         value: BaseModel
-        if response_model is ScopedEvidenceInventory:
+        if response_model is ScopedEvidenceReport:
             region = ImageRegion(left=0.0, top=0.0, right=1.0, bottom=1.0)
-            value = ScopedEvidenceInventory(
+            value = ScopedEvidenceReport(
                 image_id=payload["image_id"],
                 reason="A visible entity is available.",
                 scopes=(
-                    ScopeEvidence(
+                    ScopeEvidenceReport(
                         scope_id="blue",
                         view_id=payload["image_views"][0]["view_id"],
                         public_description="the blue region",
                         region=region,
-                        observations=(
-                            CapabilityObservation(
+                        observations={
+                            "unsupported_capability"
+                            if self.unknown_capability
+                            else "visible_entity": CapabilityReport(
                                 evidence_id="entity",
-                                capability="unsupported_capability"
-                                if self.unknown_capability
-                                else "visible_entity",
                                 verdict="MET",
                                 region=region,
                                 detail="A blue object is visible.",
                             ),
-                        ),
+                        },
                     ),
                 ),
             )
-        elif response_model is CandidateBindings:
-            value = CandidateBindings(
+        elif response_model is CandidateBindingsReport:
+            value = CandidateBindingsReport(
                 bindings=tuple(
-                    CandidateBinding(
+                    CandidateBindingReport(
                         candidate_id=candidate["candidate_id"],
-                        public_parameters=(
-                            PublicParameter(
-                                name="target",
-                                value=f"the blue region, aspect {len(payload['public_history'])}",
-                                origin="instruction",
-                            ),
+                        target=TargetReport(
+                            value=f"the blue region, aspect {len(payload['public_history'])}",
+                            origin="instruction",
                         ),
+                        public_parameters=(),
                         checks=tuple(
                             EligibilityObservation(check_id=key, verdict="MET", reason="Visible")
                             for key in candidate["eligibility_checks"]
@@ -181,6 +186,17 @@ class ScriptedClient:
                 text = "Blue."
             value = TextPayload(
                 text=text,
+            )
+            if stage == "question_generation" and text is not None:
+                self.intent_by_question[(payload["image_views"][0]["view_id"], text)] = payload[
+                    "selected_instruction"
+                ]["task_id"]
+        elif response_model is QuestionIntent:
+            value = QuestionIntent(
+                task_id=self.intent_by_question.get(
+                    (payload["image_views"][0]["view_id"], payload["question"])
+                ),
+                reason="The public request matches the observed task.",
             )
         elif response_model is QuestionFit:
             value = QuestionFit(
@@ -380,6 +396,7 @@ def _coordinator(
         echo_answer_prompt=echo_answer_prompt,
         unknown_capability=unknown_capability,
     )
+    generator_b.intent_by_question = generator_a.intent_by_question
     coordinator = SynthesisCoordinator(
         config,
         "test",
@@ -462,6 +479,102 @@ def test_normalized_repeated_question_stops_before_second_fit(
     assert rejection_count == 1
     assert sum(stage == "question_fit" for stage, _ in generator_a.calls) == 1
     assert sum(stage == "question_fit" for stage, _ in generator_b.calls) == 1
+
+
+def test_repeated_answered_request_catches_observed_sheep_paraphrase() -> None:
+    first_question = "What are the colors and shapes of the sheep visible in the foreground?"
+    second_question = "What colors and shapes are visible in the sheep located in the foreground?"
+    answer = (
+        "The sheep in the foreground are primarily white and brown. Their shapes are "
+        "quadrupedal with woolly bodies, curved horns, and four legs."
+    )
+    history = (
+        PublicMessage(message_id="q1", turn_index=1, role="user", content=first_question),
+        PublicMessage(message_id="a1", turn_index=1, role="assistant", content=answer),
+    )
+    assert repeated_answered_request(second_question, answer, history)
+    assert not repeated_answered_request(second_question, "A distinct supported answer.", history)
+    assert not repeated_answered_request(second_question, "white", history)
+
+
+def test_repeated_substantial_answer_stops_before_second_review(
+    tmp_path: Path, image_artifact, monkeypatch
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, evaluation_mode="holistic"
+    )
+    repeated_answer = "The visible region is blue and contains the same resolved object."
+    for client in (generator_a, generator_b):
+        original = client.invoke
+
+        def invoke(stage, payload, *args, _original=original, **kwargs):
+            if stage == "answer_generation":
+                return ModelResponse(
+                    value=TextPayload(text=repeated_answer),
+                    request_hash="request",
+                    response_hash="response",
+                    prompt_tokens=1,
+                    completion_tokens=1,
+                )
+            return _original(stage, payload, *args, **kwargs)
+
+        monkeypatch.setattr(client, "invoke", invoke)
+    try:
+        result = coordinator.synthesize_image(image, root)
+        rejected = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'public-text-rejections'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+    assert result.status == "REJECTED"
+    assert len(result.turns) == 1
+    assert rejected == 1
+    assert (
+        sum(
+            stage == "holistic_review"
+            for client in (generator_a, generator_b)
+            for stage, _ in client.calls
+        )
+        == 2
+    )
+
+
+def test_blind_question_intent_rejects_wrong_operation_before_answer(
+    tmp_path: Path, image_artifact, monkeypatch
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, evaluation_mode="holistic"
+    )
+    for client in (generator_a, generator_b):
+        original = client.invoke
+
+        def invoke(stage, payload, *args, _original=original, **kwargs):
+            if stage == "question_intent":
+                assert "selected_instruction" not in payload
+                assert "candidate_answer" not in payload
+                assert len(payload["task_definitions"]) == 72
+                return ModelResponse(
+                    value=QuestionIntent(task_id="spatial_relation", reason="Wrong operation."),
+                    request_hash="request",
+                    response_hash="response",
+                    prompt_tokens=1,
+                    completion_tokens=1,
+                )
+            return _original(stage, payload, *args, **kwargs)
+
+        monkeypatch.setattr(client, "invoke", invoke)
+    try:
+        result = coordinator.synthesize_image(image, root)
+    finally:
+        store.close()
+    assert result.status == "REJECTED"
+    assert all(
+        stage != "answer_generation"
+        for client in (generator_a, generator_b)
+        for stage, _ in client.calls
+    )
 
 
 def test_private_prompt_echo_is_rejected_before_question_fit(

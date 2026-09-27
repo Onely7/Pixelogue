@@ -58,8 +58,10 @@ flowchart TD
     C --> D[Selector chooses one candidate]
     D -->|no suitable candidate| X[End as rejected]
     D --> E[Generator writes one question]
-    E --> F[Judge call A: question fit]
-    E --> G[Judge call B: question fit]
+    E --> T[Both judges classify the question without the selected task]
+    T -->|task mismatch or uncertainty| Y[Reject or abstain before answer]
+    T --> F[Judge call A: question fit]
+    T --> G[Judge call B: question fit]
     F --> H{Both pass?}
     G --> H
     H -->|no| Y[Reject or abstain before answer]
@@ -83,13 +85,13 @@ flowchart TD
 
 The generation model receives the image and a fixed capability vocabulary. It may report facts such as `readable_text`, `countable_entities`, or `spatial_relation`, along with a bounded visible scope. These are provisional observations. They do not become public dialogue and do not prove that a specific question is correct.
 
-The controller rejects unknown and repeated capability keys. Definitions are intentionally strict: for example, aligned repeated objects do not establish an explicit `visible_mapping`.
+The model returns observations as an object keyed by capability. The controller rejects unknown and repeated capability keys. Definitions are intentionally strict: for example, aligned repeated objects do not establish an explicit `visible_mapping`.
 
 ### Step 2: build instruction candidates
 
 The controller matches reported capabilities to the checked-in task catalog. Each candidate has a stable ID, task ID, family, profile, visible scope, summary, and required capabilities.
 
-A candidate is an operation, not a finished question. `visible_count` might later become “How many red squares are there?”, while `attribute_lookup` might become “What colour is the left square?”
+A candidate is an operation, not a finished question. Each model binding has a required `target` object. `visible_count` might later become “How many red squares are there?”, while `attribute_lookup` might become “What colour is the left square?”
 
 ### Step 3: select one instruction
 
@@ -104,7 +106,7 @@ It does not receive an answer, a future turn, dataset labels, fixture keys, or a
 
 ### Step 4: write and check the question
 
-The assigned generation role turns the selected operation into one public question. Both evaluator roles then check three points before any answer exists:
+The assigned generation role turns the selected operation into one public question. First, both evaluator roles classify the question against all 72 task definitions without receiving the selected task or an answer. A different agreed task rejects the question; uncertainty or disagreement abstains. Both roles then check three points before any answer exists:
 
 1. the question has a visible or public-history anchor;
 2. it performs the selected operation coherently;
@@ -112,7 +114,7 @@ The assigned generation role turns the selected operation into one public questi
 
 Each role returns `MET`, `NOT_MET`, or `UNKNOWN`. A clear negative rejects the turn. Missing evidence or disagreement causes abstention. An answer is never generated for a question that did not pass.
 
-Before those model calls, the controller applies two narrow checks that do not require visual judgment. It rejects a question that is identical to an earlier user question after Unicode, case, whitespace, and final-punctuation normalization. It also rejects a substantial echo of Pixelogue's private model instructions. The rejected text and reason are stored for diagnosis. Paraphrases and questions with different meaning still go to both image-aware evaluators; the controller does not guess semantic similarity from words alone.
+Before those model calls, the controller applies two narrow checks that do not require visual judgment. It rejects a question that is identical to an earlier user question after Unicode, case, whitespace, and final-punctuation normalization. It also rejects a substantial echo of Pixelogue's private model instructions. The rejected text and reason are stored for diagnosis. Paraphrases still go to both image-aware evaluators. After answer generation, the controller rejects a close paraphrase that reproduces the same substantial answer as an earlier turn, before spending answer-review calls.
 
 ### Step 5: freeze public requirements before the answer
 

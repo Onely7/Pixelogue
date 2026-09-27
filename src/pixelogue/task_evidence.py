@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationError, model_validator
 
 from pixelogue.config import StrictModel
+from pixelogue.errors import ExecutionError
 
 Nonempty = Annotated[str, Field(min_length=1, max_length=512)]
 ObservationVerdict = Literal["MET", "NOT_MET", "UNKNOWN"]
@@ -79,6 +80,62 @@ class ScopedEvidenceInventory(StrictModel):
         return self
 
 
+class CapabilityReport(StrictModel):
+    """One model observation keyed by its capability in the wire response."""
+
+    evidence_id: Nonempty
+    verdict: ObservationVerdict
+    region: ImageRegion
+    detail: Nonempty
+
+
+class ScopeEvidenceReport(StrictModel):
+    """Wire scope whose capability keys cannot repeat in valid JSON."""
+
+    scope_id: Nonempty
+    view_id: Nonempty
+    public_description: Nonempty
+    region: ImageRegion
+    observations: Annotated[dict[Nonempty, CapabilityReport], Field(max_length=50)]
+
+
+class ScopedEvidenceReport(StrictModel):
+    """Model-facing routing response with capabilities as object keys."""
+
+    image_id: Nonempty
+    scopes: Annotated[tuple[ScopeEvidenceReport, ...], Field(max_length=8)]
+    reason: Nonempty
+
+    def to_inventory(self) -> ScopedEvidenceInventory:
+        """Validate the existing internal scope contract after wire decoding."""
+        try:
+            return ScopedEvidenceInventory(
+                image_id=self.image_id,
+                reason=self.reason,
+                scopes=tuple(
+                    ScopeEvidence(
+                        scope_id=scope.scope_id,
+                        view_id=scope.view_id,
+                        public_description=scope.public_description,
+                        region=scope.region,
+                        observations=tuple(
+                            CapabilityObservation(
+                                capability=capability,
+                                evidence_id=report.evidence_id,
+                                verdict=report.verdict,
+                                region=report.region,
+                                detail=report.detail,
+                            )
+                            for capability, report in scope.observations.items()
+                        ),
+                    )
+                    for scope in self.scopes
+                ),
+            )
+        except ValidationError as error:
+            raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
+
+
 class PublicParameter(StrictModel):
     """A public operation choice or explicitly sourced factual parameter."""
 
@@ -133,6 +190,52 @@ class CandidateBindings(StrictModel):
     """A bounded response for controller-provided candidate templates only."""
 
     bindings: Annotated[tuple[CandidateBinding, ...], Field(max_length=32)]
+
+
+class TargetReport(StrictModel):
+    """Required target value without a model-generated parameter name."""
+
+    value: Nonempty | int | bool | tuple[Nonempty, ...]
+    origin: Literal["instruction", "image", "history"]
+    evidence_refs: tuple[Nonempty, ...] = ()
+
+
+class CandidateBindingReport(StrictModel):
+    """Wire binding with target enforced by a required JSON property."""
+
+    candidate_id: Nonempty
+    target: TargetReport
+    public_parameters: Annotated[tuple[PublicParameter, ...], Field(max_length=19)]
+    checks: Annotated[tuple[EligibilityObservation, ...], Field(max_length=16)]
+    evidence_refs: Annotated[tuple[Nonempty, ...], Field(min_length=1, max_length=50)]
+    estimated_answer_tokens: Annotated[int, Field(ge=1)]
+
+
+class CandidateBindingsReport(StrictModel):
+    """Model-facing candidate response convertible to the internal contract."""
+
+    bindings: Annotated[tuple[CandidateBindingReport, ...], Field(max_length=32)]
+
+    def to_bindings(self) -> CandidateBindings:
+        """Validate target sourcing and reject duplicate parameter names."""
+        try:
+            return CandidateBindings(
+                bindings=tuple(
+                    CandidateBinding(
+                        candidate_id=binding.candidate_id,
+                        public_parameters=(
+                            PublicParameter(name="target", **binding.target.model_dump()),
+                            *binding.public_parameters,
+                        ),
+                        checks=binding.checks,
+                        evidence_refs=binding.evidence_refs,
+                        estimated_answer_tokens=binding.estimated_answer_tokens,
+                    )
+                    for binding in self.bindings
+                )
+            )
+        except ValidationError as error:
+            raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
 
 
 class TranscriptInventory(StrictModel):

@@ -21,7 +21,7 @@ from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_payload
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
 from pixelogue.store import RunStore
-from pixelogue.task_evidence import ScopedEvidenceInventory
+from pixelogue.task_evidence import ScopedEvidenceInventory, ScopedEvidenceReport
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 
@@ -344,7 +344,7 @@ class VllmClient:
             {"type": "image_url", "image_url": {"url": image.data_uri()}} for image in images
         )
         schema = response_model.model_json_schema()
-        if response_model in (EvidenceInventory, ScopedEvidenceInventory):
+        if response_model in (EvidenceInventory, ScopedEvidenceInventory, ScopedEvidenceReport):
             image_id = payload.get("image_id")
             if not isinstance(image_id, str) or not image_id:
                 raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")

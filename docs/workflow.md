@@ -23,7 +23,7 @@ The coordinator assigns languages and generators with exact batch quotas. A conv
 2. build eligible templates from the 65 core candidates and any enabled specialist extensions with a working environment and exact model-bound calibration;
 3. bind public parameters and eligibility checks within the answer budget;
 4. select using the image and exact committed public history;
-5. generate a question, reject prompt echoes and repeats, then obtain two blind operation/eligibility checks;
+5. generate a question, reject prompt echoes and repeats, classify its operation without revealing the selected task, then obtain two independent operation/eligibility checks;
 6. generate the answer and obtain two blind holistic reviews including the expected operation;
 7. run every applicable declared validator before committing the turn.
 

@@ -12,7 +12,7 @@ from typing import Any, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel
 
-from pixelogue.catalog import load_task_catalog
+from pixelogue.catalog import load_task_catalog, task_catalog
 from pixelogue.config import ModelEndpoint, PixelogueConfig
 from pixelogue.contracts import (
     AtomicClaim,
@@ -27,6 +27,7 @@ from pixelogue.contracts import (
     InstructionSelection,
     PublicMessage,
     QuestionFit,
+    QuestionIntent,
     RubricContext,
     RubricItem,
     RubricVerdict,
@@ -43,6 +44,7 @@ from pixelogue.evaluation import (
     has_natural_language_content,
     item_id,
     question_fit_consensus,
+    repeated_answered_request,
     repeated_public_question,
 )
 from pixelogue.ledger import (
@@ -64,7 +66,11 @@ from pixelogue.rules import (
 from pixelogue.serialization import canonical_hash
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
-from pixelogue.task_evidence import CandidateBindings, ScopedEvidenceInventory
+from pixelogue.task_evidence import (
+    CandidateBindingsReport,
+    ScopedEvidenceInventory,
+    ScopedEvidenceReport,
+)
 from pixelogue.task_runtime import (
     bind_candidates,
     operation_contract,
@@ -258,7 +264,7 @@ class SynthesisCoordinator:
             )
             return self._finish_conversation(conversation, persist=True)
         capability_vocabulary = self._capability_vocabulary()
-        inventory = self._invoke(
+        evidence_report = self._invoke(
             generator,
             "evidence_extraction",
             {
@@ -269,14 +275,15 @@ class SynthesisCoordinator:
                 "image_views": image_views,
             },
             (model_image,),
-            ScopedEvidenceInventory,
+            ScopedEvidenceReport,
             max_tokens=self.config.tasks.evidence_max_tokens,
             temperature=0.0,
             seed=self.config.seed,
             post_validate=lambda result: validate_evidence(
-                result, model_image.view_id, self.config.tasks
+                result.to_inventory(), model_image.view_id, self.config.tasks
             ),
         )
+        inventory = evidence_report.to_inventory()
         if inventory.image_id != image.image_id:
             raise ExecutionError("EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image")
 
@@ -297,20 +304,20 @@ class SynthesisCoordinator:
             if candidates:
 
                 def validate_bindings(
-                    result: CandidateBindings,
+                    result: CandidateBindingsReport,
                     templates: tuple[InstructionCandidate, ...] = candidates,
                     public_history: tuple[PublicMessage, ...] = snapshot.public_history,
                 ) -> None:
                     bind_candidates(
                         templates,
-                        result,
+                        result.to_bindings(),
                         inventory,
                         public_history,
                         self.config.tasks,
                         frozenset(turn.instruction.candidate_id for turn in turns),
                     )
 
-                bindings = self._invoke(
+                bindings_report = self._invoke(
                     generator,
                     "candidate_binding",
                     {
@@ -322,12 +329,13 @@ class SynthesisCoordinator:
                         "image_views": image_views,
                     },
                     (model_image,),
-                    CandidateBindings,
+                    CandidateBindingsReport,
                     max_tokens=self.config.tasks.binding_max_tokens,
                     temperature=0.0,
                     seed=self.config.seed + turn_index,
                     post_validate=validate_bindings,
                 )
+                bindings = bindings_report.to_bindings()
                 self.store.write_json_artifact(
                     "candidate-bindings", bindings.model_dump(mode="json")
                 )
@@ -401,7 +409,7 @@ class SynthesisCoordinator:
                 break
             requirements: tuple[Requirement, ...] = ()
             if self.config.evaluation.mode == "detailed" or selected.catalog_version is not None:
-                fit = self._question_fit(
+                fit = self._question_intent(
                     snapshot.public_history,
                     question,
                     selected,
@@ -410,6 +418,16 @@ class SynthesisCoordinator:
                     model_image,
                     turn_index,
                 )
+                if fit is GateVerdict.MET:
+                    fit = self._question_fit(
+                        snapshot.public_history,
+                        question,
+                        selected,
+                        target_language,
+                        image_views,
+                        model_image,
+                        turn_index,
+                    )
                 if fit is not GateVerdict.MET:
                     terminal_status = "ABSTAINED" if fit is GateVerdict.UNKNOWN else "REJECTED"
                     break
@@ -460,6 +478,16 @@ class SynthesisCoordinator:
                     turn_index,
                     field="answer",
                     reason="PRIVATE_PROMPT_ECHO",
+                    content=answer.content,
+                )
+                terminal_status = "REJECTED"
+                break
+            if repeated_answered_request(question.content, answer.content, snapshot.public_history):
+                self._record_public_text_rejection(
+                    conversation_id,
+                    turn_index,
+                    field="answer",
+                    reason="REPEATED_ANSWERED_REQUEST",
                     content=answer.content,
                 )
                 terminal_status = "REJECTED"
@@ -582,12 +610,23 @@ class SynthesisCoordinator:
                 turn.turn_index,
                 transcript,
             )
-            fit = GateVerdict.MET
-            if (
+            repeated = repeated_answered_request(
+                turn.question.content, turn.answer.content, snapshot.public_history
+            )
+            if repeated:
+                self._record_public_text_rejection(
+                    conversation.conversation_id,
+                    turn.turn_index,
+                    field="answer",
+                    reason="REPEATED_ANSWERED_REQUEST",
+                    content=turn.answer.content,
+                )
+            fit = GateVerdict.NOT_MET if repeated else GateVerdict.MET
+            if fit is GateVerdict.MET and (
                 self.config.evaluation.mode == "detailed"
                 or turn.instruction.catalog_version is not None
             ):
-                fit = self._question_fit(
+                fit = self._question_intent(
                     snapshot.public_history,
                     turn.question,
                     turn.instruction,
@@ -596,6 +635,16 @@ class SynthesisCoordinator:
                     model_image,
                     turn.turn_index,
                 )
+                if fit is GateVerdict.MET:
+                    fit = self._question_fit(
+                        snapshot.public_history,
+                        turn.question,
+                        turn.instruction,
+                        conversation.target_language,
+                        image_views,
+                        model_image,
+                        turn.turn_index,
+                    )
             if fit is GateVerdict.MET:
                 rating = self._rate_turn(
                     conversation.conversation_id,
@@ -811,6 +860,62 @@ class SynthesisCoordinator:
         )
         self.store.write_json_artifact("conversations", conversation.model_dump(mode="json"))
         return conversation
+
+    def _question_intent(
+        self,
+        history: Sequence[PublicMessage],
+        question: PublicMessage,
+        instruction: InstructionCandidate,
+        language: str,
+        image_views: list[dict[str, str]],
+        model_image: ModelImage,
+        turn_index: int,
+    ) -> GateVerdict:
+        """Classify the public operation without showing its selected task or answer."""
+        catalog = task_catalog()
+        public_payload = {
+            "target_language": language,
+            "public_history": self._history(history),
+            "question": question.content,
+            "task_definitions": [
+                {"task_id": task.id, "definition": task.definition_en} for task in catalog.tasks
+            ],
+            "image_views": image_views,
+        }
+        votes = [
+            self._invoke(
+                client,
+                "question_intent",
+                public_payload,
+                (model_image,),
+                QuestionIntent,
+                max_tokens=128,
+                temperature=0.0,
+                seed=self.config.seed + turn_index,
+                bypass_cache=judge_index > 0,
+            )
+            for judge_index, client in enumerate(self.generators.values())
+        ]
+        known = {task.id for task in catalog.tasks}
+        task_ids = [vote.task_id for vote in votes]
+        if any(task_id not in known for task_id in task_ids):
+            verdict = GateVerdict.UNKNOWN
+        elif task_ids == [instruction.task_id, instruction.task_id]:
+            verdict = GateVerdict.MET
+        elif task_ids[0] == task_ids[1]:
+            verdict = GateVerdict.NOT_MET
+        else:
+            verdict = GateVerdict.UNKNOWN
+        self.store.write_json_artifact(
+            "question-intent-decisions",
+            {
+                "question_message_id": question.message_id,
+                "expected_task_id": instruction.task_id,
+                "votes": [vote.model_dump(mode="json") for vote in votes],
+                "verdict": verdict.value,
+            },
+        )
+        return verdict
 
     def _question_fit(
         self,
@@ -1295,7 +1400,9 @@ class SynthesisCoordinator:
         turn_index: int,
         *,
         field: Literal["question", "answer"],
-        reason: Literal["PRIVATE_PROMPT_ECHO", "REPEATED_PUBLIC_QUESTION"],
+        reason: Literal[
+            "PRIVATE_PROMPT_ECHO", "REPEATED_PUBLIC_QUESTION", "REPEATED_ANSWERED_REQUEST"
+        ],
         content: str,
     ) -> None:
         """Store a deterministic public-text rejection for replay and diagnosis."""
@@ -1511,7 +1618,10 @@ class SynthesisCoordinator:
             try:
                 response = client.invoke(stage, payload, images, model, **call_kwargs)
                 if (
-                    isinstance(response.value, (EvidenceInventory, ScopedEvidenceInventory))
+                    isinstance(
+                        response.value,
+                        (EvidenceInventory, ScopedEvidenceInventory, ScopedEvidenceReport),
+                    )
                     and response.value.image_id != payload["image_id"]
                 ):
                     raise ExecutionError(
@@ -1562,13 +1672,15 @@ class SynthesisCoordinator:
                         retry_feedback += " Required top-level fields: " + ", ".join(required) + "."
                         if stage == "evidence_extraction":
                             retry_feedback += (
-                                " Each capability may occur only once per scope; combine visible"
-                                " instances into one observation and use only capability_vocabulary."
+                                " observations must be an object keyed by each capability name."
+                                " Combine visible instances in that key's single value and use"
+                                " only capability_vocabulary."
                             )
                         elif stage == "candidate_binding":
                             retry_feedback += (
-                                " Every binding needs a parameter named exactly target. Include"
-                                " only operation-relevant parameters, use each name once, and"
+                                " Every binding needs the separate target object; do not repeat"
+                                " target in public_parameters. Include only operation-relevant"
+                                " parameters, use each name once, and"
                                 " match origin with evidence_refs."
                             )
                     elif error.reason == "EVIDENCE_IMAGE_MISMATCH":

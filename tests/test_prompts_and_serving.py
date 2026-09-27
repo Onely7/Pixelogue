@@ -16,8 +16,9 @@ from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.profiling import profile_database
 from pixelogue.prompts import validate_stage_payload
 from pixelogue.serialization import canonical_hash
-from pixelogue.serving import ModelAdapter, VllmClient, read_request_artifact
+from pixelogue.serving import ModelAdapter, VllmClient, _model_json_object, read_request_artifact
 from pixelogue.store import RunStore
+from pixelogue.task_evidence import CandidateBindingsReport, ScopedEvidenceReport
 
 
 def test_instruction_selector_information_boundary() -> None:
@@ -639,3 +640,21 @@ def test_evidence_schema_fixes_only_the_requested_image_identity():
             assert schema["properties"]["image_id"]["const"] == image_id
             assert "const" not in schema["properties"]["capabilities"]
         assert "const" not in EvidenceInventory.model_json_schema()["properties"]["image_id"]
+
+
+def test_model_facing_evidence_and_binding_schemas_enforce_shape():
+    evidence_schema = ScopedEvidenceReport.model_json_schema()
+    scope_schema = evidence_schema["$defs"]["ScopeEvidenceReport"]
+    assert scope_schema["properties"]["observations"]["type"] == "object"
+    binding_schema = CandidateBindingsReport.model_json_schema()["$defs"]["CandidateBindingReport"]
+    assert "target" in binding_schema["required"]
+    assert "public_parameters" in binding_schema["required"]
+
+
+def test_repeated_capability_key_is_not_silently_overwritten():
+    with pytest.raises(ExecutionError) as caught:
+        _model_json_object(
+            '{"observations":{"visible_entity":{"verdict":"MET"},'
+            '"visible_entity":{"verdict":"UNKNOWN"}}}'
+        )
+    assert caught.value.reason == "MODEL_SCHEMA_MISMATCH"

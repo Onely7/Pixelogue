@@ -30,6 +30,7 @@ from pixelogue.contracts import (
     InstructionSelection,
     PublicMessage,
     QuestionFit,
+    QuestionIntent,
     RightsRecord,
     RubricItem,
     RubricVerdict,
@@ -72,7 +73,12 @@ from pixelogue.specialist_render import RenderAnswer, RenderSource
 from pixelogue.specialist_ui import UIActionAnswer, UIActionSource
 from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_catalog import TaskCatalog
-from pixelogue.task_evidence import CandidateBindings, ScopedEvidenceInventory
+from pixelogue.task_evidence import (
+    CandidateBindings,
+    CandidateBindingsReport,
+    ScopedEvidenceInventory,
+    ScopedEvidenceReport,
+)
 from pixelogue.task_runtime import admission_report
 
 
@@ -123,7 +129,9 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             InstructionCandidate,
             EvidenceInventory,
             ScopedEvidenceInventory,
+            ScopedEvidenceReport,
             CandidateBindings,
+            CandidateBindingsReport,
             TaskCatalog,
             CalibrationObservation,
             CalibrationCertificate,
@@ -176,6 +184,7 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             InstructionSelection,
             TextPayload,
             QuestionFit,
+            QuestionIntent,
             Requirement,
             RequirementInventory,
             ClaimInventory,

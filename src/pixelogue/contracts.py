@@ -249,6 +249,13 @@ class QuestionFit(StrictModel):
         return GateVerdict.UNKNOWN
 
 
+class QuestionIntent(StrictModel):
+    """Blind classification of the operation requested by public question text."""
+
+    task_id: str | None
+    reason: Annotated[str, Field(min_length=1, max_length=240)]
+
+
 class AtomicClaim(StrictModel):
     """One factual assertion extracted from an answer."""
 

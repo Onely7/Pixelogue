@@ -127,8 +127,9 @@ Return exactly one complete result form: members, count, boolean or relation. Pr
 for ordering tasks. Do not consult an image or expected source inventory. Missing, ambiguous or
 compound results are UNKNOWN. Do not infer what the correct image answer should have been.""",
     "evidence_extraction": """Route the single image into a few publicly identifiable bounded
-scopes. Report only relevant capability observations, never the entire vocabulary. Each observation
-has a unique evidence_id, a MET/NOT_MET/UNKNOWN verdict, a visible detail, and a normalized region
+scopes. Report only relevant capability observations, never the entire vocabulary. The observations
+field is an object keyed by capability name, not an array. Each value has a unique evidence_id,
+a MET/NOT_MET/UNKNOWN verdict, a visible detail, and a normalized region
 inside its scope. Do not combine capabilities from unrelated regions. Missing evidence is UNKNOWN,
 not absence. Copy image_id and each view_id exactly. Respect max_scopes and
 max_observations_per_scope. Within one scope, report each capability at most once: a capability
@@ -138,8 +139,9 @@ Use only capability names from capability_vocabulary. Do not infer domains from 
 names or annotations. Broad discovery is followed by focused binding of eligible operations.""",
     "candidate_binding": """Bind only the controller-provided candidates to locally supported
 public operation choices BEFORE any answer exists. Return at most one binding per candidate ID.
-Use that candidate's scope evidence only. Every binding MUST include a public_parameters entry
-whose name is exactly target. target_binding, object, or category_set cannot replace target.
+Use that candidate's scope evidence only. Every binding MUST include the separate target object
+with value, origin and evidence_refs. Do not put target in public_parameters. target_binding,
+object, or category_set cannot replace target.
 Use target_binding only as an additional parameter for referring_expression_generation. Provide a
 count_unit for counting; predicate for selection, group_key for grouping, frame for spatial
 relations, precision for numerical readings, claim for verification/localization, local_question for
@@ -193,6 +195,13 @@ request. Every public parameter must be realized in the question, including scop
 precision, predicates and hypothetical assumptions. Ask exactly one final semantic operation;
 independent compound requests are unsupported and must not be mislabeled as their first operation.
 Never request code execution. Return public text, or set text to null and give an internal reason if unsupported.""",
+    "question_intent": """Independently classify the exact operation requested by the public
+question. Read the image, public history and all supplied task definitions. Choose the single
+task_id whose definition best describes what the question asks the assistant to do. Use null when
+the request is ambiguous, compound, or none of the definitions applies. Distinguish naming an
+object from reporting its attributes, comparing positions, counting, or explaining a claim.
+Do not infer the task from a likely answer or from a prior turn's task. No selected task or
+candidate answer is supplied; return only your independent classification and brief reason.""",
     "question_fit": """Judge whether the current question has a visible or historically grounded local
 anchor, realizes the selected instruction's operation coherently, and is useful in this
 conversation. A visible object, region, text, or complete image scope is a local anchor. Every field
@@ -494,6 +503,9 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "image_views",
         }
     ),
+    "question_intent": frozenset(
+        {"target_language", "public_history", "question", "task_definitions", "image_views"}
+    ),
     "transcript_alignment": frozenset(
         {
             "target_language",
@@ -666,6 +678,7 @@ def validate_stage_payload(stage: str, payload: Mapping[str, Any]) -> None:
         "instruction_selection",
         "evidence_extraction",
         "question_generation",
+        "question_intent",
         "question_fit",
         "requirement_extraction",
     }:

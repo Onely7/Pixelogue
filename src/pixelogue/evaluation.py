@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Sequence
+from difflib import SequenceMatcher
 from typing import Any
 
 from pixelogue.catalog import load_rubric_catalog, task_catalog
@@ -43,6 +44,26 @@ def repeated_public_question(question: str, history: Sequence[PublicMessage]) ->
     return any(
         message.role == "user" and _normalize_public_question(message.content) == normalized
         for message in history
+    )
+
+
+def repeated_answered_request(question: str, answer: str, history: Sequence[PublicMessage]) -> bool:
+    """Catch a paraphrased request that reproduces the same substantial answer."""
+    normalized_answer = _normalize_public_question(answer)
+    if len(normalized_answer) < 32:
+        return False
+    normalized_question = _normalize_public_question(question)
+    questions = {
+        message.turn_index: _normalize_public_question(message.content)
+        for message in history
+        if message.role == "user"
+    }
+    return any(
+        _normalize_public_question(message.content) == normalized_answer
+        and (earlier := questions.get(message.turn_index)) is not None
+        and SequenceMatcher(None, earlier, normalized_question).ratio() >= 0.75
+        for message in history
+        if message.role == "assistant"
     )
 
 
