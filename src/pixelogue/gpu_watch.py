@@ -124,6 +124,19 @@ def idle_indices(rows: list[dict[str, int | str]]) -> set[int]:
     }
 
 
+def _wait_for_handoff(gpu: int, seconds: int = 30) -> bool:
+    """Allow the released CUDA context's utilization sample to settle."""
+    deadline = time.monotonic() + seconds
+    while not stop and time.monotonic() < deadline:
+        row = next((item for item in _metrics() if int(item["index"]) == gpu), None)
+        if row is None or int(row["used_mib"]) >= 1024 or int(row["compute_process"]):
+            return False
+        if int(row["utilization"]) == 0:
+            return True
+        time.sleep(1)
+    return False
+
+
 def _doctor_ready() -> bool:
     output = ROOT / "artifacts/gpu-watch/doctor.json"
     result = subprocess.run(
@@ -331,7 +344,7 @@ def _watch(poll_seconds: int) -> None:
                 continue
             if not state["pilot_attempted"]:
                 _release_holder(holder, state)
-                if gpu not in idle_indices(_metrics()):
+                if not _wait_for_handoff(gpu):
                     print("GPU handoff lost; returning to watch", flush=True)
                     last = set()
                     continue
