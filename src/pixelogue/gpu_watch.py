@@ -1,0 +1,347 @@
+#!/usr/bin/env python3
+"""Watch local GPUs and run one bounded pilot before restoring a memory reservation."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import importlib
+import json
+import os
+import select
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[2]
+STATE = ROOT / "artifacts/gpu-watch/state.json"
+PYTHON_WITH_TORCH = ROOT / "runtime/vllm/.venv/bin/python"
+MAX_GPU_SECONDS = 4 * 3600
+stop = False
+
+
+def _signal_stop(_signum: int, _frame: object) -> None:
+    global stop
+    stop = True
+
+
+def _save(state: dict[str, Any]) -> None:
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = STATE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, sort_keys=True, indent=2), encoding="utf-8")
+    temporary.replace(STATE)
+
+
+def _load() -> dict[str, Any]:
+    if not STATE.exists():
+        return {"used_gpu_seconds": 0.0, "active": None, "pilot_attempted": False}
+    state = json.loads(STATE.read_text(encoding="utf-8"))
+    active = state.get("active")
+    if active is not None:
+        pid = int(active["pid"])
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            state["used_gpu_seconds"] += max(0, time.time() - float(active["started_at"]))
+            state["active"] = None
+            _save(state)
+        else:
+            raise RuntimeError(f"An earlier reservation or pilot is still active: PID {pid}")
+    return state
+
+
+def _remaining(state: dict[str, Any]) -> float:
+    used = float(state["used_gpu_seconds"])
+    active = state.get("active")
+    if active is not None:
+        used += max(0, time.time() - float(active["started_at"]))
+    return MAX_GPU_SECONDS - used
+
+
+def _begin(state: dict[str, Any], phase: str, gpu: int, pid: int) -> None:
+    state["active"] = {
+        "phase": phase,
+        "gpu": gpu,
+        "pid": pid,
+        "started_at": time.time(),
+    }
+    _save(state)
+
+
+def _end(state: dict[str, Any]) -> None:
+    active = state["active"]
+    if active is None:
+        return
+    state["used_gpu_seconds"] += max(0, time.time() - float(active["started_at"]))
+    state["active"] = None
+    _save(state)
+
+
+def _metrics() -> list[dict[str, int | str]]:
+    """Require a successful physical-device and process query before admission."""
+    command = [
+        "nvidia-smi",
+        "--query-gpu=index,uuid,memory.used,memory.total,utilization.gpu",
+        "--format=csv,noheader,nounits",
+    ]
+    rows = subprocess.check_output(command, text=True, timeout=10).strip().splitlines()
+    processes = subprocess.check_output(
+        ["nvidia-smi", "--query-compute-apps=gpu_uuid,pid", "--format=csv,noheader,nounits"],
+        text=True,
+        timeout=10,
+    )
+    occupied = {line.split(",", 1)[0].strip() for line in processes.splitlines() if "," in line}
+    result: list[dict[str, int | str]] = []
+    for row in rows:
+        values = [value.strip() for value in row.split(",")]
+        if len(values) != 5:
+            raise ValueError(f"Unexpected nvidia-smi row: {row}")
+        index, uuid, used, total, utilization = values
+        result.append(
+            {
+                "index": int(index),
+                "uuid": uuid,
+                "used_mib": int(used),
+                "total_mib": int(total),
+                "utilization": int(utilization),
+                "compute_process": int(uuid in occupied),
+            }
+        )
+    return result
+
+
+def idle_indices(rows: list[dict[str, int | str]]) -> set[int]:
+    """Match the doctor's zero-utilization, sub-GiB definition and process table."""
+    return {
+        int(row["index"])
+        for row in rows
+        if int(row["used_mib"]) < 1024
+        and int(row["utilization"]) == 0
+        and not int(row["compute_process"])
+    }
+
+
+def _doctor_ready() -> bool:
+    output = ROOT / "artifacts/gpu-watch/doctor.json"
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--locked",
+            "pixelogue",
+            "doctor",
+            "--config",
+            "configs/gpu-watch-pilot.yaml",
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(f"doctor not ready: {result.returncode}", flush=True)
+        return False
+    return json.loads(output.read_text(encoding="utf-8"))["ready"] is True
+
+
+def _holder(gpu: int, state: dict[str, Any]) -> subprocess.Popen[str] | None:
+    environment = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "PYTHONUNBUFFERED": "1"}
+    process = subprocess.Popen(
+        [str(PYTHON_WITH_TORCH), str(Path(__file__)), "hold", "--memory-fraction", "0.90"],
+        cwd=ROOT,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    _begin(state, "reservation", gpu, process.pid)
+    assert process.stdout is not None
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline and process.poll() is None and _remaining(state) > 600:
+        ready, _, _ = select.select([process.stdout], [], [], 1)
+        if ready:
+            line = process.stdout.readline().strip()
+            if line:
+                print(f"holder gpu={gpu}: {line}", flush=True)
+            if line.startswith("READY "):
+                return process
+    process.terminate()
+    try:
+        process.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+    _end(state)
+    return None
+
+
+def _release_holder(process: subprocess.Popen[str], state: dict[str, Any]) -> None:
+    process.terminate()
+    try:
+        process.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+    if process.stdout is not None:
+        process.stdout.close()
+    _end(state)
+
+
+def _pilot(gpu: int, state: dict[str, Any]) -> None:
+    run_id = f"gpu-watch-pilot-{int(time.time())}"
+    output = ROOT / "artifacts/gpu-watch" / run_id
+    output.mkdir(parents=True, exist_ok=False)
+    environment = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "PYTHONUNBUFFERED": "1"}
+    with (output / "pilot.log").open("w", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                str(ROOT / "src/pixelogue/pilot_smoke.py"),
+                "--run-id",
+                run_id,
+                "--output-dir",
+                str(output),
+            ],
+            cwd=ROOT,
+            env=environment,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        _begin(state, "pilot", gpu, process.pid)
+        print(f"pilot started: GPU {gpu}, PID {process.pid}, {output}", flush=True)
+        try:
+            while process.poll() is None and _remaining(state) > 60 and not stop:
+                time.sleep(5)
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=35)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+            print(f"pilot ended: exit={process.returncode}, {output}", flush=True)
+            pids_path = output / "server-pids.jsonl"
+            if pids_path.exists():
+                for line in pids_path.read_text(encoding="utf-8").splitlines():
+                    pid = int(json.loads(line)["pid"])
+                    command = Path(f"/proc/{pid}/cmdline")
+                    if command.exists() and b"vllm" in command.read_bytes():
+                        print(f"stopping orphaned model server group {pid}", flush=True)
+                        os.killpg(pid, signal.SIGTERM)
+            state["pilot_attempted"] = True
+            state["pilot_exit_code"] = process.returncode
+        finally:
+            _end(state)
+            _save(state)
+
+
+def _hold_visible_gpu(memory_fraction: float) -> None:
+    """Adapt the attached memory holder without its continuous GEMM load."""
+    torch = importlib.import_module("torch")
+
+    if os.environ.get("CUDA_VISIBLE_DEVICES", "").count(",") or not os.environ.get(
+        "CUDA_VISIBLE_DEVICES"
+    ):
+        raise RuntimeError("Exactly one explicit CUDA_VISIBLE_DEVICES value is required")
+    torch.cuda.set_device(0)
+    free, total = torch.cuda.mem_get_info(0)
+    if total - free >= 1024 * 1024 * 1024:
+        raise RuntimeError("GPU became occupied before the reservation")
+    allocations = []
+    target = int(total * memory_fraction)
+    while torch.cuda.memory_allocated(0) < target:
+        remaining = target - torch.cuda.memory_allocated(0)
+        chunk = min(256 * 1024 * 1024, remaining)
+        if chunk < 4 * 1024 * 1024:
+            break
+        allocations.append(torch.empty(chunk, dtype=torch.uint8, device="cuda:0"))
+    torch.cuda.synchronize()
+    own = torch.cuda.memory_allocated(0)
+    if own < total * 0.85:
+        raise RuntimeError("Reservation did not acquire sufficient GPU memory")
+    print(f"READY allocated_mib={own // (1024 * 1024)}", flush=True)
+    signal.signal(signal.SIGTERM, _signal_stop)
+    signal.signal(signal.SIGINT, _signal_stop)
+    while not stop:
+        time.sleep(1)
+
+
+def _watch(poll_seconds: int) -> None:
+    if not PYTHON_WITH_TORCH.is_file():
+        raise RuntimeError("Install the separate runtime/vllm lock first")
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    with (STATE.parent / "watch.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        state = _load()
+        last: set[int] = set()
+        print(
+            f"watching local GPUs; remaining GPU-hours={_remaining(state) / 3600:.3f}", flush=True
+        )
+        while not stop and _remaining(state) > 600:
+            try:
+                current = idle_indices(_metrics())
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                print(f"GPU inspection failed: {exc}", flush=True)
+                current = set()
+            eligible = sorted(current & last)
+            last = current
+            if not eligible:
+                time.sleep(poll_seconds)
+                continue
+            gpu = eligible[0]
+            if not _doctor_ready():
+                time.sleep(poll_seconds)
+                continue
+            holder = _holder(gpu, state)
+            if holder is None:
+                last = set()
+                time.sleep(poll_seconds)
+                continue
+            if not state["pilot_attempted"]:
+                _release_holder(holder, state)
+                if gpu not in idle_indices(_metrics()):
+                    print("GPU handoff lost; returning to watch", flush=True)
+                    last = set()
+                    continue
+                _pilot(gpu, state)
+                last = set()
+                continue
+            print(
+                f"post-job GPU {gpu} reserved; holding until remaining budget expires", flush=True
+            )
+            try:
+                while holder.poll() is None and _remaining(state) > 60 and not stop:
+                    time.sleep(5)
+            finally:
+                _release_holder(holder, state)
+            last = set()
+        print(f"watch stopped; used GPU-hours={state['used_gpu_seconds'] / 3600:.3f}", flush=True)
+
+
+def main() -> None:
+    """Select the bounded local watcher or its single-device holder mode."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("mode", choices=("watch", "hold"))
+    parser.add_argument("--poll-seconds", type=int, default=15)
+    parser.add_argument("--memory-fraction", type=float, default=0.90)
+    args = parser.parse_args()
+    if not 5 <= args.poll_seconds <= 300 or not 0.85 <= args.memory_fraction <= 0.92:
+        parser.error("Invalid polling or reservation fraction")
+    signal.signal(signal.SIGTERM, _signal_stop)
+    signal.signal(signal.SIGINT, _signal_stop)
+    if args.mode == "hold":
+        _hold_visible_gpu(args.memory_fraction)
+    else:
+        _watch(args.poll_seconds)
+
+
+if __name__ == "__main__":
+    main()

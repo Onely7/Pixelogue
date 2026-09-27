@@ -101,6 +101,21 @@ Gitに含まれるGPUメモリ使用率の上限は、9Bサーバーが0.68、2B
 
 各ウィンドウの出力は、一意な名前のローカルログへ保存します。`pane_dead=0` だけでは正常と判断できません。モデル一覧、ログ、GPU使用状況、出力行数、model callの状態も確認します。
 
+### 上限付きの空きGPU監視
+
+`gpu_watch.py` は `nvidia-smi` でローカルの各GPUを2回調べ、計算プロセスも確認します。1 GPUのpilot設定について `doctor` が実行可能と判定した場合だけ予約します。メモリ予約には添付されたCUDA割り当てスクリプトの方式を使いますが、4 GPU時間を実際の検証へ優先して使うため、連続した行列積の負荷は省きます。モデル起動の直前に予約用プロセスを解放します。pilot終了後は空きGPUを再予約し、停止指示または累積予算の上限まで保持します。Slurmのノード表示が空きでも、他の計算プロセスが載るGPUは使いません。
+
+通常の選択器portは別サービスが使用しているため、この監視経路では18002と18000を使います。固定した非量子化Qwen3.5-9BとQwen3.5-2B、評価専用の準備済み20画像を使います。1回のjobは最初に1画像の動作確認を行い、その後に20画像の配線確認を行います。モデル名、`doctor --check-servers`、合成、`replay`、出力行数、実行エラーを確認し、サーバーとrunのログを分けて保存します。標準モデル組や専門タスクの校正を合格扱いにはしません。
+
+```sh
+mkdir -p artifacts/gpu-watch
+tmux new-session -d -s pixelogue-gpu-watch -c "$PWD" -n monitor \
+  'uv run --locked python src/pixelogue/gpu_watch.py watch >> artifacts/gpu-watch/monitor.log 2>&1'
+tail -f artifacts/gpu-watch/monitor.log
+```
+
+`artifacts/gpu-watch/state.json` は使用中のPID、GPU、段階、累積GPU秒数を記録します。停止して予約を解放するにはtmuxのpaneへ `Ctrl-C` を送ります。4 GPU時間に達する前に自動停止し、再起動しても記録済み時間を引き継ぎます。実行結果は `artifacts/gpu-watch/<run-id>/` に保存します。このホストのGPU 0〜5は見えているSlurmのGPU区画外なので、監視は実際のローカルGPUを直接確認します。
+
 ## 4. 実際に応答できるまで待つ
 
 vLLMは重みを読み込んだ後も、compile、CUDA graphの準備、画像入力のウォームアップを行います。PIDが存在し、GPUメモリを確保していても、起動完了とは限りません。

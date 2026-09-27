@@ -101,6 +101,21 @@ The checked-in memory-utilization limits are 0.68 for the 9B server and 0.20 for
 
 Redirect each window to a unique local log. A pane with `pane_dead=0` is only one health signal; also inspect `/v1/models`, logs, GPU activity, output rows, and model-call status.
 
+### Bounded idle-GPU watcher
+
+`gpu_watch.py` checks every local physical GPU twice with `nvidia-smi`, including the compute-process table. It starts only after `doctor` reports the one-GPU pilot ready. The memory reservation adapts the supplied CUDA allocation script, but omits continuous matrix multiplication so the four GPU-hour budget is spent primarily on the actual test. The holder is released immediately before model launch. After the pilot, the watcher reacquires an idle GPU and holds it until stopped or the cumulative budget is reached. It never takes a GPU with another compute process, even if Slurm reports its node as idle.
+
+The watcher uses separate ports 18002 and 18000 because the usual selector port may be occupied by another local service. It uses the same pinned, unquantized Qwen3.5-9B and Qwen3.5-2B model revisions and an evaluation-only 20-image prepared set. The one-time job first runs a one-image smoke test, then the full 20-image wiring check. It checks both served names, `doctor --check-servers`, synthesis, replay integrity, output row count, and terminal errors. Server and run logs are saved separately. It does not certify the standard model pair or specialist calibration.
+
+```sh
+mkdir -p artifacts/gpu-watch
+tmux new-session -d -s pixelogue-gpu-watch -c "$PWD" -n monitor \
+  'uv run --locked python src/pixelogue/gpu_watch.py watch >> artifacts/gpu-watch/monitor.log 2>&1'
+tail -f artifacts/gpu-watch/monitor.log
+```
+
+`artifacts/gpu-watch/state.json` records the active PID, GPU, phase, and accumulated GPU seconds. To stop and release a reservation, send `Ctrl-C` to the tmux pane. The watcher stops automatically before four GPU-hours; restarting it preserves the ledger. A live model run appears under `artifacts/gpu-watch/<run-id>/`. GPU 0–5 on this host are outside the visible Slurm GPU partition, so this watcher checks the actual local devices directly.
+
 ## 4. Wait for real readiness
 
 vLLM continues with compilation, CUDA graph capture, and multimodal warmup after loading weights. Allocated GPU memory or a live PID does not mean the server is ready.
