@@ -28,6 +28,8 @@ def environment_error(environment: SpecialistEnvironment, dependency: str | None
         return "specialist lock environment is not installed"
     if not (root / "worker.py").is_file():
         return "specialist worker is missing"
+    if environment == "renderer" and not (root / "render_worker.py").is_file():
+        return "isolated renderer worker is missing"
     if dependency is not None:
         probe = subprocess.run(
             [str(python), "-c", f"import {dependency}"],
@@ -46,7 +48,8 @@ def environment_error(environment: SpecialistEnvironment, dependency: str | None
         probe = subprocess.run(
             [
                 bwrap,
-                "--unshare-net",
+                "--unshare-all",
+                "--die-with-parent",
                 "--ro-bind",
                 "/usr",
                 "/usr",
@@ -68,6 +71,74 @@ def environment_error(environment: SpecialistEnvironment, dependency: str | None
         if probe.returncode != 0:
             return "OS network and filesystem isolation is unavailable"
     return None
+
+
+def call_renderer(request: dict[str, Any], *, timeout_seconds: float = 25) -> dict[str, Any]:
+    """Run markup only with a private mount tree and disconnected network.
+
+    Raises:
+        ExecutionError: If OS isolation, rendering or the bounded result fails.
+    """
+    if error := environment_error("renderer", "playwright"):
+        raise ExecutionError("VALIDATOR_ENV_MISSING", error)
+    root = worker_root()
+    bwrap = shutil.which("bwrap")
+    assert bwrap is not None
+    command = [
+        bwrap,
+        "--unshare-all",
+        "--die-with-parent",
+        "--new-session",
+        "--clearenv",
+        "--setenv",
+        "HOME",
+        "/tmp",
+        "--setenv",
+        "PATH",
+        "/usr/bin:/bin",
+        "--setenv",
+        "XDG_CACHE_HOME",
+        "/tmp",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--ro-bind",
+        str(root),
+        str(root),
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",
+    ]
+    for directory in ("/lib", "/lib64", "/etc", "/opt/google/chrome"):
+        if Path(directory).is_dir():
+            command.extend(("--ro-bind", directory, directory))
+    command.extend(
+        ("--chdir", "/tmp", str(root / ".venv/bin/python"), str(root / "render_worker.py"))
+    )
+    try:
+        result = subprocess.run(
+            command,
+            input=json.dumps(request, ensure_ascii=False),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+            cwd=root,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ExecutionError("RENDER_TIMEOUT", "Isolated renderer timed out") from exc
+    if result.returncode != 0 or len(result.stdout) > 5_000_000:
+        raise ExecutionError("RENDER_FAILED", "Isolated renderer failed or exceeded output limit")
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ExecutionError("RENDER_OUTPUT_INVALID", "Renderer returned invalid JSON") from exc
+    if not isinstance(response, dict) or response.get("verdict") not in {"MET", "UNKNOWN"}:
+        raise ExecutionError("RENDER_OUTPUT_INVALID", "Renderer returned invalid verdict")
+    return response
 
 
 def call_worker(

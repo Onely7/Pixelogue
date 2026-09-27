@@ -898,7 +898,7 @@ class SynthesisCoordinator:
             )
 
         items = list(rating.items)
-        for check in verify_operation(instruction, payload, invoke):
+        for check in verify_operation(instruction, payload, invoke, model_image.path):
             self.store.write_json_artifact(
                 "operation-checks",
                 {

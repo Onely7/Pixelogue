@@ -3128,6 +3128,10 @@ tasks:
     code_languages:
     - svg
     - tikz_subset
+    format:
+    - svg
+    - tikz_subset
+    render_tolerance: mean RGB error <= 0.12 and foreground overlap >= 0.80
   inspiration_subset_numbers:
   - 45
   - 46
@@ -3160,6 +3164,9 @@ tasks:
     enabled_by_default: false
     javascript: disabled
     asset_policy: local allowlist or explicit placeholders
+    format:
+    - html_css
+    render_tolerance: mean RGB error <= 0.12 and foreground overlap >= 0.80
   inspiration_subset_numbers:
   - 71
   inspiration_subsets:

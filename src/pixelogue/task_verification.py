@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -39,6 +40,7 @@ from pixelogue.specialist_geometry import (
     verify_geometry_problem,
 )
 from pixelogue.specialist_music import MusicSource, verify_music
+from pixelogue.specialist_render import RenderSource, verify_render
 from pixelogue.specialist_ui import UIActionSource, verify_ui_action
 from pixelogue.table_verifiers import TABLE_TASKS, TableAnswer, TableSource, verify_table
 from pixelogue.task_evidence import TranscriptInventory, VisualContractReview
@@ -61,14 +63,47 @@ def verify_operation(
     instruction: InstructionCandidate,
     payload: dict[str, Any],
     invoke: InvokeJudge,
+    reference_image: Path | None = None,
 ) -> tuple[OperationCheck, ...]:
     """Execute every declared supplement; no model controls applicability.
 
     Caller supplies the same allowed public inputs independently to each judge. Uncertain or
-    inconsistent extraction cannot certify a turn. No source code or generated action is executed.
+    inconsistent extraction cannot certify a turn. Generated action is never executed.
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id in {"diagram_to_code", "screen_to_code"}:
+        source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
+        sources = tuple(
+            RenderSource.model_validate(
+                invoke("specialist_render_source", source_payload, RenderSource, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        assert instruction.calibrated_domain is not None
+        format_name = next(
+            (item.value for item in instruction.public_parameters if item.name == "format"), None
+        )
+        verdict, calculation = verify_render(
+            (sources[0], sources[1]),
+            instruction.calibrated_domain,
+            format_name,
+            instruction.scope_id,
+            instruction.view_id,
+            payload.get("image_views"),
+            reference_image,
+            payload["candidate_answer"],
+        )
+        results.append(
+            OperationCheck(
+                "sandbox_render_validator",
+                verdict,
+                (*tuple(item.model_dump(mode="json") for item in sources), calculation),
+                "Isolated code rendering check: " + verdict.value,
+            )
+        )
     if instruction.task_id == "ui_action_specification":
         source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
         sources = tuple(
@@ -657,6 +692,11 @@ def verify_operation(
         if instruction.task_id == "circuit_structure_reading" and name == "circuit_graph_validator":
             continue
         if instruction.task_id == "ui_action_specification" and name == "ui_action_validator":
+            continue
+        if (
+            instruction.task_id in {"diagram_to_code", "screen_to_code"}
+            and name == "sandbox_render_validator"
+        ):
             continue
         if (
             instruction.task_id

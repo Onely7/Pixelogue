@@ -18,6 +18,7 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "specialist_render_source": """Read only the original scoped image and public code reconstruction request, without candidate code. Record all visible labels exactly and the exact scoped region and image view. Missing labels, unreadable content, unsupported assets, animation or dynamic state are UNKNOWN. Do not infer original source code.""",
     "specialist_ui_source": """Read only the visible scoped screenshot and the public action goal, without a proposed answer. Identify uniquely named controls, enabled state, kind and normalized clickable region in the exact delivered view. An occluded, duplicate or ambiguous target is UNKNOWN. Do not execute any action or infer an unseen screen.""",
     "specialist_circuit_source": """Read only the scoped circuit drawing and public operation, without the candidate answer. Resolve registered two-terminal symbols, labeled components, each terminal-to-net connection, explicit junction dots and wire crossovers. Record regions for components and nets. An ambiguous crossing, unregistered symbol, dangling terminal or incomplete visible circuit is UNKNOWN. Do not infer electrical performance.""",
     "specialist_chemistry_source": """Read the scoped chemical drawing without seeing any candidate answer. Extract every atom, charge, bond and explicitly drawn aromatic ring in the supported nonstereo convention. Mark each source region and preserve atom IDs across bond endpoints. Unknown stereochemistry, ambiguous crossings, unresolved abbreviations or missing bonds require UNKNOWN. Do not infer unseen atoms or chemical intent.""",
@@ -351,6 +352,9 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "specialist_render_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
     "specialist_ui_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),

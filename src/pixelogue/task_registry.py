@@ -149,6 +149,13 @@ REGISTRATIONS = {
             "1",
             supported_tasks=frozenset({"ui_action_specification"}),
         ),
+        ValidatorRegistration(
+            "sandbox_render_validator",
+            "1",
+            "renderer",
+            "playwright",
+            frozenset({"diagram_to_code", "screen_to_code"}),
+        ),
     )
 }
 

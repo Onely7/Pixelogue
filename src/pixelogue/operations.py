@@ -59,6 +59,7 @@ from pixelogue.specialist_chemistry import ChemicalAnswer, ChemicalSource
 from pixelogue.specialist_circuit import CircuitAnswer, CircuitSource
 from pixelogue.specialist_geometry import GeometryNumericAnswer, GeometryProblem
 from pixelogue.specialist_music import MusicAnswer, MusicSource
+from pixelogue.specialist_render import RenderAnswer, RenderSource
 from pixelogue.specialist_ui import UIActionAnswer, UIActionSource
 from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_catalog import TaskCatalog
@@ -146,6 +147,8 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             CircuitAnswer,
             UIActionSource,
             UIActionAnswer,
+            RenderSource,
+            RenderAnswer,
             InstructionSelection,
             TextPayload,
             QuestionFit,

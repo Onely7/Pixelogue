@@ -33,6 +33,7 @@ POLICY_PARAMETERS = frozenset(
         "canvas_policy",
         "dimensionless_values",
         "action_scope",
+        "code_languages",
         "rule_grammar",
     }
 )
