@@ -6,12 +6,13 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from itertools import combinations
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
 from pixelogue.config import ModelEndpoint, PixelogueConfig, StrictModel
 from pixelogue.serving import VllmClient
+from pixelogue.task_runtime import admission_report
 
 PARAMETER_COUNTS = {
     "Qwen/Qwen3.5-2B": 2_000_000_000,
@@ -57,6 +58,7 @@ class DoctorReport(StrictModel):
     models: tuple[ModelCheck, ...]
     local_wal_root: str
     ready: bool
+    task_admission: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 def inspect_gpus() -> tuple[GpuDevice, ...]:
@@ -174,6 +176,7 @@ def diagnose(config: PixelogueConfig, *, check_servers: bool = False) -> DoctorR
         models=tuple(checks),
         local_wal_root=str(config.storage.run_root),
         ready=ready,
+        task_admission=admission_report(config.tasks, config.models),
     )
 
 

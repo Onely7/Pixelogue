@@ -289,6 +289,7 @@ class SynthesisCoordinator:
                 turn_index=turn_index,
                 limit=self.config.tasks.candidate_limit,
                 settings=self.config.tasks,
+                models=self.config.models,
                 used_task_ids=frozenset(turn.instruction.task_id for turn in turns),
             )
             if candidates:

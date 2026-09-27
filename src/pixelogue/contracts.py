@@ -141,6 +141,7 @@ class InstructionCandidate(StrictModel):
     public_parameters: tuple[PublicParameter, ...] = ()
     evidence_refs: tuple[str, ...] = ()
     verification_contracts: tuple[str, ...] = ()
+    calibrated_domain: str | None = None
 
     @model_validator(mode="after")
     def validate_operation(self) -> InstructionCandidate:
@@ -170,6 +171,8 @@ class InstructionCandidate(StrictModel):
             )
             if self.verification_contracts != required:
                 raise ValueError("V7 candidates cannot omit or replace required verifiers")
+            if task.status == "validator_gated_extension" and not self.calibrated_domain:
+                raise ValueError("Specialist candidates need a certified domain")
         return self
 
 

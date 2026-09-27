@@ -5,26 +5,18 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from pixelogue.calibration import eligible_domains, model_calibration_lock
 from pixelogue.catalog import task_catalog
-from pixelogue.config import TaskRuntimeConfig
+from pixelogue.config import ModelConfig, TaskRuntimeConfig
 from pixelogue.contracts import InstructionCandidate, PublicMessage
 from pixelogue.errors import ExecutionError
 from pixelogue.serialization import canonical_hash
 from pixelogue.task_catalog import TaskDefinition
 from pixelogue.task_evidence import CandidateBindings, ScopedEvidenceInventory
+from pixelogue.task_registry import REGISTRATIONS, registration
 
-# Every entry has an actual dispatch path in the coordinator. Specialized validators are absent.
-IMPLEMENTED_VERIFIERS = frozenset(
-    {
-        "dual_visual_review",
-        "closed_set_check",
-        "exact_arithmetic_check",
-        "transcript_alignment",
-        "evidence_binding_check",
-        "ui_grounding_check",
-        "panel_comparison_check",
-    }
-)
+# Keep this public view for existing catalog checks; registrations own implementation status.
+IMPLEMENTED_VERIFIERS = frozenset(REGISTRATIONS)
 # The current member/count comparator and primitive arithmetic engine cannot certify these modes.
 UNSUPPORTED_OPERATIONS = {
     "spatial_ordering": "ordered-member verification is unavailable",
@@ -68,28 +60,62 @@ GUARD_PARAMETERS = {
 }
 
 
-def admission_report() -> dict[str, dict[str, Any]]:
+def admission_report(
+    settings: TaskRuntimeConfig | None = None,
+    models: ModelConfig | None = None,
+) -> dict[str, dict[str, Any]]:
     """Explain catalog membership separately from currently executable normal operations."""
     return {
         task.id: {
             "status": task.status,
-            "normal_profile_available": not unavailable_reasons(task),
-            "blocked_reasons": list(unavailable_reasons(task)),
+            "normal_profile_available": not unavailable_reasons(task, settings, models),
+            "blocked_reasons": list(unavailable_reasons(task, settings, models)),
+            "certified_domains": list(certified_domains(task, settings, models)),
             "required_verification_contracts": list(task.verification_contracts),
         }
         for task in task_catalog().tasks
     }
 
 
-def unavailable_reasons(task: TaskDefinition) -> tuple[str, ...]:
+def certified_domains(
+    task: TaskDefinition,
+    settings: TaskRuntimeConfig | None,
+    models: ModelConfig | None,
+) -> tuple[str, ...]:
+    """Resolve extension certificates for this exact active model pair."""
+    if (
+        task.status != "validator_gated_extension"
+        or settings is None
+        or models is None
+        or settings.calibration_manifest is None
+        or task.id not in settings.enabled_extensions
+    ):
+        return ()
+    locks = (
+        model_calibration_lock(models.generator_a),
+        model_calibration_lock(models.generator_b),
+    )
+    return eligible_domains(settings.calibration_manifest, task.id, locks, "1")
+
+
+def unavailable_reasons(
+    task: TaskDefinition,
+    settings: TaskRuntimeConfig | None = None,
+    models: ModelConfig | None = None,
+) -> tuple[str, ...]:
     """Return actual missing implementations; configuration cannot invent a validator."""
-    reasons = [
-        f"missing validator: {name}"
-        for name in task.verification_contracts
-        if name not in IMPLEMENTED_VERIFIERS
-    ]
+    reasons: list[str] = []
+    for name in task.verification_contracts:
+        entry = registration(name)
+        if entry is None:
+            reasons.append(f"missing validator: {name}")
+        elif error := entry.environment_error():
+            reasons.append(error)
     if task.status == "validator_gated_extension":
-        reasons.append("specialized extension requires explicit enablement and domain calibration")
+        if settings is None or task.id not in settings.enabled_extensions:
+            reasons.append("specialized extension is not enabled")
+        elif not certified_domains(task, settings, models):
+            reasons.append("no calibration for the active models and validator")
     if task.id in UNSUPPORTED_OPERATIONS:
         reasons.append(UNSUPPORTED_OPERATIONS[task.id])
     return tuple(reasons)
@@ -102,6 +128,11 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
     catalog = task_catalog()
     task = next(task for task in catalog.tasks if task.id == candidate.task_id)
     checks = {name: catalog.eligibility_checks[name] for name in task.eligibility_checks}
+    if candidate.calibrated_domain is not None:
+        checks["calibrated_domain_supported"] = (
+            "The visible source uses the exact certified notation and format domain; "
+            "unsupported or unclear conventions are UNKNOWN."
+        )
     if candidate.profile != "normal":
         checks = {
             "scope_resolved": catalog.eligibility_checks["scope_resolved"],
@@ -126,6 +157,7 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         "eligibility_checks": checks,
         "do_not_infer": task.do_not_infer,
         "required_verification_contracts": list(candidate.verification_contracts),
+        "calibrated_domain": candidate.calibrated_domain,
         "runtime_restrictions": (
             "One primitive add/subtract/multiply/divide expression, exact result, no rounding or "
             "derived percentages. Units must satisfy the primitive calculator contract."
@@ -157,6 +189,7 @@ def fingerprint(candidate: InstructionCandidate, image_id: str) -> str:
             "scope": candidate.scope_id,
             "task": candidate.task_id,
             "profile": candidate.profile,
+            "calibrated_domain": candidate.calibrated_domain,
             "parameters": {
                 p.name: normalize(p.value)
                 for p in sorted(candidate.public_parameters, key=lambda item: item.name)

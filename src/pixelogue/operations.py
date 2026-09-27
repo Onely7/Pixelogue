@@ -12,6 +12,11 @@ from typing import Any, Protocol
 from PIL import Image
 from pydantic import Field
 
+from pixelogue.calibration import (
+    CalibrationCertificate,
+    CalibrationManifest,
+    CalibrationObservation,
+)
 from pixelogue.catalog import load_legacy_migration, load_rubric_catalog, load_task_catalog
 from pixelogue.config import PixelogueConfig, StrictModel
 from pixelogue.contracts import (
@@ -95,6 +100,9 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             ScopedEvidenceInventory,
             CandidateBindings,
             TaskCatalog,
+            CalibrationObservation,
+            CalibrationCertificate,
+            CalibrationManifest,
             InstructionSelection,
             TextPayload,
             QuestionFit,
@@ -123,7 +131,7 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
         "language_quotas": config.language_quotas,
         "task_catalog": task_catalog,
         "rubric_catalog": rubric_catalog,
-        "task_admission": admission_report(),
+        "task_admission": admission_report(config.tasks, config.models),
         "legacy_task_migration": load_legacy_migration(),
         "schemas": schemas,
     }

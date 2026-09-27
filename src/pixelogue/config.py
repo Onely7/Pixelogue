@@ -25,6 +25,17 @@ ALLOWED_QUANTIZATIONS = {
     "Qwen/Qwen3.8-27B-FP8": "fp8",
     "google/gemma-4-31B-it-qat-w4a16-ct": "compressed-tensors",
 }
+SPECIALIST_TASK_IDS = frozenset(
+    {
+        "geometric_constraint_solving",
+        "diagram_to_code",
+        "screen_to_code",
+        "music_notation_reading",
+        "chemical_structure_reading",
+        "circuit_structure_reading",
+        "ui_action_specification",
+    }
+)
 
 
 def allocate_quotas(total: int, weights: Mapping[str, int | str]) -> dict[str, int]:
@@ -235,14 +246,17 @@ class TaskRuntimeConfig(StrictModel):
     answer_max_tokens: Annotated[int, Field(ge=256, le=8192)] = 1024
     profiles: tuple[Literal["normal", "limitation", "false_premise"], ...] = ("normal",)
     enabled_extensions: tuple[str, ...] = ()
+    calibration_manifest: Path | None = None
 
     @model_validator(mode="after")
     def validate_admission_settings(self) -> TaskRuntimeConfig:
         """Fail closed on unsupported extensions and repeated profile settings."""
         if not self.profiles or len(self.profiles) != len(set(self.profiles)):
             raise ValueError("At least one unique task profile is required")
-        if self.enabled_extensions:
-            raise ValueError("Specialized extension validators are not installed and calibrated")
+        if len(self.enabled_extensions) != len(set(self.enabled_extensions)):
+            raise ValueError("Repeated specialized extension")
+        if not set(self.enabled_extensions) <= SPECIALIST_TASK_IDS:
+            raise ValueError("Unknown specialized extension")
         return self
 
 
@@ -300,13 +314,22 @@ class PixelogueConfig(StrictModel):
     @property
     def config_hash(self) -> str:
         """Return a stable identity for all effective settings."""
+        from pixelogue.calibration import CalibrationManifest
         from pixelogue.catalog import TASK_CONTRACT_VERSION, load_task_catalog
+        from pixelogue.io import read_json
+
+        calibration = (
+            read_json(self.tasks.calibration_manifest, CalibrationManifest).model_dump(mode="json")
+            if self.tasks.calibration_manifest is not None
+            else None
+        )
 
         return canonical_hash(
             {
                 "config": self.model_dump(mode="json"),
                 "task_catalog": load_task_catalog(),
                 "task_contract_version": TASK_CONTRACT_VERSION,
+                "calibration": calibration,
             }
         )
 
@@ -338,11 +361,19 @@ def load_config(path: Path) -> PixelogueConfig:
         storage_update["run_root"] = (base / config.storage.run_root).resolve()
     if config.storage.backup_root is not None and not config.storage.backup_root.is_absolute():
         storage_update["backup_root"] = (base / config.storage.backup_root).resolve()
-    if not storage_update:
-        updated = config
-    else:
-        updated = config.model_copy(
-            update={"storage": config.storage.model_copy(update=storage_update)}
+    updated = (
+        config.model_copy(update={"storage": config.storage.model_copy(update=storage_update)})
+        if storage_update
+        else config
+    )
+    calibration_manifest = updated.tasks.calibration_manifest
+    if calibration_manifest is not None and not calibration_manifest.is_absolute():
+        updated = updated.model_copy(
+            update={
+                "tasks": updated.tasks.model_copy(
+                    update={"calibration_manifest": (base / calibration_manifest).resolve()}
+                )
+            }
         )
     manifest = updated.data.open_images.image_ids_manifest
     if manifest is None or manifest.is_absolute():

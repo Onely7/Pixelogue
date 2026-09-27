@@ -6,10 +6,10 @@ import hashlib
 from collections.abc import Mapping, Sequence
 
 from pixelogue.catalog import task_catalog
-from pixelogue.config import TaskRuntimeConfig, allocate_quotas
+from pixelogue.config import ModelConfig, TaskRuntimeConfig, allocate_quotas
 from pixelogue.contracts import InstructionCandidate
 from pixelogue.task_evidence import ScopedEvidenceInventory
-from pixelogue.task_runtime import fingerprint, unavailable_reasons
+from pixelogue.task_runtime import certified_domains, fingerprint, unavailable_reasons
 
 
 def instruction_candidates(
@@ -19,6 +19,7 @@ def instruction_candidates(
     turn_index: int,
     limit: int = 8,
     settings: TaskRuntimeConfig | None = None,
+    models: ModelConfig | None = None,
     used_task_ids: frozenset[str] = frozenset(),
 ) -> tuple[InstructionCandidate, ...]:
     """Route local evidence into bounded templates, rotating eligible families.
@@ -35,12 +36,15 @@ def instruction_candidates(
         supported = {item.capability for item in scope.observations if item.verdict == "MET"}
         missing = {item.capability for item in scope.observations if item.verdict != "MET"}
         for task in catalog.tasks:
-            if task.status != "core_candidate":
+            if (
+                task.status == "validator_gated_extension"
+                and task.id not in settings.enabled_extensions
+            ):
                 continue
             for profile in settings.profiles:
                 if profile == "normal":
                     if (
-                        unavailable_reasons(task)
+                        unavailable_reasons(task, settings, models)
                         or not set(task.required_capabilities) <= supported
                     ):
                         continue
@@ -69,6 +73,11 @@ def instruction_candidates(
                     view_id=scope.view_id,
                     evidence_refs=refs,
                     verification_contracts=verifiers,
+                    calibrated_domain=(
+                        certified_domains(task, settings, models)[0]
+                        if task.status == "validator_gated_extension"
+                        else None
+                    ),
                 )
                 candidate = candidate.model_copy(
                     update={"candidate_id": fingerprint(candidate, inventory.image_id)}

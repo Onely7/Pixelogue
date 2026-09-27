@@ -160,8 +160,11 @@ def test_missing_specialist_verifiers_block_even_capable_images():
         selected
         & {task.id for task in task_catalog().tasks if task.status == "validator_gated_extension"}
     )
-    with pytest.raises(ValidationError, match="not installed and calibrated"):
-        TaskRuntimeConfig(enabled_extensions=("screen_to_code",))
+    assert TaskRuntimeConfig(enabled_extensions=("screen_to_code",)).enabled_extensions == (
+        "screen_to_code",
+    )
+    with pytest.raises(ValidationError, match="Unknown specialized extension"):
+        TaskRuntimeConfig(enabled_extensions=("invented",))
     assert admission_report()["screen_to_code"]["blocked_reasons"]
 
 
