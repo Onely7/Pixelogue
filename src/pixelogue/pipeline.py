@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import deque
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -273,10 +273,12 @@ class SynthesisCoordinator:
             max_tokens=self.config.tasks.evidence_max_tokens,
             temperature=0.0,
             seed=self.config.seed,
+            post_validate=lambda result: validate_evidence(
+                result, model_image.view_id, self.config.tasks
+            ),
         )
         if inventory.image_id != image.image_id:
             raise ExecutionError("EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image")
-        validate_evidence(inventory, model_image.view_id, self.config.tasks)
 
         terminal_status: Literal["QUALITY_CANDIDATE", "REJECTED", "ABSTAINED", "ERROR"] = (
             "QUALITY_CANDIDATE"
@@ -293,6 +295,21 @@ class SynthesisCoordinator:
                 used_task_ids=frozenset(turn.instruction.task_id for turn in turns),
             )
             if candidates:
+
+                def validate_bindings(
+                    result: CandidateBindings,
+                    templates: tuple[InstructionCandidate, ...] = candidates,
+                    public_history: tuple[PublicMessage, ...] = snapshot.public_history,
+                ) -> None:
+                    bind_candidates(
+                        templates,
+                        result,
+                        inventory,
+                        public_history,
+                        self.config.tasks,
+                        frozenset(turn.instruction.candidate_id for turn in turns),
+                    )
+
                 bindings = self._invoke(
                     generator,
                     "candidate_binding",
@@ -309,6 +326,7 @@ class SynthesisCoordinator:
                     max_tokens=self.config.tasks.binding_max_tokens,
                     temperature=0.0,
                     seed=self.config.seed + turn_index,
+                    post_validate=validate_bindings,
                 )
                 self.store.write_json_artifact(
                     "candidate-bindings", bindings.model_dump(mode="json")
@@ -1462,6 +1480,8 @@ class SynthesisCoordinator:
         payload: dict[str, Any],
         images: tuple[ModelImage, ...],
         model: type[OutputModel],
+        *,
+        post_validate: Callable[[OutputModel], None] | None = None,
         **kwargs: Any,
     ) -> OutputModel:
         retryable = {
@@ -1470,6 +1490,17 @@ class SynthesisCoordinator:
             "MODEL_SCHEMA_MISMATCH",
             "EVIDENCE_IMAGE_MISMATCH",
             "EXTRACTION_SOURCE_INVALID",
+            "EVIDENCE_CAPABILITY_UNKNOWN",
+            "EVIDENCE_SCOPE_LIMIT",
+            "EVIDENCE_VIEW_MISMATCH",
+            "EVIDENCE_OBSERVATION_LIMIT",
+            "CANDIDATE_BINDING_ID",
+            "CANDIDATE_EVIDENCE_SCOPE",
+            "CANDIDATE_EVIDENCE_MISSING",
+            "CANDIDATE_CHECKS_MISMATCH",
+            "CANDIDATE_PARAMETER_UNKNOWN",
+            "CANDIDATE_PARAMETER_SOURCE",
+            "CANDIDATE_PARAMETER_VALUE",
         }
         retry_feedback: str | None = None
         for attempt in range(self.config.runtime.structured_output_max_attempts):
@@ -1515,6 +1546,12 @@ class SynthesisCoordinator:
                         raise ExecutionError(
                             "EXTRACTION_SOURCE_INVALID", "Requirement quote or reference is invalid"
                         )
+                if not isinstance(response.value, model):
+                    raise ExecutionError(
+                        "MODEL_TYPE_MISMATCH", f"{stage} returned another contract"
+                    )
+                if post_validate is not None:
+                    post_validate(response.value)
             except ExecutionError as error:
                 if (
                     error.reason in retryable
@@ -1524,6 +1561,16 @@ class SynthesisCoordinator:
                     if error.reason == "MODEL_SCHEMA_MISMATCH":
                         required = model.model_json_schema().get("required", [])
                         retry_feedback += " Required top-level fields: " + ", ".join(required) + "."
+                        if stage == "evidence_extraction":
+                            retry_feedback += (
+                                " Each capability may occur only once per scope; combine visible"
+                                " instances into one observation and use only capability_vocabulary."
+                            )
+                        elif stage == "candidate_binding":
+                            retry_feedback += (
+                                " Include only operation-relevant parameters, use each name once,"
+                                " and match origin with evidence_refs."
+                            )
                     elif error.reason == "EVIDENCE_IMAGE_MISMATCH":
                         retry_feedback = (
                             "The previous response referred to another image. Re-examine only the "
@@ -1532,8 +1579,6 @@ class SynthesisCoordinator:
                         )
                     continue
                 raise
-            if not isinstance(response.value, model):
-                raise ExecutionError("MODEL_TYPE_MISMATCH", f"{stage} returned another contract")
             return response.value
         raise AssertionError("structured output attempt loop did not return")
 
@@ -1552,6 +1597,17 @@ class SynthesisCoordinator:
             return (
                 "The previous response failed schema validation. Return one complete JSON object "
                 "with every required field, unique array items, and a short non-empty reason."
+            )
+        if reason.startswith("EVIDENCE_"):
+            return (
+                "Re-examine this image view. Use only names in capability_vocabulary,"
+                " one observation per capability per scope, and the exact supplied view_id."
+            )
+        if reason.startswith("CANDIDATE_"):
+            return (
+                "Rebind only the supplied candidate IDs. Use only each candidate's"
+                " parameter_contract, exact eligibility_checks and local evidence IDs."
+                " Include all MET required_capabilities in binding evidence_refs."
             )
         if reason == "MODEL_FINISH_REASON":
             return (

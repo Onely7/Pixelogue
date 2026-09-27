@@ -267,6 +267,42 @@ def test_structured_retry_receives_bounded_correction_feedback(tmp_path: Path) -
     ]
 
 
+def test_semantic_contract_failure_retries_without_accepting_invalid_result(
+    tmp_path: Path,
+) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "semantic-retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a)
+    coordinator = SynthesisCoordinator(config, "semantic-retry", store, client, client, client)
+    attempts = 0
+
+    def validate(_result: RubricVerdict) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ExecutionError("CANDIDATE_PARAMETER_UNKNOWN", "Unknown public parameter")
+
+    try:
+        result = coordinator._invoke(
+            client,
+            "rubric_item",
+            {},
+            (),
+            RubricVerdict,
+            max_tokens=256,
+            temperature=0.0,
+            seed=1,
+            post_validate=validate,
+        )
+    finally:
+        store.close()
+
+    assert result.verdict == "MET"
+    assert attempts == 2
+    assert client.retry_feedback[0] is None
+    assert "parameter_contract" in (client.retry_feedback[1] or "")
+
+
 class ConcurrencyProbe:
     """Track overlapping scripted model calls across test clients."""
 
