@@ -18,6 +18,16 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "table_source": """Read only the image, public question and bound operation without an answer.
+Reconstruct each relevant table as a complete rectangular grid. Preserve every blank as an explicit
+cell and every merged cell with its exact row/column span, text, kind and image region. Distinguish
+header rows from data rows. Bind the requested lookup, predicate, sort or join to explicit row and
+column indices and keys. Missing headers, obscured cells, ambiguous joins or off-scope tables are
+UNKNOWN. Never use the candidate answer to fill a cell.""",
+    "table_answer": """Parse only the candidate answer and public question, with no image.
+Quote the exact answer substring and return only its literal lookup value, selected row labels in
+order, or matched value pairs. Ambiguous, missing or conflicting results are UNKNOWN. Do not infer
+the correct table values or predicate result.""",
     "quantity_source": """Read the image, public history and question without seeing any answer.
 Extract only printed numeric lexemes inside the bound image scope, with exact units and individual
 regions. Identify the public operation and ordered operand IDs. A complete aggregate requires a
@@ -267,6 +277,12 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "table_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "table_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
     "quantity_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),

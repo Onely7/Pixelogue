@@ -146,7 +146,7 @@ def test_eligibility_observations_are_bound_to_the_delivered_view_and_bounds():
         validate_evidence(inventory(scope("left", invented="MET")), "view", TaskRuntimeConfig())
 
 
-def test_missing_specialist_verifiers_block_even_capable_images():
+def test_supported_tables_enter_candidates_while_missing_verifiers_stay_blocked():
     observations: dict[str, ObservationVerdict] = {
         key: "MET" for key in task_catalog().capabilities
     }
@@ -154,7 +154,7 @@ def test_missing_specialist_verifiers_block_even_capable_images():
     selected = {item.task_id for item in candidates(data, limit=100)}
     assert "object_identification" in selected
     assert "formula_transcription" not in selected
-    assert "table_structure_reconstruction" not in selected
+    assert "table_structure_reconstruction" in selected
     assert "graph_path_tracing" not in selected
     assert not (
         selected

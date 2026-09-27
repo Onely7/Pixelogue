@@ -24,6 +24,7 @@ from pixelogue.rules import (
     verify_computation_inventories,
     verify_set_inventories,
 )
+from pixelogue.table_verifiers import TABLE_TASKS, TableAnswer, TableSource, verify_table
 from pixelogue.task_evidence import TranscriptInventory, VisualContractReview
 from pixelogue.task_runtime import operation_contract
 
@@ -52,6 +53,55 @@ def verify_operation(
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id in TABLE_TASKS:
+        table_source_payload = {
+            key: value for key, value in public.items() if key != "candidate_answer"
+        }
+        table_sources = tuple(
+            TableSource.model_validate(
+                invoke("table_source", table_source_payload, TableSource, index)
+            )
+            for index in range(2)
+        )
+        table_answers: tuple[TableAnswer, TableAnswer] | None = None
+        if instruction.task_id != "table_structure_reconstruction":
+            table_answer_payload = {
+                key: public[key]
+                for key in ("target_language", "question", "candidate_answer", "expected_operation")
+                if key in public
+            }
+            extracted = tuple(
+                TableAnswer.model_validate(
+                    invoke("table_answer", table_answer_payload, TableAnswer, index)
+                )
+                for index in range(2)
+            )
+            table_answers = (extracted[0], extracted[1])
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        content, schema = verify_table(
+            instruction.task_id,
+            (table_sources[0], table_sources[1]),
+            table_answers,
+            {item.name: item.value for item in instruction.public_parameters},
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        table_evidence = tuple(
+            item.model_dump(mode="json") for item in (*table_sources, *(table_answers or ()))
+        )
+        for name in instruction.verification_contracts:
+            if name in {"table_structure_check", "closed_set_check", "schema_check"}:
+                verdict = schema if name == "schema_check" else content
+                results.append(
+                    OperationCheck(
+                        name,
+                        verdict or GateVerdict.UNKNOWN,
+                        table_evidence,
+                        "Closed table controller check: " + (verdict or GateVerdict.UNKNOWN).value,
+                    )
+                )
     if instruction.task_id in QUANTITATIVE_TASKS:
         source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
         answer_payload = {
@@ -134,9 +184,11 @@ def verify_operation(
                     )
                 )
     for name in instruction.verification_contracts:
-        if instruction.task_id in FINITE_TASKS | QUANTITATIVE_TASKS and name in {
+        if instruction.task_id in FINITE_TASKS | QUANTITATIVE_TASKS | TABLE_TASKS and name in {
             "closed_set_check",
             "exact_arithmetic_check",
+            "table_structure_check",
+            "schema_check",
         }:
             continue
         if name == "dual_visual_review":

@@ -48,6 +48,7 @@ from pixelogue.ledger import Requirement, RequirementInventory
 from pixelogue.quantitative_verifiers import QuantityAnswer, QuantitySource
 from pixelogue.rules import ComputationInventory, NumericValue, SetCheck, SetInventory
 from pixelogue.serialization import canonical_hash
+from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_catalog import TaskCatalog
 from pixelogue.task_evidence import CandidateBindings, ScopedEvidenceInventory
 from pixelogue.task_runtime import admission_report
@@ -109,6 +110,8 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             FiniteAnswer,
             QuantitySource,
             QuantityAnswer,
+            TableSource,
+            TableAnswer,
             InstructionSelection,
             TextPayload,
             QuestionFit,

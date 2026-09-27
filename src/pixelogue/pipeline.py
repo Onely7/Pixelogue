@@ -876,7 +876,9 @@ class SynthesisCoordinator:
                 client,
                 stage,
                 body,
-                () if stage in {"finite_answer", "quantity_answer"} else (model_image,),
+                ()
+                if stage in {"finite_answer", "quantity_answer", "table_answer"}
+                else (model_image,),
                 model,
                 max_tokens=2048,
                 temperature=0.0,

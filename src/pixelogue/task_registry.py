@@ -17,6 +17,11 @@ class ValidatorRegistration:
     version: str
     environment: ValidatorEnvironment = "core"
     dependency: str | None = None
+    supported_tasks: frozenset[str] | None = None
+
+    def supports(self, task_id: str) -> bool:
+        """Report whether this dispatch implements the task's actual operation."""
+        return self.supported_tasks is None or task_id in self.supported_tasks
 
     def environment_error(self) -> str | None:
         """Report a missing Python dependency without importing specialist code."""
@@ -35,6 +40,23 @@ REGISTRATIONS = {
         ValidatorRegistration("evidence_binding_check", "1"),
         ValidatorRegistration("ui_grounding_check", "1"),
         ValidatorRegistration("panel_comparison_check", "1"),
+        ValidatorRegistration(
+            "table_structure_check",
+            "1",
+            supported_tasks=frozenset(
+                {
+                    "table_cell_lookup",
+                    "table_predicate_selection",
+                    "table_structure_reconstruction",
+                    "table_cross_reference",
+                }
+            ),
+        ),
+        ValidatorRegistration(
+            "schema_check",
+            "1",
+            supported_tasks=frozenset({"table_structure_reconstruction"}),
+        ),
     )
 }
 

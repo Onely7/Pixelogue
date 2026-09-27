@@ -96,6 +96,8 @@ def unavailable_reasons(
         entry = registration(name)
         if entry is None:
             reasons.append(f"missing validator: {name}")
+        elif not entry.supports(task.id):
+            reasons.append(f"validator does not support {task.id}: {name}")
         elif error := entry.environment_error():
             reasons.append(error)
     if task.status == "validator_gated_extension":
