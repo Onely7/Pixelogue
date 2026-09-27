@@ -2189,7 +2189,9 @@ tasks:
   - dual_visual_review
   - chart_encoding_check
   - schema_check
-  parameters: {}
+  parameters:
+    format:
+    - structured_json
   inspiration_subset_numbers:
   - 24
   - 30

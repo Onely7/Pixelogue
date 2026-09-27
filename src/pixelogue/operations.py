@@ -18,6 +18,7 @@ from pixelogue.calibration import (
     CalibrationObservation,
 )
 from pixelogue.catalog import load_legacy_migration, load_rubric_catalog, load_task_catalog
+from pixelogue.chart_verifiers import ChartAnswer, ChartSource
 from pixelogue.config import PixelogueConfig, StrictModel
 from pixelogue.contracts import (
     ClaimInventory,
@@ -112,6 +113,8 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             QuantityAnswer,
             TableSource,
             TableAnswer,
+            ChartSource,
+            ChartAnswer,
             InstructionSelection,
             TextPayload,
             QuestionFit,

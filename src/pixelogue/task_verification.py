@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from pixelogue.catalog import task_catalog
+from pixelogue.chart_verifiers import CHART_TASKS, ChartAnswer, ChartSource, verify_chart
 from pixelogue.contracts import GateVerdict, InstructionCandidate
 from pixelogue.evaluation import consensus
 from pixelogue.finite_verifiers import FINITE_TASKS, FiniteAnswer, FiniteSource, verify_finite
@@ -53,6 +54,55 @@ def verify_operation(
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id in CHART_TASKS:
+        chart_source_payload = {
+            key: value for key, value in public.items() if key != "candidate_answer"
+        }
+        chart_sources = tuple(
+            ChartSource.model_validate(
+                invoke("chart_source", chart_source_payload, ChartSource, index)
+            )
+            for index in range(2)
+        )
+        chart_answers: tuple[ChartAnswer, ChartAnswer] | None = None
+        if instruction.task_id != "chart_data_reconstruction":
+            chart_answer_payload = {
+                key: public[key]
+                for key in ("target_language", "question", "candidate_answer", "expected_operation")
+                if key in public
+            }
+            extracted = tuple(
+                ChartAnswer.model_validate(
+                    invoke("chart_answer", chart_answer_payload, ChartAnswer, index)
+                )
+                for index in range(2)
+            )
+            chart_answers = (extracted[0], extracted[1])
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        content, schema = verify_chart(
+            instruction.task_id,
+            (chart_sources[0], chart_sources[1]),
+            chart_answers,
+            {item.name: item.value for item in instruction.public_parameters},
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        chart_evidence = tuple(
+            item.model_dump(mode="json") for item in (*chart_sources, *(chart_answers or ()))
+        )
+        for name in instruction.verification_contracts:
+            if name in {"chart_encoding_check", "closed_set_check", "schema_check"}:
+                verdict = schema if name == "schema_check" else content
+                results.append(
+                    OperationCheck(
+                        name,
+                        verdict or GateVerdict.UNKNOWN,
+                        chart_evidence,
+                        "Chart controller check: " + (verdict or GateVerdict.UNKNOWN).value,
+                    )
+                )
     if instruction.task_id in TABLE_TASKS:
         table_source_payload = {
             key: value for key, value in public.items() if key != "candidate_answer"
@@ -184,12 +234,17 @@ def verify_operation(
                     )
                 )
     for name in instruction.verification_contracts:
-        if instruction.task_id in FINITE_TASKS | QUANTITATIVE_TASKS | TABLE_TASKS and name in {
-            "closed_set_check",
-            "exact_arithmetic_check",
-            "table_structure_check",
-            "schema_check",
-        }:
+        if (
+            instruction.task_id in FINITE_TASKS | QUANTITATIVE_TASKS | TABLE_TASKS | CHART_TASKS
+            and name
+            in {
+                "closed_set_check",
+                "exact_arithmetic_check",
+                "table_structure_check",
+                "schema_check",
+                "chart_encoding_check",
+            }
+        ):
             continue
         if name == "dual_visual_review":
             continue

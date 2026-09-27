@@ -55,7 +55,23 @@ REGISTRATIONS = {
         ValidatorRegistration(
             "schema_check",
             "1",
-            supported_tasks=frozenset({"table_structure_reconstruction"}),
+            supported_tasks=frozenset(
+                {"table_structure_reconstruction", "chart_data_reconstruction"}
+            ),
+        ),
+        ValidatorRegistration(
+            "chart_encoding_check",
+            "1",
+            supported_tasks=frozenset(
+                {
+                    "chart_value_lookup",
+                    "chart_comparison",
+                    "chart_extremum_ranking",
+                    "chart_trend_summary",
+                    "chart_series_relation",
+                    "chart_data_reconstruction",
+                }
+            ),
         ),
     )
 }

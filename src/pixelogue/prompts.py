@@ -18,6 +18,16 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "chart_source": """Read only the image, question, public history and bound operation.
+Recover the y-axis scale, units and labeled ticks, legend and requested marks. Give each mark its
+series, category, image region, value interval and honest precision. Exact values require visible
+printed labels; pixel estimates need intervals and declared decimal precision. For ranking, trends
+and relations certify the complete relevant series; missing series or axes mean UNKNOWN. Respect
+linear and log axes. Never inspect or anticipate the candidate answer.""",
+    "chart_answer": """Parse only the candidate answer and public operation, without an image.
+Quote the exact answer substring. Return one numeric value, relation, tied rank groups or trend.
+Keep signs, units and decimal places as written. Ambiguous or multiple interpretations are UNKNOWN.
+Do not infer values or structure from an expected chart result.""",
     "table_source": """Read only the image, public question and bound operation without an answer.
 Reconstruct each relevant table as a complete rectangular grid. Preserve every blank as an explicit
 cell and every merged cell with its exact row/column span, text, kind and image region. Distinguish
@@ -277,6 +287,12 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "chart_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "chart_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
     "table_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),
