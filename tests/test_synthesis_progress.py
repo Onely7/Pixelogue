@@ -12,8 +12,10 @@ from typer.testing import CliRunner
 from pixelogue.cli import app
 from pixelogue.config import load_config
 from pixelogue.contracts import ConversationArtifact
-from pixelogue.io import write_jsonl
+from pixelogue.io import write_json, write_jsonl
+from pixelogue.operations import PreparedDataset
 from pixelogue.progress import synthesis_progress
+from pixelogue.serialization import canonical_hash
 
 
 def test_waiting_updates_and_thread_cleanup_on_failure():
@@ -47,6 +49,15 @@ def test_synthesize_cli_progress_leaves_stdout_json_and_uses_scheduled_total(
     image, root = image_artifact
     manifest = tmp_path / "images.jsonl"
     write_jsonl(manifest, [image, image, image])
+    write_json(
+        root / "manifest.json",
+        PreparedDataset(
+            images=(image, image, image),
+            failures=(),
+            splits={},
+            manifest_hash=canonical_hash(image.model_dump(mode="json")),
+        ),
+    )
     config = load_config(Path("configs/pilot.yaml"))
     config = config.model_copy(
         update={

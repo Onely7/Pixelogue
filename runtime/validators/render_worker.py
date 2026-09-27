@@ -280,6 +280,7 @@ def main() -> None:
     resource.setrlimit(resource.RLIMIT_CPU, (15, 15))
     resource.setrlimit(resource.RLIMIT_AS, (3_000_000_000, 3_000_000_000))
     resource.setrlimit(resource.RLIMIT_FSIZE, (1_000_000, 1_000_000))
+    resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
     try:
         request = json.loads(sys.stdin.read(100_001))
         width, height = request["width"], request["height"]

@@ -52,11 +52,20 @@ from pixelogue.images import assign_split, canonicalize_image, group_visual_sour
 from pixelogue.ledger import Requirement, RequirementInventory
 from pixelogue.pattern_verifiers import PatternAnswer, PatternSource
 from pixelogue.quantitative_verifiers import QuantityAnswer, QuantitySource
+from pixelogue.research_ablation import AblationCase, AblationPlan, AblationResult
+from pixelogue.research_audit import AnswerBallot, AuditCase, AuditPack, QuestionBallot
+from pixelogue.research_exposure import ExposureCase, ExposurePlan, ExposureResult
+from pixelogue.research_history import HistoryStudyCase, HistoryTrialResult
 from pixelogue.rules import ComputationInventory, NumericValue, SetCheck, SetInventory
 from pixelogue.scale_verifier import ScaleAnswer, ScaleSource
 from pixelogue.serialization import canonical_hash
 from pixelogue.specialist_chemistry import ChemicalAnswer, ChemicalSource
 from pixelogue.specialist_circuit import CircuitAnswer, CircuitSource
+from pixelogue.specialist_evaluation import (
+    SpecialistEvaluationCase,
+    SpecialistEvaluationResult,
+    SpecialistStageResult,
+)
 from pixelogue.specialist_geometry import GeometryNumericAnswer, GeometryProblem
 from pixelogue.specialist_music import MusicAnswer, MusicSource
 from pixelogue.specialist_render import RenderAnswer, RenderSource
@@ -149,6 +158,21 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             UIActionAnswer,
             RenderSource,
             RenderAnswer,
+            SpecialistEvaluationCase,
+            SpecialistEvaluationResult,
+            SpecialistStageResult,
+            ExposureCase,
+            ExposurePlan,
+            ExposureResult,
+            AuditCase,
+            AuditPack,
+            QuestionBallot,
+            AnswerBallot,
+            HistoryStudyCase,
+            HistoryTrialResult,
+            AblationCase,
+            AblationPlan,
+            AblationResult,
             InstructionSelection,
             TextPayload,
             QuestionFit,
@@ -309,6 +333,12 @@ def prepare_sources(
         for image in grouped
     }
     body = {
+        "source_manifest_hash": canonical_hash(
+            [record.model_dump(mode="json") for record in sources]
+        ),
+        "rights_manifest_hash": canonical_hash(
+            [record.model_dump(mode="json") for record in rights_records]
+        ),
         "images": [image.model_dump(mode="json") for image in grouped],
         "failures": [failure.model_dump(mode="json") for failure in failures],
         "splits": splits,

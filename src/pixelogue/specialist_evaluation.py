@@ -1,0 +1,409 @@
+"""Evaluation-only specialist execution and resumable confirmation calibration."""
+
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, model_validator
+
+from pixelogue.calibration import (
+    CalibrationCertificate,
+    CalibrationManifest,
+    CalibrationObservation,
+    calibrate_observations,
+    model_calibration_lock,
+)
+from pixelogue.catalog import task_catalog
+from pixelogue.config import PixelogueConfig, StrictModel
+from pixelogue.contracts import ImageArtifact, InstructionCandidate, PublicMessage, SourcePurpose
+from pixelogue.errors import ExecutionError, ExternalInputError
+from pixelogue.io import read_json, write_json
+from pixelogue.serialization import canonical_hash
+from pixelogue.serving import ModelImage, VllmClient
+from pixelogue.store import RunStore
+from pixelogue.task_evidence import PublicParameter
+from pixelogue.task_registry import registration
+from pixelogue.task_verification import verify_operation
+
+ANSWER_ONLY_STAGES = frozenset(
+    {
+        "finite_answer",
+        "quantity_answer",
+        "table_answer",
+        "chart_answer",
+        "graph_answer",
+        "scale_answer",
+        "pattern_answer",
+        "geometry_answer",
+        "specialist_geometry_answer",
+    }
+)
+
+
+class SpecialistEvaluationCase(StrictModel):
+    """Frozen specialist input with independent gold labels kept controller-side."""
+
+    case_id: str = Field(min_length=1)
+    image: ImageArtifact
+    task_id: str = Field(min_length=1)
+    domain: str = Field(min_length=1)
+    scope_id: str = Field(min_length=1)
+    view_id: str = Field(min_length=1)
+    visible_scope: str = Field(min_length=1)
+    public_parameters: tuple[PublicParameter, ...]
+    target_language: Literal["en", "ja", "zh-Hans"]
+    public_history: tuple[PublicMessage, ...]
+    question: str = Field(min_length=1)
+    candidate_answer: str = Field(min_length=1)
+    split: Literal["development", "confirmation"]
+    gold_accept: bool | None = None
+    label_provenance: str | None = None
+
+    @model_validator(mode="after")
+    def check_scope(self) -> SpecialistEvaluationCase:
+        """Restrict this bypass to held-out specialists and independent labels."""
+        task = next((item for item in task_catalog().tasks if item.id == self.task_id), None)
+        if task is None or task.status != "validator_gated_extension":
+            raise ValueError("Evaluation-only route requires a specialist task")
+        if self.image.purpose is not SourcePurpose.EVALUATION:
+            raise ValueError("Specialist confirmation images must be evaluation-only")
+        if self.view_id != self.image.full_view.view_id:
+            raise ValueError("Specialist scope references a different delivered image view")
+        if self.split == "confirmation" and (self.gold_accept is None or not self.label_provenance):
+            raise ValueError("Confirmation needs an independent gold label provenance")
+        return self
+
+
+class SpecialistEvaluationResult(StrictModel):
+    """One evaluated case or explicit infrastructure failure."""
+
+    trial_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    case_id: str
+    status: Literal["COMPLETE", "FAILED"]
+    verdict: Literal["MET", "NOT_MET", "UNKNOWN"] | None
+    validator_name: str
+    validator_version: str
+    model_locks: tuple[str, str]
+    response_artifact_hashes: tuple[str, str] | None
+    error: str | None
+    gold_accept: bool | None
+    split: Literal["development", "confirmation"]
+    image_group_id: str
+    domain: str
+    task_id: str
+
+
+def _specialist_validator(case: SpecialistEvaluationCase) -> tuple[str, str]:
+    task = next(item for item in task_catalog().tasks if item.id == case.task_id)
+    names = [name for name in task.verification_contracts if name != "dual_visual_review"]
+    if (
+        len(names) != 1
+        or (entry := registration(names[0])) is None
+        or not entry.supports(case.task_id)
+    ):
+        raise ValueError("Specialist has no exact task-specific validator")
+    return entry.name, entry.version
+
+
+def _instruction(case: SpecialistEvaluationCase) -> InstructionCandidate:
+    task = next(item for item in task_catalog().tasks if item.id == case.task_id)
+    return InstructionCandidate(
+        candidate_id=canonical_hash({"evaluation_case": case.case_id, "task": case.task_id}),
+        task_id=task.id,
+        family=task.family,
+        profile="normal",
+        visible_scope=case.visible_scope,
+        instruction_summary=task.definition_en,
+        required_capabilities=task.required_capabilities,
+        catalog_version=task_catalog().version,
+        scope_id=case.scope_id,
+        view_id=case.view_id,
+        evidence_refs=("evaluation-only-scoped-image",),
+        public_parameters=case.public_parameters,
+        verification_contracts=task.verification_contracts,
+        calibrated_domain=case.domain,
+    )
+
+
+def specialist_trial_id(case: SpecialistEvaluationCase, config: PixelogueConfig) -> str:
+    """Exclude gold labels from model-call identity but bind visible input and code."""
+    return canonical_hash(
+        {
+            "case": case.model_dump(mode="json", exclude={"gold_accept", "label_provenance"}),
+            "config": config.config_hash,
+            "models": (
+                model_calibration_lock(config.models.generator_a),
+                model_calibration_lock(config.models.generator_b),
+            ),
+        }
+    )
+
+
+def run_specialist_evaluation(
+    cases: tuple[SpecialistEvaluationCase, ...],
+    config: PixelogueConfig,
+    artifact_root: Path,
+    output_dir: Path,
+    run_id: str,
+    *,
+    retry_failed: bool = False,
+) -> dict[str, int]:
+    """Run uncalibrated validators only through a separate held-out route."""
+    if len({case.case_id for case in cases}) != len(cases):
+        raise ValueError("Specialist case IDs must be unique")
+    input_hash = canonical_hash([case.model_dump(mode="json") for case in cases])
+    freeze = {
+        "config_hash": config.config_hash,
+        "input_hash": input_hash,
+        "case_ids": [case.case_id for case in cases],
+    }
+    freeze_path = output_dir / "input.json"
+    if freeze_path.exists():
+        if read_json(freeze_path, SpecialistInputManifest).model_dump(mode="json") != freeze:
+            raise ExternalInputError("SPECIALIST_INPUT_CHANGED", "Evaluation input differs")
+    else:
+        write_json(freeze_path, freeze)
+    locks = (
+        model_calibration_lock(config.models.generator_a),
+        model_calibration_lock(config.models.generator_b),
+    )
+    stats = {"completed": 0, "failed": 0, "reused": 0, "stage_reused": 0}
+    with RunStore(
+        config.storage.run_root, run_id, require_local_wal=config.storage.require_local_wal
+    ) as store:
+        store.initialize_run(run_id, canonical_hash(freeze), config.profile)
+        clients = (
+            VllmClient(config.models.generator_a, config.runtime, run_id=run_id, store=store),
+            VllmClient(config.models.generator_b, config.runtime, run_id=run_id, store=store),
+        )
+        try:
+            for case in cases:
+                trial_id = specialist_trial_id(case, config)
+                result_path = output_dir / "results" / f"{trial_id}.json"
+                if result_path.exists():
+                    result = read_json(result_path, SpecialistEvaluationResult)
+                    if result.trial_id != trial_id:
+                        raise ExternalInputError(
+                            "SPECIALIST_RESULT_CHANGED", "Saved result differs"
+                        )
+                    if result.status == "COMPLETE" or not retry_failed:
+                        stats["reused"] += 1
+                        continue
+                name, version = _specialist_validator(case)
+                view = case.image.full_view
+                image = ModelImage(
+                    view_id=view.view_id,
+                    path=artifact_root / view.relative_path,
+                    encoded_sha256=view.encoded_sha256,
+                    media_type=view.media_type,
+                )
+                payload = {
+                    "target_language": case.target_language,
+                    "public_history": [
+                        item.model_dump(mode="json") for item in case.public_history
+                    ],
+                    "question": case.question,
+                    "candidate_answer": case.candidate_answer,
+                    "image_views": [
+                        {
+                            "view_id": view.view_id,
+                            "encoded_sha256": view.encoded_sha256,
+                            "width": str(view.width),
+                            "height": str(view.height),
+                        }
+                    ],
+                }
+
+                def invoke(
+                    stage: str,
+                    body: dict[str, object],
+                    model: type[BaseModel],
+                    judge: int,
+                    image: ModelImage = image,
+                    trial_id: str = trial_id,
+                ) -> BaseModel:
+                    stage_id = canonical_hash(
+                        {
+                            "trial": trial_id,
+                            "evaluator": judge,
+                            "stage": stage,
+                            "schema": model.model_json_schema(),
+                            "body": body,
+                        }
+                    )
+                    stage_path = output_dir / "stages" / f"{stage_id}.json"
+                    if stage_path.exists():
+                        saved = read_json(stage_path, SpecialistStageResult)
+                        if saved.stage_id != stage_id or saved.trial_id != trial_id:
+                            raise ExternalInputError(
+                                "SPECIALIST_STAGE_CHANGED", "Saved evaluator stage differs"
+                            )
+                        stats["stage_reused"] += 1
+                        return model.model_validate(saved.value)
+                    response = clients[judge].invoke(
+                        stage,
+                        body,
+                        () if stage in ANSWER_ONLY_STAGES else (image,),
+                        model,
+                        max_tokens=2048,
+                        temperature=0.0,
+                        seed=config.seed,
+                        bypass_cache=judge > 0,
+                    )
+                    value = model.model_validate(response.value)
+                    write_json(
+                        stage_path,
+                        SpecialistStageResult(
+                            stage_id=stage_id,
+                            trial_id=trial_id,
+                            evaluator="generator_a" if judge == 0 else "generator_b",
+                            stage=stage,
+                            schema_name=model.__name__,
+                            value=value.model_dump(mode="json"),
+                            request_hash=response.request_hash,
+                            response_hash=response.response_hash,
+                            prompt_tokens=response.prompt_tokens,
+                            completion_tokens=response.completion_tokens,
+                        ),
+                    )
+                    return value
+
+                try:
+                    checks = verify_operation(_instruction(case), payload, invoke, image.path)
+                    check = next(item for item in checks if item.name == name)
+                    verdict = check.verdict.value
+                    if verdict not in {"MET", "NOT_MET", "UNKNOWN"}:
+                        raise ExecutionError(
+                            "SPECIALIST_VERDICT_INVALID", "Invalid specialist verdict"
+                        )
+                    artifact_hashes = tuple(
+                        store.write_json_artifact("specialist-extractions", evidence)
+                        for evidence in check.evidence[:2]
+                    )
+                    if len(artifact_hashes) != 2:
+                        raise ExecutionError(
+                            "SPECIALIST_EVIDENCE_MISSING", "Need two blind readings"
+                        )
+                    result = SpecialistEvaluationResult(
+                        trial_id=trial_id,
+                        case_id=case.case_id,
+                        status="COMPLETE",
+                        verdict=verdict,
+                        validator_name=name,
+                        validator_version=version,
+                        model_locks=locks,
+                        response_artifact_hashes=(artifact_hashes[0], artifact_hashes[1]),
+                        error=None,
+                        gold_accept=case.gold_accept,
+                        split=case.split,
+                        image_group_id=case.image.visual_group_id,
+                        domain=case.domain,
+                        task_id=case.task_id,
+                    )
+                    stats["completed"] += 1
+                except (ExecutionError, StopIteration) as exc:
+                    result = SpecialistEvaluationResult(
+                        trial_id=trial_id,
+                        case_id=case.case_id,
+                        status="FAILED",
+                        verdict=None,
+                        validator_name=name,
+                        validator_version=version,
+                        model_locks=locks,
+                        response_artifact_hashes=None,
+                        error=str(exc),
+                        gold_accept=case.gold_accept,
+                        split=case.split,
+                        image_group_id=case.image.visual_group_id,
+                        domain=case.domain,
+                        task_id=case.task_id,
+                    )
+                    stats["failed"] += 1
+                write_json(result_path, result)
+        finally:
+            for client in clients:
+                client.client.close()
+    return stats
+
+
+class SpecialistInputManifest(StrictModel):
+    """Frozen local evaluation input and exact code/config identity."""
+
+    config_hash: str
+    input_hash: str
+    case_ids: tuple[str, ...]
+
+
+class SpecialistStageResult(StrictModel):
+    """One successful model call saved independently for sequential evaluator runs."""
+
+    stage_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    trial_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluator: Literal["generator_a", "generator_b"]
+    stage: str
+    schema_name: str
+    value: dict[str, Any]
+    request_hash: str
+    response_hash: str
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    cost_usd: float | None = None
+
+
+def build_calibration_manifest(
+    results: tuple[SpecialistEvaluationResult, ...],
+) -> tuple[CalibrationManifest, dict[str, Any]]:
+    """Certify only complete held-out groups; retain every incomplete case in report."""
+    groups: dict[tuple[str, str, tuple[str, str], str], list[CalibrationObservation]] = defaultdict(
+        list
+    )
+    pending: list[dict[str, str]] = []
+    for result in results:
+        if (
+            result.status != "COMPLETE"
+            or result.verdict is None
+            or result.response_artifact_hashes is None
+        ):
+            pending.append({"case_id": result.case_id, "reason": result.error or "unprocessed"})
+            continue
+        if result.split != "confirmation" or result.gold_accept is None:
+            pending.append({"case_id": result.case_id, "reason": "development_or_unlabeled"})
+            continue
+        observation = CalibrationObservation(
+            case_id=result.case_id,
+            image_group_id=result.image_group_id,
+            task_id=result.task_id,
+            domain=result.domain,
+            split="confirmation",
+            gold_accept=result.gold_accept,
+            verdict=result.verdict,
+            model_locks=result.model_locks,
+            validator_version=result.validator_version,
+            response_artifact_hashes=result.response_artifact_hashes,
+        )
+        key = (result.task_id, result.domain, result.model_locks, result.validator_version)
+        groups[key].append(observation)
+    certified: list[CalibrationObservation] = []
+    certificates: list[CalibrationCertificate] = []
+    for _key, observations in sorted(groups.items()):
+        if not any(item.gold_accept for item in observations) or not any(
+            not item.gold_accept for item in observations
+        ):
+            pending.extend(
+                {"case_id": item.case_id, "reason": "missing_positive_or_negative"}
+                for item in observations
+            )
+            continue
+        certificate = calibrate_observations(observations)
+        certified.extend(observations)
+        certificates.append(certificate)
+    manifest = CalibrationManifest(observations=tuple(certified), certificates=tuple(certificates))
+    return manifest, {
+        "input_results": len(results),
+        "certificates": len(certificates),
+        "eligible": sum(item.eligible for item in certificates),
+        "pending": pending,
+        "pending_by_reason": dict(Counter(item["reason"] for item in pending)),
+    }

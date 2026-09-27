@@ -83,3 +83,17 @@ def test_music21_score_abstains_on_incomplete_or_disputed_reading() -> None:
         verify_music((score, score), score.domain, "2-2", "s", "v", answer)[0]
         is GateVerdict.UNKNOWN
     )
+
+
+def test_key_signature_changes_pitch_without_changing_staff_position() -> None:
+    score = _score().model_copy(update={"key_sharps": 1})
+    answer = json.dumps(
+        {
+            "events": [
+                {"pitch": "E4", "duration": "1", "tie": None},
+                {"pitch": "F#4", "duration": "1", "tie": None},
+                {"pitch": None, "duration": "2", "tie": None},
+            ]
+        }
+    )
+    assert verify_music((score, score), score.domain, "1-1", "s", "v", answer)[0] is GateVerdict.MET

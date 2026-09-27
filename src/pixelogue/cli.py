@@ -22,6 +22,7 @@ from pixelogue.contracts import (
 from pixelogue.doctor import diagnose
 from pixelogue.errors import (
     CapabilityError,
+    ExternalInputError,
     PixelogueError,
     ShortfallError,
     SolverUnknownError,
@@ -33,6 +34,7 @@ from pixelogue.local_train import prepare_local_train
 from pixelogue.open_images import OpenImagesDownloader, OpenImagesPinnedRecord
 from pixelogue.operations import (
     FrozenPool,
+    PreparedDataset,
     compile_configuration,
     make_frozen_pool,
     prepare_sources,
@@ -43,15 +45,50 @@ from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.planner import exact_schedule
 from pixelogue.profiling import profile_database
 from pixelogue.progress import preparation_progress, synthesis_progress
+from pixelogue.research_ablation import (
+    AblationCase,
+    AblationPlan,
+    build_ablation_plan,
+    run_ablation_plan,
+    write_ablation_reports,
+)
+from pixelogue.research_audit import (
+    Adjudication,
+    AnswerBallot,
+    AuditCase,
+    AuditPack,
+    QuestionBallot,
+    build_audit_pack,
+    resolve_audit,
+    write_audit_pack,
+    write_audit_resolution,
+)
+from pixelogue.research_exposure import (
+    ExposureCase,
+    ExposurePlan,
+    build_exposure_plan,
+    freeze_exposure_plan,
+    run_exposure_trials,
+    write_exposure_reports,
+)
+from pixelogue.research_history import HistoryStudyCase, run_history_study
 from pixelogue.selection import (
     SelectionPolicy,
     audit_selection,
     bind_audit,
     select_candidates,
 )
+from pixelogue.serialization import canonical_hash
 from pixelogue.serving import VllmClient
+from pixelogue.specialist_evaluation import (
+    SpecialistEvaluationCase,
+    SpecialistEvaluationResult,
+    build_calibration_manifest,
+    run_specialist_evaluation,
+)
 from pixelogue.sscd import SscdEmbedder
 from pixelogue.store import RunStore
+from pixelogue.task_status import task_status_report, write_task_status_reports
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -59,6 +96,195 @@ app = typer.Typer(
 )
 
 ConfigOption = Annotated[Path, typer.Option("--config", exists=True, dir_okay=False)]
+
+
+@app.command("research-exposure")
+def research_exposure_command(
+    cases: Annotated[Path, typer.Option("--cases", exists=True, dir_okay=False)],
+    artifact_root: Annotated[Path, typer.Option("--artifact-root", exists=True, file_okay=False)],
+    output_dir: Annotated[Path, typer.Option("--output-dir", file_okay=False)],
+    config_path: ConfigOption = Path("configs/pilot.yaml"),
+    evaluator: Literal["generator_a", "generator_b"] = "generator_a",
+    repetitions: Annotated[int, typer.Option(min=1, max=20)] = 1,
+    seed: int = 20260915,
+    plan_only: bool = False,
+    retry_failed: bool = False,
+) -> None:
+    """Freeze and run research-only hidden, plausible and incorrect answer trials."""
+    config = load_config(config_path)
+    plan = build_exposure_plan(
+        tuple(read_jsonl(cases, ExposureCase)), config, evaluator, repetitions, seed
+    )
+    freeze_exposure_plan(output_dir / "plan.json", plan)
+    if plan_only:
+        typer.echo(json.dumps({"plan_hash": plan.plan_hash, "trials": len(plan.trials)}))
+        return
+    stats = run_exposure_trials(plan, config, artifact_root, output_dir, retry_failed=retry_failed)
+    report = write_exposure_reports(plan, output_dir)
+    typer.echo(
+        json.dumps(
+            {
+                "plan_hash": plan.plan_hash,
+                "run": stats,
+                "paired": report["paired_plausible_minus_hidden"],
+            }
+        )
+    )
+
+
+@app.command("research-exposure-report")
+def research_exposure_report_command(
+    output_dir: Annotated[Path, typer.Option("--output-dir", exists=True, file_okay=False)],
+) -> None:
+    """Rebuild the research report from saved trial records without model calls."""
+    plan = read_json(output_dir / "plan.json", ExposurePlan)
+    typer.echo(json.dumps(write_exposure_reports(plan, output_dir)))
+
+
+@app.command("audit-pack")
+def audit_pack_command(
+    cases: Annotated[Path, typer.Option("--cases", exists=True, dir_okay=False)],
+    output_dir: Annotated[Path, typer.Option("--output-dir", file_okay=False)],
+    rate: Annotated[float, typer.Option(min=0.001, max=1.0)] = 0.1,
+    seed: int = 20260915,
+) -> None:
+    """Sample accepted, rejected and abstained outputs into blind local audit views."""
+    pack = build_audit_pack(tuple(read_jsonl(cases, AuditCase)), rate=rate, seed=seed)
+    write_audit_pack(pack, output_dir)
+    typer.echo(
+        json.dumps(
+            {
+                "pack_hash": pack.pack_hash,
+                "frame_counts": pack.frame_counts,
+                "selected_counts": pack.selected_counts,
+            }
+        )
+    )
+
+
+@app.command("audit-resolve")
+def audit_resolve_command(
+    pack_path: Annotated[Path, typer.Option("--pack", exists=True, dir_okay=False)],
+    question_votes: Annotated[Path, typer.Option("--question-votes", exists=True, dir_okay=False)],
+    answer_votes: Annotated[Path, typer.Option("--answer-votes", exists=True, dir_okay=False)],
+    output: Annotated[Path, typer.Option("--output", dir_okay=False)],
+    adjudications: Annotated[
+        Path | None, typer.Option("--adjudications", exists=True, dir_okay=False)
+    ] = None,
+    required_raters: Annotated[int, typer.Option(min=2, max=10)] = 3,
+) -> None:
+    """Resolve independent human votes while preserving originals and unknowns."""
+    pack = read_json(pack_path, AuditPack)
+    report = resolve_audit(
+        pack,
+        tuple(read_jsonl(question_votes, QuestionBallot)),
+        tuple(read_jsonl(answer_votes, AnswerBallot)),
+        tuple(read_jsonl(adjudications, Adjudication)) if adjudications else (),
+        required_raters=required_raters,
+    )
+    write_audit_resolution(report, output)
+    typer.echo(json.dumps({"output": str(output), "items": len(pack.items)}))
+
+
+@app.command("research-history")
+def research_history_command(
+    cases: Annotated[Path, typer.Option("--cases", exists=True, dir_okay=False)],
+    artifact_root: Annotated[Path, typer.Option("--artifact-root", exists=True, file_okay=False)],
+    output_dir: Annotated[Path, typer.Option("--output-dir", file_okay=False)],
+    config_path: ConfigOption = Path("configs/pilot.yaml"),
+    retry_failed: bool = False,
+) -> None:
+    """Check exact committed spans and two-stage counterfactual history witnesses."""
+    report = run_history_study(
+        tuple(read_jsonl(cases, HistoryStudyCase)),
+        load_config(config_path),
+        artifact_root,
+        output_dir,
+        retry_failed=retry_failed,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "study_hash": report["study_hash"],
+                "strong_dependency": report["strong_dependency"],
+                "cases": report["cases"],
+            }
+        )
+    )
+
+
+@app.command("evaluate-specialist")
+def evaluate_specialist_command(
+    cases: Annotated[Path, typer.Option("--cases", exists=True, dir_okay=False)],
+    artifact_root: Annotated[Path, typer.Option("--artifact-root", exists=True, file_okay=False)],
+    output_dir: Annotated[Path, typer.Option("--output-dir", file_okay=False)],
+    config_path: ConfigOption = Path("configs/pilot.yaml"),
+    run_id: Annotated[str, typer.Option("--run-id")] = "specialist-evaluation",
+    retry_failed: bool = False,
+) -> None:
+    """Exercise uncalibrated specialists on held-out inputs outside normal selection."""
+    stats = run_specialist_evaluation(
+        tuple(read_jsonl(cases, SpecialistEvaluationCase)),
+        load_config(config_path),
+        artifact_root,
+        output_dir,
+        run_id,
+        retry_failed=retry_failed,
+    )
+    typer.echo(json.dumps(stats))
+
+
+@app.command("calibration-build")
+def calibration_build_command(
+    results_dir: Annotated[Path, typer.Option("--results-dir", exists=True, file_okay=False)],
+    output: Annotated[Path, typer.Option("--output", dir_okay=False)],
+    report_path: Annotated[Path, typer.Option("--report", dir_okay=False)],
+) -> None:
+    """Compute exact model-bound confirmation certificates and pending-case counts."""
+    results = tuple(
+        read_json(path, SpecialistEvaluationResult) for path in sorted(results_dir.glob("*.json"))
+    )
+    manifest, report = build_calibration_manifest(results)
+    write_json(output, manifest)
+    write_json(report_path, report)
+    typer.echo(json.dumps(report))
+
+
+@app.command("research-ablation")
+def research_ablation_command(
+    cases: Annotated[Path, typer.Option("--cases", exists=True, dir_okay=False)],
+    artifact_root: Annotated[Path, typer.Option("--artifact-root", exists=True, file_okay=False)],
+    output_dir: Annotated[Path, typer.Option("--output-dir", file_okay=False)],
+    config_path: ConfigOption = Path("configs/pilot.yaml"),
+    seed: int = 20260915,
+    run_id: Annotated[str, typer.Option("--run-id")] = "research-ablation",
+    plan_only: bool = False,
+    retry_failed: bool = False,
+) -> None:
+    """Run the 18 fixed-question comparison cells outside training export."""
+    config = load_config(config_path)
+    plan = build_ablation_plan(tuple(read_jsonl(cases, AblationCase)), config, seed)
+    plan_path = output_dir / "plan.json"
+    if plan_path.exists() and read_json(plan_path, AblationPlan) != plan:
+        raise ExternalInputError("ABLATION_PLAN_CHANGED", "Existing plan differs")
+    write_json(plan_path, plan)
+    if plan_only:
+        typer.echo(json.dumps({"plan_hash": plan.plan_hash, "trials": len(plan.trials)}))
+        return
+    stats = run_ablation_plan(
+        plan, config, artifact_root, output_dir, run_id=run_id, retry_failed=retry_failed
+    )
+    write_ablation_reports(plan, output_dir)
+    typer.echo(json.dumps({"plan_hash": plan.plan_hash, "run": stats}))
+
+
+@app.command("research-ablation-report")
+def research_ablation_report_command(
+    output_dir: Annotated[Path, typer.Option("--output-dir", exists=True, file_okay=False)],
+) -> None:
+    """Rebuild depth-aware factorial reports from completed research trials."""
+    plan = read_json(output_dir / "plan.json", AblationPlan)
+    typer.echo(json.dumps(write_ablation_reports(plan, output_dir)))
 
 
 def _clients(
@@ -88,6 +314,18 @@ def compile_command(
     compiled = compile_configuration(load_config(config_path))
     write_json(output, compiled)
     typer.echo(json.dumps({"output": str(output), "compiled_hash": compiled["compiled_hash"]}))
+
+
+@app.command("task-status")
+def task_status_command(
+    config_path: ConfigOption = Path("configs/specialist-pilot.yaml"),
+    junit: Annotated[Path | None, typer.Option("--junit", exists=True, dir_okay=False)] = None,
+    output_stem: Annotated[Path, typer.Option("--output-stem")] = Path("artifacts/task-status"),
+) -> None:
+    """Report each task's validator, CPU evidence, environment and selection state."""
+    report = task_status_report(load_config(config_path), junit)
+    write_task_status_reports(report, output_stem)
+    typer.echo(json.dumps({"output_stem": str(output_stem), "summary": report["summary"]}))
 
 
 @app.command()
@@ -302,12 +540,24 @@ def synthesize(
     """Generate and independently rate bounded multi-turn conversations."""
     config = load_config(config_path)
     image_records = read_jsonl(images, ImageArtifact)
+    prepared = read_json(artifact_root / "manifest.json", PreparedDataset)
+    if tuple(image_records) != prepared.images:
+        raise ExternalInputError(
+            "PREPARED_INPUT_CHANGED", "Image list differs from rights-checked manifest"
+        )
+    run_contract_hash = canonical_hash(
+        {
+            "config_hash": config.config_hash,
+            "prepared_manifest_hash": prepared.manifest_hash,
+            "image_records": [image.model_dump(mode="json") for image in image_records],
+        }
+    )
     with RunStore(
         config.storage.run_root,
         run_id,
         require_local_wal=config.storage.require_local_wal,
     ) as store:
-        store.initialize_run(run_id, config.config_hash, config.profile)
+        store.initialize_run(run_id, run_contract_hash, config.profile)
         selector, generator_a, generator_b = _clients(config_path, run_id, store)
         coordinator = SynthesisCoordinator(
             config,

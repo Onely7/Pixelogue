@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from fractions import Fraction
 from pathlib import Path
@@ -238,7 +239,7 @@ class TaskRuntimeConfig(StrictModel):
     """Bound candidate and evidence work independently of taxonomy size."""
 
     catalog_version: Literal["7.0"] = "7.0"
-    candidate_limit: Annotated[int, Field(ge=1, le=32)] = 8
+    candidate_limit: Annotated[int, Field(ge=1, le=8)] = 8
     max_scopes: Annotated[int, Field(ge=1, le=8)] = 4
     max_observations_per_scope: Annotated[int, Field(ge=1, le=50)] = 20
     evidence_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
@@ -313,7 +314,7 @@ class PixelogueConfig(StrictModel):
 
     @property
     def config_hash(self) -> str:
-        """Return a stable identity for all effective settings."""
+        """Bind settings, code, schemas, prompts, locks and pinned input identity."""
         from pixelogue.calibration import CalibrationManifest
         from pixelogue.catalog import TASK_CONTRACT_VERSION, load_task_catalog
         from pixelogue.io import read_json
@@ -323,6 +324,34 @@ class PixelogueConfig(StrictModel):
             if self.tasks.calibration_manifest is not None
             else None
         )
+        package_root = Path(__file__).resolve().parent
+        project_root = package_root.parents[1]
+        identity_files = [
+            *package_root.rglob("*.py"),
+            *package_root.joinpath("resources").rglob("*.yaml"),
+            *package_root.joinpath("resources").rglob("*.json"),
+        ]
+        identity_files.extend(
+            path
+            for path in (
+                project_root / "uv.lock",
+                project_root / "runtime/validators/pyproject.toml",
+                project_root / "runtime/validators/uv.lock",
+                project_root / "runtime/validators/worker.py",
+                project_root / "runtime/validators/render_worker.py",
+            )
+            if path.is_file()
+        )
+        code_identity = {
+            str(path.relative_to(project_root)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(identity_files)
+        }
+        image_manifest = self.data.open_images.image_ids_manifest
+        pinned_input_hash = (
+            hashlib.sha256(image_manifest.read_bytes()).hexdigest()
+            if image_manifest is not None and image_manifest.is_file()
+            else None
+        )
 
         return canonical_hash(
             {
@@ -330,6 +359,9 @@ class PixelogueConfig(StrictModel):
                 "task_catalog": load_task_catalog(),
                 "task_contract_version": TASK_CONTRACT_VERSION,
                 "calibration": calibration,
+                "source_and_lock_files": code_identity,
+                "config_schema": self.model_json_schema(),
+                "pinned_input_manifest_hash": pinned_input_hash,
             }
         )
 

@@ -65,6 +65,16 @@ def admission_report(
             "blocked_reasons": list(unavailable_reasons(task, settings, models)),
             "certified_domains": list(certified_domains(task, settings, models)),
             "required_verification_contracts": list(task.verification_contracts),
+            "validators": [
+                {
+                    "name": name,
+                    "version": entry.version if (entry := registration(name)) else None,
+                    "environment": entry.environment if entry else None,
+                    "dependency": entry.dependency if entry else None,
+                    "environment_error": entry.environment_error() if entry else "not implemented",
+                }
+                for name in task.verification_contracts
+            ],
         }
         for task in task_catalog().tasks
     }
@@ -301,6 +311,11 @@ def bind_candidates(
                 required_choices.add("target_binding")
             if not required_choices <= parameters.keys():
                 continue
+            if task.id == "ui_action_specification":
+                if parameters["action"].value == "input" and "input_text" not in parameters:
+                    continue
+                if parameters["action"].value != "input" and "input_text" in parameters:
+                    continue
             if task.id == "grounded_arithmetic" and "derived_forms" in parameters:
                 continue
             if (

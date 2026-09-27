@@ -18,6 +18,9 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "research_history_pre": """Research-only preanswer history-dependency check. Read the original and controller-substituted alternative public histories, question, image and operation. Decide whether the alternative history is plausible and whether it changes the condition needed for this question. Mere paraphrase is NOT_MET. No candidate answer is provided; do not infer one. Return MET, NOT_MET or UNKNOWN for plausibility and changed condition separately.""",
+    "research_history_post": """Research-only answer-dependent witness check. Read the original and plausible alternative public histories, the image, question and candidate answer. Determine whether that exact answer is valid under the original history and invalid under the alternative. Judge both separately as MET, NOT_MET or UNKNOWN. Do not assume a later turn is dependent by its index alone.""",
+    "research_question_exposure": """Research-only assessment of a proposed visual question. Judge five independent properties: grounded in the visible image and public history, aligned with the stated operation, answerable from those public inputs, nonredundant with prior questions, and natural in the target language. A proposed answer may be present; do not treat its plausibility as proof of any question property. Return MET, NOT_MET or UNKNOWN for every item with a short reason. Do not judge answer correctness or reveal private model metadata.""",
     "specialist_render_source": """Read only the original scoped image and public code reconstruction request, without candidate code. Record all visible labels exactly and the exact scoped region and image view. Missing labels, unreadable content, unsupported assets, animation or dynamic state are UNKNOWN. Do not infer original source code.""",
     "specialist_ui_source": """Read only the visible scoped screenshot and the public action goal, without a proposed answer. Identify uniquely named controls, enabled state, kind and normalized clickable region in the exact delivered view. An occluded, duplicate or ambiguous target is UNKNOWN. Do not execute any action or infer an unseen screen.""",
     "specialist_circuit_source": """Read only the scoped circuit drawing and public operation, without the candidate answer. Resolve registered two-terminal symbols, labeled components, each terminal-to-net connection, explicit junction dots and wire crossovers. Record regions for components and nets. An ambiguous crossing, unregistered symbol, dangling terminal or incomplete visible circuit is UNKNOWN. Do not infer electrical performance.""",
@@ -352,6 +355,39 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "research_history_pre": frozenset(
+        {
+            "target_language",
+            "public_history",
+            "alternative_history",
+            "question",
+            "selected_instruction",
+            "image_views",
+            "binding",
+        }
+    ),
+    "research_history_post": frozenset(
+        {
+            "target_language",
+            "public_history",
+            "alternative_history",
+            "question",
+            "selected_instruction",
+            "image_views",
+            "binding",
+            "candidate_answer",
+        }
+    ),
+    "research_question_exposure": frozenset(
+        {
+            "target_language",
+            "public_history",
+            "selected_instruction",
+            "question",
+            "image_views",
+            "shown_answer",
+        }
+    ),
     "specialist_render_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),
