@@ -121,9 +121,7 @@ def test_certificate_is_bound_to_active_models_and_manifest_content(tmp_path) ->
     assert (
         certified_domains(task, settings, load_config(Path("configs/standard.yaml")).models) == ()
     )
-    assert "missing validator: music_notation_validator" in unavailable_reasons(
-        task, settings, config.models
-    )
+    assert unavailable_reasons(task, settings, config.models) == ()
     original_hash = config.model_copy(update={"tasks": settings}).config_hash
     changed_records = records[:-1] + (records[-1].model_copy(update={"verdict": "UNKNOWN"}),)
     write_json(

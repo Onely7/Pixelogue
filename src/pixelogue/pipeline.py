@@ -887,6 +887,7 @@ class SynthesisCoordinator:
                     "scale_answer",
                     "pattern_answer",
                     "geometry_answer",
+                    "specialist_geometry_answer",
                 }
                 else (model_image,),
                 model,
@@ -1568,6 +1569,8 @@ class SynthesisCoordinator:
         return {
             "view_id": image.full_view.view_id,
             "encoded_sha256": image.full_view.encoded_sha256,
+            "width": str(image.full_view.width),
+            "height": str(image.full_view.height),
         }
 
     @staticmethod

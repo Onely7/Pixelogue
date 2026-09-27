@@ -31,6 +31,15 @@ from pixelogue.rules import (
     verify_set_inventories,
 )
 from pixelogue.scale_verifier import ScaleAnswer, ScaleSource, verify_scale
+from pixelogue.specialist_chemistry import ChemicalSource, verify_chemistry
+from pixelogue.specialist_circuit import CircuitSource, verify_circuit
+from pixelogue.specialist_geometry import (
+    GeometryNumericAnswer,
+    GeometryProblem,
+    verify_geometry_problem,
+)
+from pixelogue.specialist_music import MusicSource, verify_music
+from pixelogue.specialist_ui import UIActionSource, verify_ui_action
 from pixelogue.table_verifiers import TABLE_TASKS, TableAnswer, TableSource, verify_table
 from pixelogue.task_evidence import TranscriptInventory, VisualContractReview
 from pixelogue.task_runtime import operation_contract
@@ -60,6 +69,166 @@ def verify_operation(
     """
     results: list[OperationCheck] = []
     public = {**payload, "expected_operation": operation_contract(instruction)}
+    if instruction.task_id == "ui_action_specification":
+        source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
+        sources = tuple(
+            UIActionSource.model_validate(
+                invoke("specialist_ui_source", source_payload, UIActionSource, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        assert instruction.calibrated_domain is not None
+        parameters = {item.name: item.value for item in instruction.public_parameters}
+        verdict, calculation = verify_ui_action(
+            (sources[0], sources[1]),
+            instruction.calibrated_domain,
+            parameters,
+            instruction.scope_id,
+            instruction.view_id,
+            payload.get("image_views"),
+            payload["candidate_answer"],
+        )
+        results.append(
+            OperationCheck(
+                "ui_action_validator",
+                verdict,
+                (*tuple(item.model_dump(mode="json") for item in sources), calculation),
+                "View-bound UI action check: " + verdict.value,
+            )
+        )
+    if instruction.task_id == "circuit_structure_reading":
+        source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
+        sources = tuple(
+            CircuitSource.model_validate(
+                invoke("specialist_circuit_source", source_payload, CircuitSource, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        assert instruction.calibrated_domain is not None
+        parameters = {item.name: item.value for item in instruction.public_parameters}
+        verdict, calculation = verify_circuit(
+            (sources[0], sources[1]),
+            instruction.calibrated_domain,
+            parameters.get("notation"),
+            parameters.get("operation"),
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        results.append(
+            OperationCheck(
+                "circuit_graph_validator",
+                verdict,
+                (*tuple(item.model_dump(mode="json") for item in sources), calculation),
+                "Circuit netlist check: " + verdict.value,
+            )
+        )
+    if instruction.task_id == "chemical_structure_reading":
+        source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
+        sources = tuple(
+            ChemicalSource.model_validate(
+                invoke("specialist_chemistry_source", source_payload, ChemicalSource, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        assert instruction.calibrated_domain is not None
+        notation = next(
+            (item.value for item in instruction.public_parameters if item.name == "notation"), None
+        )
+        verdict, calculation = verify_chemistry(
+            (sources[0], sources[1]),
+            instruction.calibrated_domain,
+            notation,
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        results.append(
+            OperationCheck(
+                "chemical_graph_validator",
+                verdict,
+                (*tuple(item.model_dump(mode="json") for item in sources), calculation),
+                "Isolated chemical graph check: " + verdict.value,
+            )
+        )
+    if instruction.task_id == "music_notation_reading":
+        source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
+        sources = tuple(
+            MusicSource.model_validate(
+                invoke("specialist_music_source", source_payload, MusicSource, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        assert instruction.calibrated_domain is not None
+        bar_range = next(
+            (item.value for item in instruction.public_parameters if item.name == "bar_range"),
+            None,
+        )
+        verdict, calculation = verify_music(
+            (sources[0], sources[1]),
+            instruction.calibrated_domain,
+            bar_range,
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        results.append(
+            OperationCheck(
+                "music_notation_validator",
+                verdict,
+                (*tuple(item.model_dump(mode="json") for item in sources), calculation),
+                "Isolated notation check: " + verdict.value,
+            )
+        )
+    if instruction.task_id == "geometric_constraint_solving":
+        source_payload = {key: value for key, value in public.items() if key != "candidate_answer"}
+        answer_payload = {
+            key: public[key]
+            for key in ("target_language", "question", "candidate_answer", "expected_operation")
+            if key in public
+        }
+        geo_sources = tuple(
+            GeometryProblem.model_validate(
+                invoke("specialist_geometry_source", source_payload, GeometryProblem, index)
+            )
+            for index in range(2)
+        )
+        geo_answers = tuple(
+            GeometryNumericAnswer.model_validate(
+                invoke("specialist_geometry_answer", answer_payload, GeometryNumericAnswer, index)
+            )
+            for index in range(2)
+        )
+        assert instruction.scope_id is not None
+        assert instruction.view_id is not None
+        assert instruction.calibrated_domain is not None
+        verdict, calculation = verify_geometry_problem(
+            (geo_sources[0], geo_sources[1]),
+            (geo_answers[0], geo_answers[1]),
+            instruction.calibrated_domain,
+            instruction.scope_id,
+            instruction.view_id,
+            payload["candidate_answer"],
+        )
+        results.append(
+            OperationCheck(
+                "formal_geometry_validator",
+                verdict,
+                (
+                    *tuple(item.model_dump(mode="json") for item in (*geo_sources, *geo_answers)),
+                    calculation,
+                ),
+                "Isolated symbolic geometry check: " + verdict.value,
+            )
+        )
     if instruction.task_id == "geometric_relation_analysis":
         geometry_source_payload = {
             key: value for key, value in public.items() if key != "candidate_answer"
@@ -472,6 +641,22 @@ def verify_operation(
         if instruction.task_id in PATTERN_TASKS and name == "pattern_check":
             continue
         if instruction.task_id == "geometric_relation_analysis" and name == "geometry_check":
+            continue
+        if (
+            instruction.task_id == "geometric_constraint_solving"
+            and name == "formal_geometry_validator"
+        ):
+            continue
+        if instruction.task_id == "music_notation_reading" and name == "music_notation_validator":
+            continue
+        if (
+            instruction.task_id == "chemical_structure_reading"
+            and name == "chemical_graph_validator"
+        ):
+            continue
+        if instruction.task_id == "circuit_structure_reading" and name == "circuit_graph_validator":
+            continue
+        if instruction.task_id == "ui_action_specification" and name == "ui_action_validator":
             continue
         if (
             instruction.task_id

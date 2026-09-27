@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.util import find_spec
 from typing import Literal
+
+from pixelogue.specialist_env import environment_error
 
 ValidatorEnvironment = Literal["core", "symbolic", "notation", "chemistry", "renderer"]
 
@@ -25,8 +26,8 @@ class ValidatorRegistration:
 
     def environment_error(self) -> str | None:
         """Report a missing Python dependency without importing specialist code."""
-        if self.dependency is not None and find_spec(self.dependency) is None:
-            return f"missing {self.environment} dependency: {self.dependency}"
+        if self.environment != "core":
+            return environment_error(self.environment, self.dependency)
         return None
 
 
@@ -116,6 +117,37 @@ REGISTRATIONS = {
             "geometry_check",
             "1",
             supported_tasks=frozenset({"geometric_relation_analysis"}),
+        ),
+        ValidatorRegistration(
+            "formal_geometry_validator",
+            "1",
+            "symbolic",
+            "sympy",
+            frozenset({"geometric_constraint_solving"}),
+        ),
+        ValidatorRegistration(
+            "music_notation_validator",
+            "1",
+            "notation",
+            "music21",
+            frozenset({"music_notation_reading"}),
+        ),
+        ValidatorRegistration(
+            "chemical_graph_validator",
+            "1",
+            "chemistry",
+            "rdkit",
+            frozenset({"chemical_structure_reading"}),
+        ),
+        ValidatorRegistration(
+            "circuit_graph_validator",
+            "1",
+            supported_tasks=frozenset({"circuit_structure_reading"}),
+        ),
+        ValidatorRegistration(
+            "ui_action_validator",
+            "1",
+            supported_tasks=frozenset({"ui_action_specification"}),
         ),
     )
 }

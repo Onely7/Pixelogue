@@ -46,6 +46,9 @@ GUARD_PARAMETERS = {
     "relation_frame_defined": "frame",
     "fields_bound": "fields",
     "public_rule_input_defined": "input_values",
+    "music_context_complete": "bar_range",
+    "chemical_notation_resolved": "notation",
+    "circuit_notation_resolved": "notation",
 }
 
 

@@ -18,6 +18,19 @@ Finish the JSON object immediately; never emit repeated filler whitespace.
 
 
 STAGE_INSTRUCTIONS = {
+    "specialist_ui_source": """Read only the visible scoped screenshot and the public action goal, without a proposed answer. Identify uniquely named controls, enabled state, kind and normalized clickable region in the exact delivered view. An occluded, duplicate or ambiguous target is UNKNOWN. Do not execute any action or infer an unseen screen.""",
+    "specialist_circuit_source": """Read only the scoped circuit drawing and public operation, without the candidate answer. Resolve registered two-terminal symbols, labeled components, each terminal-to-net connection, explicit junction dots and wire crossovers. Record regions for components and nets. An ambiguous crossing, unregistered symbol, dangling terminal or incomplete visible circuit is UNKNOWN. Do not infer electrical performance.""",
+    "specialist_chemistry_source": """Read the scoped chemical drawing without seeing any candidate answer. Extract every atom, charge, bond and explicitly drawn aromatic ring in the supported nonstereo convention. Mark each source region and preserve atom IDs across bond endpoints. Unknown stereochemistry, ambiguous crossings, unresolved abbreviations or missing bonds require UNKNOWN. Do not infer unseen atoms or chemical intent.""",
+    "specialist_music_source": """Transcribe only the public contiguous complete measures from the visible single-voice staff. Record clef, key, meter, every note or rest, staff step from the bottom staff line, written duration, accidental and tie. Bind each event to its visible region. Never see or infer the candidate answer. Unknown context, incomplete bars, chords, multiple voices and unsupported symbols are UNKNOWN.""",
+    "specialist_geometry_source": """Read the visible geometric premises and the public question
+without seeing a proposed answer. Emit only registered facts: printed givens, right-angle marks,
+triangle angle sums, marked parallel equal angles, stated similarity ratios and explicitly marked
+right triangles. Bind each premise to an image region and copied evidence text. Identify the target
+and its length/angle domain. Approximate visual proportions do not establish exact facts. Unsupported
+theorems, ambiguous symbols, missing conditions or nonunique geometry are UNKNOWN.""",
+    "specialist_geometry_answer": """Parse only the candidate answer and public geometry question.
+Quote one exact rational or finite decimal value as written. No image or proof facts are supplied.
+Missing units, contradictory numbers or an expression outside the declared result form are UNKNOWN.""",
     "geometry_source": """Read only the image, public question and bound geometric relation.
 Record exact shape and relation facts with their image regions and support type. Equality,
 parallelism, perpendicularity and exact symmetry require an explicit drawn mark or printed
@@ -338,6 +351,24 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 
 
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "specialist_ui_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "specialist_circuit_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "specialist_chemistry_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "specialist_music_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "specialist_geometry_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "specialist_geometry_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
     "geometry_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),

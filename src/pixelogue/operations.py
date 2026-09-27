@@ -55,6 +55,11 @@ from pixelogue.quantitative_verifiers import QuantityAnswer, QuantitySource
 from pixelogue.rules import ComputationInventory, NumericValue, SetCheck, SetInventory
 from pixelogue.scale_verifier import ScaleAnswer, ScaleSource
 from pixelogue.serialization import canonical_hash
+from pixelogue.specialist_chemistry import ChemicalAnswer, ChemicalSource
+from pixelogue.specialist_circuit import CircuitAnswer, CircuitSource
+from pixelogue.specialist_geometry import GeometryNumericAnswer, GeometryProblem
+from pixelogue.specialist_music import MusicAnswer, MusicSource
+from pixelogue.specialist_ui import UIActionAnswer, UIActionSource
 from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_catalog import TaskCatalog
 from pixelogue.task_evidence import CandidateBindings, ScopedEvidenceInventory
@@ -131,6 +136,16 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             PatternAnswer,
             GeometrySource,
             GeometryAnswer,
+            GeometryProblem,
+            GeometryNumericAnswer,
+            MusicSource,
+            MusicAnswer,
+            ChemicalSource,
+            ChemicalAnswer,
+            CircuitSource,
+            CircuitAnswer,
+            UIActionSource,
+            UIActionAnswer,
             InstructionSelection,
             TextPayload,
             QuestionFit,

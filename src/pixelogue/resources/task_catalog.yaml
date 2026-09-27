@@ -3186,6 +3186,8 @@ tasks:
   - music_notation_validator
   parameters:
     enabled_by_default: false
+    format: structured_json
+    bar_range: public contiguous complete measures
   inspiration_subset_numbers:
   - 132
   inspiration_subsets:
@@ -3212,6 +3214,7 @@ tasks:
   - chemical_graph_validator
   parameters:
     enabled_by_default: false
+    notation: nonstereo_smiles
   inspiration_subset_numbers:
   - 161
   inspiration_subsets:
@@ -3238,6 +3241,11 @@ tasks:
   - circuit_graph_validator
   parameters:
     enabled_by_default: false
+    notation: two_terminal_netlist
+    operation:
+    - netlist
+    - parallel_pairs
+    - series_pairs
   inspiration_subset_numbers:
   - 162
   inspiration_subsets:
@@ -3268,6 +3276,11 @@ tasks:
   parameters:
     enabled_by_default: false
     action_scope: single locally grounded action; no execution
+    action:
+    - click
+    - focus
+    - input
+    input_text: public exact text for input action
   inspiration_subset_numbers:
   - 74
   - 75
