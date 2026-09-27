@@ -154,7 +154,9 @@ never put the answer or a hidden factual operand into a parameter. Each paramete
 instruction for a public choice/hypothesis, image for observed facts, history for committed messages.
 Factual origins need references to this scope's evidence IDs or exact public message IDs.
 An instruction choice has no evidence_refs. An image or history fact must include at least one
-matching evidence_id or public message ID. The binding's evidence_refs must include every MET
+matching evidence_id or public message ID. If origin is image, use only local evidence_ids;
+if origin is history, use only exact message_ids from public_history. Never label an obs_*
+reference as history. The binding's evidence_refs must include every MET
 observation for its required_capabilities, with no duplicate IDs.
 Include exactly the named eligibility checks. MET requires visible support for the actual operation
 and parameters, NOT_MET is a definite failure, and missing evidence is UNKNOWN. For limitation and

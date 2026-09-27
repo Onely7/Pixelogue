@@ -1609,6 +1609,8 @@ class SynthesisCoordinator:
                 "Rebind only the supplied candidate IDs. Use only each candidate's"
                 " parameter_contract, exact eligibility_checks and local evidence IDs."
                 " Include all MET required_capabilities in binding evidence_refs."
+                " A parameter with origin=image uses only local evidence IDs; origin=history"
+                " uses only exact message_ids from public_history, never obs_* IDs."
             )
         if reason == "MODEL_FINISH_REASON":
             return (

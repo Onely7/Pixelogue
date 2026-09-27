@@ -70,7 +70,7 @@ storage:
 runtime:
   request_timeout_seconds: 180
   transport_max_attempts: 3
-  structured_output_max_attempts: 2
+  structured_output_max_attempts: 3
   max_concurrent_images: 4
   max_total_requests: 10000000
   max_total_output_tokens: 1000000000
