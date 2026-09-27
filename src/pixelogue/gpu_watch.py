@@ -153,7 +153,15 @@ def _doctor_ready() -> bool:
 def _holder(gpu: int, state: dict[str, Any]) -> subprocess.Popen[str] | None:
     environment = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "PYTHONUNBUFFERED": "1"}
     process = subprocess.Popen(
-        [str(PYTHON_WITH_TORCH), str(Path(__file__)), "hold", "--memory-fraction", "0.90"],
+        [
+            str(PYTHON_WITH_TORCH),
+            str(Path(__file__)),
+            "hold",
+            "--memory-fraction",
+            "0.90",
+            "--parent-pid",
+            str(os.getpid()),
+        ],
         cwd=ROOT,
         env=environment,
         stdout=subprocess.PIPE,
@@ -198,7 +206,12 @@ def _pilot(gpu: int, state: dict[str, Any]) -> None:
     run_id = f"gpu-watch-pilot-{int(time.time())}"
     output = ROOT / "artifacts/gpu-watch" / run_id
     output.mkdir(parents=True, exist_ok=False)
-    environment = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "PYTHONUNBUFFERED": "1"}
+    environment = {
+        **os.environ,
+        "CUDA_VISIBLE_DEVICES": str(gpu),
+        "PYTHONUNBUFFERED": "1",
+        "PIXELOGUE_WATCH_PID": str(os.getpid()),
+    }
     with (output / "pilot.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
             [
@@ -243,7 +256,7 @@ def _pilot(gpu: int, state: dict[str, Any]) -> None:
             _save(state)
 
 
-def _hold_visible_gpu(memory_fraction: float) -> None:
+def _hold_visible_gpu(memory_fraction: float, parent_pid: int) -> None:
     """Adapt the attached memory holder without its continuous GEMM load."""
     torch = importlib.import_module("torch")
 
@@ -270,7 +283,7 @@ def _hold_visible_gpu(memory_fraction: float) -> None:
     print(f"READY allocated_mib={own // (1024 * 1024)}", flush=True)
     signal.signal(signal.SIGTERM, _signal_stop)
     signal.signal(signal.SIGINT, _signal_stop)
-    while not stop:
+    while not stop and os.getppid() == parent_pid:
         time.sleep(1)
 
 
@@ -343,13 +356,16 @@ def main() -> None:
     parser.add_argument("mode", choices=("watch", "hold"))
     parser.add_argument("--poll-seconds", type=int, default=15)
     parser.add_argument("--memory-fraction", type=float, default=0.90)
+    parser.add_argument("--parent-pid", type=int)
     args = parser.parse_args()
     if not 5 <= args.poll_seconds <= 300 or not 0.85 <= args.memory_fraction <= 0.92:
         parser.error("Invalid polling or reservation fraction")
     signal.signal(signal.SIGTERM, _signal_stop)
     signal.signal(signal.SIGINT, _signal_stop)
     if args.mode == "hold":
-        _hold_visible_gpu(args.memory_fraction)
+        if args.parent_pid is None or args.parent_pid <= 1:
+            parser.error("Holder requires its supervising parent PID")
+        _hold_visible_gpu(args.memory_fraction, args.parent_pid)
     else:
         _watch(args.poll_seconds)
 

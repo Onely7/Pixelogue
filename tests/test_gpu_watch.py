@@ -52,3 +52,11 @@ def test_pilot_summary_requires_all_rows_without_execution_errors(tmp_path: Path
     path.write_text('{"status":"ERROR"}\n', encoding="utf-8")
     with pytest.raises(RuntimeError, match="missing rows or terminal execution errors"):
         pilot_smoke._check_results(output, 2)
+
+
+def test_pilot_detects_lost_budget_supervisor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIXELOGUE_WATCH_PID", "12345")
+    monkeypatch.setattr(pilot_smoke.os, "getppid", lambda: 12345)
+    assert pilot_smoke._parent_alive()
+    monkeypatch.setattr(pilot_smoke.os, "getppid", lambda: 1)
+    assert not pilot_smoke._parent_alive()

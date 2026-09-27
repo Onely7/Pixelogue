@@ -21,6 +21,12 @@ SERVERS: list[tuple[subprocess.Popen[str], TextIO]] = []
 stop = False
 
 
+def _parent_alive() -> bool:
+    """Stop model servers if the GPU-hour supervisor disappears."""
+    expected = os.environ.get("PIXELOGUE_WATCH_PID")
+    return expected is None or os.getppid() == int(expected)
+
+
 def _signal_stop(_signum: int, _frame: object) -> None:
     global stop
     stop = True
@@ -83,7 +89,7 @@ def _start_server(name: str, configuration: str, output_dir: Path) -> subprocess
 def _wait_model(process: subprocess.Popen[str], port: int, expected: str, seconds: int) -> None:
     deadline = time.monotonic() + seconds
     last_error = "no HTTP response"
-    while time.monotonic() < deadline and not stop:
+    while time.monotonic() < deadline and not stop and _parent_alive():
         if process.poll() is not None:
             raise RuntimeError(
                 f"Server exited before readiness: {expected}, code={process.returncode}"
@@ -118,7 +124,12 @@ def _run_logged(
         )
         started = time.monotonic()
         last_report = started
-        while process.poll() is None and not stop and time.monotonic() - started < timeout:
+        while (
+            process.poll() is None
+            and not stop
+            and _parent_alive()
+            and time.monotonic() - started < timeout
+        ):
             time.sleep(5)
             if time.monotonic() - last_report >= 30:
                 progress = progress_path or log_path.parent / "conversations.jsonl"
