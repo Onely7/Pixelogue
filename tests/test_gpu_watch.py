@@ -80,6 +80,28 @@ def test_named_validation_campaign_extends_budget_only_once(
         gpu_watch._authorize_campaign(state, "recheck-20260928", 3.0)
 
 
+def test_failed_pilot_can_retry_only_within_existing_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gpu_watch, "STATE", tmp_path / "state.json")
+    state = {
+        "used_gpu_seconds": 100.0,
+        "authorized_gpu_seconds": 1000.0,
+        "active": None,
+        "pilot_attempted": True,
+        "pilot_exit_code": 1,
+        "campaigns": [{"id": "pilot", "additional_gpu_seconds": 600}],
+    }
+    with pytest.raises(RuntimeError, match="failed pilot"):
+        gpu_watch._retry_failed_pilot(state, "unknown")
+    gpu_watch._retry_failed_pilot(state, "pilot")
+    assert state["pilot_attempted"] is False
+    assert state["prior_pilot_exit_code"] == 1
+    assert state["authorized_gpu_seconds"] == 1000.0
+    with pytest.raises(RuntimeError, match="failed pilot"):
+        gpu_watch._retry_failed_pilot(state, "pilot")
+
+
 def test_pilot_summary_requires_all_rows_without_execution_errors(tmp_path: Path) -> None:
     output = tmp_path / "pilot"
     output.mkdir()
