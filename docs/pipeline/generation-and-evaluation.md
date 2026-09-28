@@ -53,7 +53,7 @@ uv run --locked pixelogue run-diagnostics \
 This writes JSON, CSV, and Markdown. The report includes reached stages, malformed calls, retries, private stop reasons, elapsed model-call time, and recorded tokens. New runs save each structured-output contract failure and its next correction prompt as a private artifact. Failed calls may lack token usage, and cost remains unknown without a recorded price schedule. Older runs may lack explicit stop or per-attempt records.
 Completed quality candidates have no stop stage or stop reason; earlier corrected attempts remain visible in the attempt records.
 
-Use a new run ID after changing configuration, code, prompts, catalogs, or schemas. The active run store records a configuration hash, but it does not yet bind every source and prompt change into that identity.
+Use a new run ID after changing configuration, code, prompts, catalogs, or schemas. The configuration hash includes package Python and resource files, selected lock files, Schemas, pinned model and processor settings, and the configured input manifest. `synthesize` also binds the prepared rights-checked manifest and selected image records to its run contract; a conflicting resume is rejected.
 
 Before processing the first image, Pixelogue makes two exact schedules:
 
