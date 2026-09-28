@@ -42,6 +42,31 @@ ANSWER_ONLY_STAGES = frozenset(
 )
 
 
+def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
+    """Describe a rejected output to the same blind evaluator for one retry."""
+    guidance = {
+        "specialist_music_source": (
+            "The scope_region must contain every event region in the requested bars. "
+            "For a whole-view score, use left=0, top=0, right=1, bottom=1. "
+        ),
+        "specialist_circuit_source": (
+            "Net terminals may contain only component pins, such as R1:a. "
+            "Omit junction names such as n1, and include each listed component's "
+            ":a and :b exactly once. "
+        ),
+        "specialist_geometry_answer": (
+            "Always emit answer_quote and reported. For MET, quote an exact "
+            "substring of the candidate answer and put its literal number in reported. "
+        ),
+    }.get(stage, "")
+    return (
+        f"The previous {stage} output violated its schema: {str(error)[:900]}. "
+        "Return one complete object with the required fields. Every normalized "
+        "region must satisfy 0 <= left < right <= 1 and 0 <= top < bottom <= 1. "
+        f"{guidance}Do not invent unsupported image details to satisfy the schema."
+    )
+
+
 class SpecialistEvaluationCase(StrictModel):
     """Frozen specialist input with independent gold labels kept controller-side."""
 
@@ -267,15 +292,7 @@ def run_specialist_evaluation(
                             temperature=0.0,
                             seed=config.seed,
                             bypass_cache=True,
-                            retry_feedback=(
-                                f"The previous {stage} output violated its schema: "
-                                f"{str(error)[:900]}. Return one complete object with the "
-                                "required fields. Every normalized region must satisfy "
-                                "0 <= left < right <= 1 and 0 <= top < bottom <= 1. "
-                                "For a complete circuit netlist, include each component's "
-                                ":a and :b terminal exactly once. Do not invent unsupported "
-                                "image details to satisfy the schema."
-                            ),
+                            retry_feedback=_schema_retry_feedback(stage, error),
                         )
                     value = model.model_validate(response.value)
                     write_json(

@@ -11,9 +11,20 @@ from pixelogue.errors import ExecutionError
 from pixelogue.specialist_evaluation import (
     SpecialistEvaluationCase,
     SpecialistEvaluationResult,
+    _schema_retry_feedback,
     build_calibration_manifest,
     run_specialist_evaluation,
 )
+
+
+def test_specialist_retry_uses_stage_specific_feedback() -> None:
+    error = ExecutionError("MODEL_SCHEMA_MISMATCH", "Circuit netlist terminals differ")
+    circuit = _schema_retry_feedback("specialist_circuit_source", error)
+    music = _schema_retry_feedback("specialist_music_source", error)
+    geometry = _schema_retry_feedback("specialist_geometry_answer", error)
+    assert "junction names" in circuit
+    assert "scope_region must contain every event" in music
+    assert "answer_quote and reported" in geometry
 
 
 def _result(

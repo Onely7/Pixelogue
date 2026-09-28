@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from itertools import combinations
 from typing import Annotated, Literal
 
@@ -56,8 +57,14 @@ class CircuitSource(StrictModel):
             raise ValueError("Circuit is open or component IDs are repeated")
         expected = {f"{component_id}:{pin}" for component_id in ids for pin in ("a", "b")}
         observed = [terminal for net in self.nets for terminal in net.terminals]
-        if set(observed) != expected or len(observed) != len(expected):
-            raise ValueError("Circuit netlist has missing or duplicate terminal")
+        missing = sorted(expected - set(observed))
+        duplicate = sorted(terminal for terminal, count in Counter(observed).items() if count > 1)
+        unexpected = sorted(set(observed) - expected)
+        if missing or duplicate or unexpected:
+            raise ValueError(
+                "Circuit netlist terminals differ: "
+                f"missing={missing}, duplicate={duplicate}, unexpected={unexpected}"
+            )
         for item in (*self.components, *self.nets):
             region = item.region
             scope = self.scope_region

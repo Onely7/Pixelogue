@@ -70,8 +70,8 @@ class GeometryNumericAnswer(StrictModel):
     """One literal rational or decimal value parsed without the image."""
 
     coverage: Literal["MET", "NOT_MET", "UNKNOWN"]
-    answer_quote: str = ""
-    reported: str | None = None
+    answer_quote: str
+    reported: str | None
     reason: str = Field(min_length=1)
 
     @model_validator(mode="after")

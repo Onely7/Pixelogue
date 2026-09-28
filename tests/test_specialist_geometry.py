@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from pixelogue.contracts import GateVerdict
 from pixelogue.specialist_geometry import (
     GeometryNumericAnswer,
@@ -49,6 +52,13 @@ def _problem() -> GeometryProblem:
 
 def _answer(text: str) -> GeometryNumericAnswer:
     return GeometryNumericAnswer(coverage="MET", answer_quote=text, reported=text, reason="literal")
+
+
+def test_numeric_answer_requires_literal_fields_in_schema() -> None:
+    schema = GeometryNumericAnswer.model_json_schema()
+    assert {"coverage", "answer_quote", "reported", "reason"} <= set(schema["required"])
+    with pytest.raises(ValidationError, match="answer_quote"):
+        GeometryNumericAnswer.model_validate({"coverage": "MET", "reason": "looks plausible"})
 
 
 def test_right_triangle_rule_derives_unique_positive_length() -> None:

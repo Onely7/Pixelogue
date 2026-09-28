@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from pixelogue.contracts import GateVerdict
 from pixelogue.specialist_circuit import CircuitSource, verify_circuit
 
@@ -57,3 +60,14 @@ def test_ambiguous_crossing_abstains() -> None:
         '{"pairs":[]}',
     )
     assert verdict is GateVerdict.UNKNOWN
+
+
+def test_circuit_error_identifies_missing_duplicate_and_unexpected_terminals() -> None:
+    source = _source().model_dump(mode="python")
+    source["nets"][0]["terminals"] = ("R1:a", "R1:a", "R9:b")
+    with pytest.raises(ValidationError) as error:
+        CircuitSource.model_validate(source)
+    message = str(error.value)
+    assert "missing=['R2:a']" in message
+    assert "duplicate=['R1:a']" in message
+    assert "unexpected=['R9:b']" in message
