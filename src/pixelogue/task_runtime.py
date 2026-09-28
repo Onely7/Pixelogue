@@ -189,7 +189,7 @@ def bindable_parameter_names(task: TaskDefinition) -> tuple[str, ...]:
     return tuple(
         sorted(
             (set(task.parameters) - POLICY_PARAMETERS)
-            | {"target", "scope"}
+            | {"target"}
             | {
                 value
                 for check_id, value in GUARD_PARAMETERS.items()

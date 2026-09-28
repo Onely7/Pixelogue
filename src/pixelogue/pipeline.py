@@ -1853,6 +1853,15 @@ class SynthesisCoordinator:
                                 " parameters, use each name once, and"
                                 " match origin with evidence_refs."
                             )
+                            if "Factual parameters require explicit evidence references" in str(
+                                error
+                            ):
+                                retry_feedback += (
+                                    " A public instruction choice has origin=instruction and no"
+                                    " evidence_refs. An image or history fact needs matching"
+                                    " evidence_refs. Omit names outside this candidate's"
+                                    " bindable_parameter_names."
+                                )
                     elif error.reason == "EVIDENCE_IMAGE_MISMATCH":
                         retry_feedback = (
                             "The previous response referred to another image. Re-examine only the "

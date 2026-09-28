@@ -151,7 +151,8 @@ count_unit for counting; predicate for selection, group_key for grouping, frame 
 relations, precision for numerical readings, claim for verification/localization, local_question for
 answerability, category_set for scene classification and target_binding for referring expressions.
 Include only parameters relevant to that candidate's parameter_contract and operation; never add
-scope_id or every example parameter to each binding. Parameter names and check IDs must be unique.
+scope_id or a separate scope parameter unless scope is in bindable_parameter_names for that candidate.
+Parameter names and check IDs must be unique.
 The verdicts field is an allowed output vocabulary, NEVER a desired answer parameter. Fixed policies
 such as execution/source_errors/coordinate_output are not bindable public choices.
 Bind enumerated input operation choices (except optional derived_forms and output/policy vocabularies)

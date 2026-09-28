@@ -31,6 +31,7 @@ from pixelogue.task_evidence import (
 from pixelogue.task_runtime import (
     admission_report,
     bind_candidates,
+    bindable_parameter_names,
     operation_contract,
     selector_candidate,
     validate_evidence,
@@ -253,6 +254,9 @@ def test_candidate_input_separates_check_ids_from_parameter_names() -> None:
     assert "target" in exposed["bindable_parameter_names"]
     assert not set(exposed["required_check_ids"]) & set(exposed["bindable_parameter_names"])
     assert set(exposed["required_parameter_names"]) <= set(exposed["bindable_parameter_names"])
+    assert "scope" not in exposed["bindable_parameter_names"]
+    description = next(task for task in task_catalog().tasks if task.id == "grounded_description")
+    assert "scope" in bindable_parameter_names(description)
 
 
 def test_met_binding_missing_required_public_choice_is_retryable_contract_error() -> None:
