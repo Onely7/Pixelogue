@@ -80,23 +80,47 @@ def test_allowed_static_grammars_parse_without_running_tex_or_browser() -> None:
     assert labels == ("Go",) and "<button" in html
 
 
-def test_isolated_renderer_draws_static_svg_when_host_supports_it() -> None:
+def test_isolated_renderer_draws_and_checks_static_svg_when_host_supports_it(
+    tmp_path: Path,
+) -> None:
     """Exercise the real OS isolation and screenshot path on a capable host."""
     if error := environment_error("renderer", "playwright"):
         pytest.skip(f"isolated renderer unavailable: {error}")
-    result = call_renderer(
-        {
-            "format": "svg",
-            "code": '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60">'
-            '<rect x="10" y="10" width="40" height="30" fill="black"/></svg>',
-            "width": 80,
-            "height": 60,
-        }
+    code = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60">'
+        '<rect x="10" y="10" width="40" height="30" fill="black"/></svg>'
     )
+    result = call_renderer({"format": "svg", "code": code, "width": 80, "height": 60})
     assert result["verdict"] == "MET"
     assert result["isolation_attempts"] in {1, 2}
-    with Image.open(io.BytesIO(base64.b64decode(result["png_base64"], validate=True))) as image:
+    image_bytes = base64.b64decode(result["png_base64"], validate=True)
+    with Image.open(io.BytesIO(image_bytes)) as image:
         assert image.size == (80, 60)
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(image_bytes)
+    source = RenderSource(
+        coverage="MET",
+        domain="test-svg",
+        scope_id="whole",
+        view_id="test-view",
+        scope_region=ImageRegion(left=0, top=0, right=1, bottom=1),
+        visible_text=(),
+        reason="The rectangle and background are complete",
+    )
+    args = (
+        (source, source),
+        "test-svg",
+        "svg",
+        "whole",
+        "test-view",
+        [{"view_id": "test-view", "width": "80", "height": "60"}],
+        reference,
+    )
+    assert verify_render(*args, json.dumps({"format": "svg", "code": code}))[0] is GateVerdict.MET
+    blank = '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60"></svg>'
+    assert (
+        verify_render(*args, json.dumps({"format": "svg", "code": blank}))[0] is GateVerdict.NOT_MET
+    )
 
 
 def test_sparse_blank_render_does_not_pass_foreground_comparison(
