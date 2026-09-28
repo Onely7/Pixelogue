@@ -120,6 +120,8 @@ def test_candidate_binding_schema_restricts_supplied_names() -> None:
         "count_unit_defined",
         "scope_resolved",
     ]
+    assert definitions["CandidateBindingReport"]["properties"]["checks"]["minItems"] == 2
+    assert definitions["CandidateBindingReport"]["properties"]["checks"]["maxItems"] == 2
     assert definitions["PublicParameter"]["properties"]["name"]["enum"] == ["count_unit"]
 
 

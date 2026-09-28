@@ -369,6 +369,10 @@ class VllmClient:
             definitions["CandidateBindingReport"]["properties"]["candidate_id"]["enum"] = (
                 candidate_ids
             )
+            check_lengths = [len(item["required_check_ids"]) for item in candidates]
+            checks_schema = definitions["CandidateBindingReport"]["properties"]["checks"]
+            checks_schema["minItems"] = min(check_lengths)
+            checks_schema["maxItems"] = max(check_lengths)
             definitions["EligibilityObservation"]["properties"]["check_id"]["enum"] = check_ids
             definitions["PublicParameter"]["properties"]["name"]["enum"] = parameter_names
         if response_model is ClaimExtraction:
