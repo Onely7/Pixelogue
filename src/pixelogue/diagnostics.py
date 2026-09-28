@@ -41,6 +41,8 @@ class DiagnosticRow(TypedDict):
     turn_stage_calls: dict[str, dict[str, int]]
     model_calls: int
     invalid_calls: int
+    contract_failure_attempts: int
+    attempt_failures: list[dict[str, Any]]
     retry_calls: int
     input_tokens: int
     output_tokens: int
@@ -126,6 +128,38 @@ def _stop_category(status: str, stops: list[dict[str, Any]]) -> str:
     return "UNRESOLVED_ABSTENTION"
 
 
+def _attempt_records(
+    store: RunStore, view_to_conversation: dict[str, str]
+) -> dict[str, list[dict[str, Any]]]:
+    """Link each private malformed attempt to the image that caused it."""
+    by_conversation: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    rows = store.connection.execute(
+        "SELECT artifact_hash FROM artifact WHERE kind = 'structured-output-failures'"
+    )
+    for row in rows:
+        record = strict_json_object(store.read_artifact(row["artifact_hash"]))
+        views = record.get("view_ids")
+        view_id = views[0] if isinstance(views, list) and views else None
+        conversation_id = view_to_conversation.get(view_id)
+        if conversation_id is None and isinstance(record.get("question_message_id"), str):
+            conversation_id = record["question_message_id"].split(":q:", 1)[0]
+        if conversation_id is None:
+            continue
+        by_conversation[conversation_id].append(
+            {
+                "artifact_hash": row["artifact_hash"],
+                "stage": record.get("stage"),
+                "turn_index": record.get("turn_index"),
+                "attempt": record.get("attempt"),
+                "reason": record.get("reason"),
+                "response_hash": record.get("response_hash"),
+                "has_parsed_output": record.get("parsed_output") is not None,
+                "next_retry_feedback": record.get("next_retry_feedback"),
+            }
+        )
+    return by_conversation
+
+
 def _markdown_cell(value: str | None) -> str:
     """Keep private model text inside one report table cell."""
     return (value or "unrecorded")[:120].replace("|", "\\|").replace("\n", " ")
@@ -195,6 +229,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
             item["token_usage_missing_calls"] += 1
         item["duration_ms"] += call["duration_ms"]
     stops = _stop_records(store)
+    attempts = _attempt_records(store, view_to_conversation)
     rows: list[DiagnosticRow] = []
     for conversation in conversations:
         item = metrics[conversation.conversation_id]
@@ -248,6 +283,8 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
                 },
                 "model_calls": item["model_calls"],
                 "invalid_calls": item["invalid_calls"],
+                "contract_failure_attempts": len(attempts.get(conversation.conversation_id, [])),
+                "attempt_failures": attempts.get(conversation.conversation_id, []),
                 "retry_calls": item["retry_calls"],
                 "input_tokens": item["input_tokens"],
                 "output_tokens": item["output_tokens"],
@@ -269,6 +306,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
         "unattributed_model_calls": unattributed,
         "retry_calls": sum(row["retry_calls"] for row in rows),
         "invalid_calls": sum(row["invalid_calls"] for row in rows),
+        "contract_failure_attempts": sum(row["contract_failure_attempts"] for row in rows),
         "stage_reach_images": dict(
             sorted(Counter(stage for row in rows for stage in row["stage_calls"]).items())
         ),
@@ -307,6 +345,8 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
                 "committed_turns",
                 "model_calls",
                 "invalid_calls",
+                "contract_failure_attempts",
+                "attempt_failures",
                 "retry_calls",
                 "input_tokens",
                 "output_tokens",
@@ -322,7 +362,13 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
             writer.writerow(
                 {
                     key: json.dumps(row[key], ensure_ascii=False, sort_keys=True)
-                    if key in {"stage_calls", "turn_stage_calls", "recorded_stops"}
+                    if key
+                    in {
+                        "stage_calls",
+                        "turn_stage_calls",
+                        "recorded_stops",
+                        "attempt_failures",
+                    }
                     else row[key]
                     for key in writer.fieldnames
                 }
@@ -332,25 +378,29 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
         "",
         f"Conversations: {report['conversations']}; model calls: {report['model_calls']}; "
         f"retries: {report['retry_calls']}; invalid calls: {report['invalid_calls']}.",
+        f"Recorded structured-output contract failures: {report['contract_failure_attempts']}.",
         f"Token usage is missing for {report['token_usage_missing_calls']} calls.",
         "",
         "| Status | Count |",
         "|---|---:|",
         *(f"| {status} | {count} |" for status, count in report["status_counts"].items()),
         "",
-        "| Source | Status | Turns | Stop stage | Reason | Stage evidence | Calls | Retries | Invalid | Duration ms |",
-        "|---|---|---:|---|---|---|---:|---:|---:|---:|",
+        "| Source | Status | Turns | Stop stage | Reason | Stage evidence | Calls | Retries | Invalid | Contract failures | Duration ms |",
+        "|---|---|---:|---|---|---|---:|---:|---:|---:|---:|",
         *(
             f"| {row['source_id']} | {row['stop_category']} | {row['committed_turns']} | "
             f"{row['stop_stage'] or 'unknown'} | {_markdown_cell(row['stop_reason'])} | "
             f"{row['stop_stage_evidence']} | "
             f"{row['model_calls']} | {row['retry_calls']} | {row['invalid_calls']} | "
+            f"{row['contract_failure_attempts']} | "
             f"{row['duration_ms']} |"
             for row in report["rows"]
         ),
         "",
         "Cost is unknown without a recorded price schedule. Stop records are private run evidence; "
         "their absence does not imply that the conversation completed successfully.",
+        "Older runs may lack per-attempt contract failure artifacts; a zero count in those runs "
+        "does not establish that every model response met its contract.",
         "",
     ]
     output_stem.with_suffix(".md").write_text("\n".join(lines), encoding="utf-8")

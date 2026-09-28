@@ -310,6 +310,10 @@ def test_semantic_contract_failure_retries_without_accepting_invalid_result(
             seed=1,
             post_validate=validate,
         )
+        failure_hash = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = 'structured-output-failures'"
+        ).fetchone()[0]
+        failure = json.loads(store.read_artifact(failure_hash))
     finally:
         store.close()
 
@@ -318,6 +322,9 @@ def test_semantic_contract_failure_retries_without_accepting_invalid_result(
     assert client.retry_feedback[0] is None
     assert "parameter_contract" in (client.retry_feedback[1] or "")
     assert "Unknown public parameter" in (client.retry_feedback[1] or "")
+    assert failure["reason"] == "CANDIDATE_PARAMETER_UNKNOWN"
+    assert failure["parsed_output"] == {"verdict": "MET", "reason": "The criterion is satisfied."}
+    assert "Unknown public parameter" in failure["next_retry_feedback"]
 
 
 def test_candidate_binding_requires_exact_target_parameter() -> None:

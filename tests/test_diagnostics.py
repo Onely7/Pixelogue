@@ -64,6 +64,19 @@ def test_diagnostics_join_image_calls_and_private_stop_without_loading_image(
                 "reason": "CANDIDATE_CHECKS_MISMATCH",
             },
         )
+        store.write_json_artifact(
+            "structured-output-failures",
+            {
+                "view_ids": [image.full_view.view_id],
+                "stage": "candidate_binding",
+                "turn_index": 1,
+                "attempt": 2,
+                "reason": "CANDIDATE_CHECKS_MISMATCH",
+                "response_hash": "0" * 64,
+                "parsed_output": {"bindings": []},
+                "next_retry_feedback": "Include exact checks",
+            },
+        )
         with store.transaction() as connection:
             connection.execute(
                 """INSERT INTO model_call(
@@ -96,6 +109,8 @@ def test_diagnostics_join_image_calls_and_private_stop_without_loading_image(
     assert row["recorded_stops"][0]["reason"] == "CANDIDATE_CHECKS_MISMATCH"
     assert row["input_tokens"] == 0
     assert row["token_usage_missing_calls"] == 1
+    assert row["contract_failure_attempts"] == 1
+    assert row["attempt_failures"][0]["next_retry_feedback"] == "Include exact checks"
     assert row["cost_usd"] is None
 
     stem = tmp_path / "diagnostics"

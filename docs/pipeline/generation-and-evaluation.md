@@ -50,7 +50,7 @@ uv run --locked pixelogue run-diagnostics \
   --output-stem artifacts/open-images-pilot-001/diagnostics
 ```
 
-This writes JSON, CSV, and Markdown. The report includes reached stages, malformed calls, retries, private stop reasons, elapsed model-call time, and recorded tokens. Failed calls may lack token usage, and cost remains unknown without a recorded price schedule. Older runs may lack explicit stop records.
+This writes JSON, CSV, and Markdown. The report includes reached stages, malformed calls, retries, private stop reasons, elapsed model-call time, and recorded tokens. New runs save each structured-output contract failure and its next correction prompt as a private artifact. Failed calls may lack token usage, and cost remains unknown without a recorded price schedule. Older runs may lack explicit stop or per-attempt records.
 
 Use a new run ID after changing configuration, code, prompts, catalogs, or schemas. The active run store records a configuration hash, but it does not yet bind every source and prompt change into that identity.
 

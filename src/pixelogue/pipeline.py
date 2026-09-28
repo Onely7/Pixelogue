@@ -1695,6 +1695,7 @@ class SynthesisCoordinator:
                 call_kwargs["seed"] = int(call_kwargs["seed"]) + 100_000 * attempt
                 call_kwargs["bypass_cache"] = True
                 call_kwargs["retry_feedback"] = retry_feedback
+            response: ModelResponse | None = None
             try:
                 response = client.invoke(stage, payload, images, model, **call_kwargs)
                 if (
@@ -1742,10 +1743,11 @@ class SynthesisCoordinator:
                 if post_validate is not None:
                     post_validate(response.value)
             except ExecutionError as error:
-                if (
+                can_retry = (
                     error.reason in retryable
                     and attempt + 1 < self.config.runtime.structured_output_max_attempts
-                ):
+                )
+                if can_retry:
                     retry_feedback = self._structured_retry_feedback(error.reason)
                     if error.reason == "MODEL_SCHEMA_MISMATCH":
                         required = model.model_json_schema().get("required", [])
@@ -1780,6 +1782,32 @@ class SynthesisCoordinator:
                             f" Duplicate JSON key reported: {str(error)[:180]}."
                             " In observations, each capability is one key per scope."
                         )
+                if error.reason in retryable:
+                    history = payload.get("public_history")
+                    self.store.write_json_artifact(
+                        "structured-output-failures",
+                        {
+                            "stage": stage,
+                            "view_ids": [image.view_id for image in images],
+                            "question_message_id": payload.get("question_message_id"),
+                            "turn_index": (
+                                0
+                                if stage == "evidence_extraction"
+                                else len(history) // 2 + 1
+                                if isinstance(history, list)
+                                else payload.get("turn_index", 1)
+                            ),
+                            "attempt": attempt + 1,
+                            "reason": error.reason,
+                            "message": str(error)[:1000],
+                            "response_hash": response.response_hash if response else None,
+                            "parsed_output": (
+                                response.value.model_dump(mode="json") if response else None
+                            ),
+                            "next_retry_feedback": retry_feedback if can_retry else None,
+                        },
+                    )
+                if can_retry:
                     continue
                 raise
             return response.value
