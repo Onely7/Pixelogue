@@ -71,6 +71,24 @@ uv run --locked pixelogue ingest \
 
 楽譜・幾何・回路の追加画像3枚は[専門評価用manifest](../validation/specialist_web_eval_manifest.jsonl)に固定しています。`uv run --locked python validation/fetch_specialist_eval.py` で画像と出典・権利記録を復元し、`data/specialist-web-eval` と `data/specialist-extra-eval` をそれぞれ検証専用として取り込めます。取得時にバイトハッシュと寸法を照合します。同じ画像に別の候補回答を与えても、独立した校正標本には数えません。
 
+## PubChem構造式の検証用サンプル
+
+[固定したPubChem manifest](../validation/pubchem_2d_eval_manifest.jsonl)には、C・N・O・F・Cl・Brの3～5重原子からなる中性・非環式の2D画像89件を記録しています。開発用10件と、異なる分子構造の確認用79件を分けています。元データのSMILESをcontroller側の非公開正解ラベルとして使います。この範囲は整ったデジタル描画に限られ、手書き構造式や任意の化学画像の精度を示すものではありません。画像本体と回答ラベルはGit管理外です。
+
+```sh
+uv sync --locked --directory runtime/validators
+runtime/validators/.venv/bin/python validation/fetch_pubchem_chemical_eval.py
+uv run --locked pixelogue ingest \
+  --config configs/paired-one-gpu-pilot.yaml \
+  --sources data/pubchem-2d-simple-eval/sources.jsonl \
+  --rights data/pubchem-2d-simple-eval/rights.jsonl \
+  --image-root data/pubchem-2d-simple-eval \
+  --artifact-root artifacts/prepared-pubchem-2d-simple-eval
+uv run --locked python validation/build_pubchem_chemical_cases.py
+```
+
+取得時にCID、画像SHA-256、寸法、画像群、SMILESハッシュを固定manifestと照合します。`private_labels.jsonl` は `data/` にのみ保存します。case生成では確認用の正例20件と誤答59件を固定し、モデルにはCID・元のSMILES・期待判定を渡しません。通常選択に入れるには、実測結果が校正の信頼区間基準を満たす必要があります。
+
 ## 取得済みのCVDF train画像を使う
 
 `prepare-local-train` は、未加工のCVDF画像 `<ImageID>.jpg` が並ぶディレクトリと

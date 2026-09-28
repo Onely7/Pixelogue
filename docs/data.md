@@ -75,6 +75,24 @@ The fetcher verifies the pinned Commons page ID, thumbnail SHA-256, and recorded
 
 Three additional score, geometry, and circuit diagrams are pinned in the [specialist evaluation manifest](../validation/specialist_web_eval_manifest.jsonl). Restore their source and rights records with `uv run --locked python validation/fetch_specialist_eval.py`, then ingest `data/specialist-web-eval` and `data/specialist-extra-eval` as separate evaluation-only roots. The fetcher verifies each byte hash and image size. These development images and alternate candidate answers do not constitute independent calibration samples.
 
+## PubChem structure evaluation sample
+
+The [pinned PubChem manifest](../validation/pubchem_2d_eval_manifest.jsonl) identifies 89 distinct, neutral, acyclic 2D depictions with three to five non-hydrogen atoms from C, N, O, F, Cl, and Br. Ten images form a development split; 79 separate molecular structures form the confirmation split. The source's SMILES property supplies a private controller-side label for each depiction. This is a limited digital-depiction domain, not evidence about hand-drawn or arbitrary chemical images. The image bytes and answer labels remain outside Git.
+
+```sh
+uv sync --locked --directory runtime/validators
+runtime/validators/.venv/bin/python validation/fetch_pubchem_chemical_eval.py
+uv run --locked pixelogue ingest \
+  --config configs/paired-one-gpu-pilot.yaml \
+  --sources data/pubchem-2d-simple-eval/sources.jsonl \
+  --rights data/pubchem-2d-simple-eval/rights.jsonl \
+  --image-root data/pubchem-2d-simple-eval \
+  --artifact-root artifacts/prepared-pubchem-2d-simple-eval
+uv run --locked python validation/build_pubchem_chemical_cases.py
+```
+
+The fetcher checks the committed CID, image SHA-256, dimensions, source group and SMILES hash before restoring local files. It writes `private_labels.jsonl` only under `data/`; the case builder uses those labels to freeze 20 correct and 59 incorrect confirmation answers. Model requests carry the image, public operation and question, but never a CID, the source SMILES or the expected verdict. Calibration is still conditional on actual model results and the stated confidence bounds.
+
 ## Prepare existing CVDF training images
 
 `prepare-local-train` is a CPU-only adapter for an existing flat directory of
