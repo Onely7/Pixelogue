@@ -400,7 +400,14 @@ class VllmClient:
             checks_schema["minItems"] = min(check_lengths)
             checks_schema["maxItems"] = max(check_lengths)
             definitions["EligibilityObservation"]["properties"]["check_id"]["enum"] = check_ids
-            definitions["PublicParameter"]["properties"]["name"]["enum"] = parameter_names
+            if parameter_names:
+                definitions["PublicParameter"]["properties"]["name"]["enum"] = parameter_names
+            else:
+                # An empty enum makes the referenced object unsatisfiable in vLLM's
+                # grammar compiler, even when the containing array is empty.
+                definitions["CandidateBindingReport"]["properties"]["public_parameters"][
+                    "maxItems"
+                ] = 0
         if response_model is ClaimExtraction:
             tokens = payload.get("answer_tokens")
             if not isinstance(tokens, list) or any(

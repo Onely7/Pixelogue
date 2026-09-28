@@ -125,6 +125,34 @@ def test_candidate_binding_schema_restricts_supplied_names() -> None:
     assert definitions["PublicParameter"]["properties"]["name"]["enum"] == ["count_unit"]
 
 
+def test_candidate_binding_schema_allows_no_optional_parameters() -> None:
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="x")
+    try:
+        body = client._build_body(
+            "candidate_binding",
+            {
+                "image_views": [],
+                "candidates": [
+                    {
+                        "candidate_id": "candidate-1",
+                        "required_check_ids": ["scope_resolved"],
+                        "bindable_parameter_names": ["target"],
+                    }
+                ],
+            },
+            (),
+            CandidateBindingsReport,
+            max_tokens=100,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    definitions = body["response_format"]["json_schema"]["schema"]["$defs"]
+    assert "enum" not in definitions["PublicParameter"]["properties"]["name"]
+    assert definitions["CandidateBindingReport"]["properties"]["public_parameters"]["maxItems"] == 0
+
+
 def _rubric_payload() -> dict[str, object]:
     return {
         "target_language": "en",
