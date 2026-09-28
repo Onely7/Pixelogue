@@ -38,6 +38,18 @@ uv run --locked pixelogue synthesize \
 
 Gitに含まれる設定では、`runtime.max_concurrent_images` により、最大4画像を同時に処理します。独立した要求をvLLMへ重ねて送り、continuous batchingが働くようにするためです。測定時は `--workers` で一時的に上書きできます。`conversations.jsonl` は計画した入力順で保存します。1つの対話内の往復は確定済みの公開履歴に依存するため、順番を変えません。
 
+実行後は保存済み要求から、画像・ターン単位の非公開診断レポートを作成できます。
+
+```sh
+uv run --locked pixelogue run-diagnostics \
+  --config configs/pilot.yaml \
+  --run-id open-images-pilot-001 \
+  --conversations artifacts/open-images-pilot-001/conversations.jsonl \
+  --output-stem artifacts/open-images-pilot-001/diagnostics
+```
+
+JSON・CSV・Markdownに、到達段階、形式不備、再試行、非公開の停止理由、モデル呼び出し時間、記録されたトークン数を出力します。失敗した呼び出しのトークン数は欠測になり得ます。価格表を記録していない場合、費用は不明として扱います。過去のrunには明示的な停止記録がない場合があります。
+
 設定、コード、プロンプト、カタログ、Schemaを変更した場合は、新しいrun IDを使います。run storeは設定のハッシュを記録しますが、現時点ではソースやプロンプトのあらゆる変更をrun IDへ結び付けてはいません。
 
 最初の画像を処理する前に、Pixelogueは2つの割り当て表を作ります。

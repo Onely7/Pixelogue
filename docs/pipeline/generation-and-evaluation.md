@@ -38,6 +38,18 @@ uv run --locked pixelogue synthesize \
 
 The checked-in profiles allow four images in flight through `runtime.max_concurrent_images`. This gives vLLM independent requests to combine with continuous batching. `--workers` can override the value for a measured run. Pixelogue preserves the scheduled input order in `conversations.jsonl`, while every turn within one conversation remains sequential because it depends on committed public history.
 
+After a run, write private per-image and per-turn diagnostics from the saved request records:
+
+```sh
+uv run --locked pixelogue run-diagnostics \
+  --config configs/pilot.yaml \
+  --run-id open-images-pilot-001 \
+  --conversations artifacts/open-images-pilot-001/conversations.jsonl \
+  --output-stem artifacts/open-images-pilot-001/diagnostics
+```
+
+This writes JSON, CSV, and Markdown. The report includes reached stages, malformed calls, retries, private stop reasons, elapsed model-call time, and recorded tokens. Failed calls may lack token usage, and cost remains unknown without a recorded price schedule. Older runs may lack explicit stop records.
+
 Use a new run ID after changing configuration, code, prompts, catalogs, or schemas. The active run store records a configuration hash, but it does not yet bind every source and prompt change into that identity.
 
 Before processing the first image, Pixelogue makes two exact schedules:

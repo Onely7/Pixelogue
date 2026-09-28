@@ -19,6 +19,7 @@ from pixelogue.contracts import (
     SelectionManifest,
     SourceRecord,
 )
+from pixelogue.diagnostics import build_diagnostic_report, write_diagnostic_reports
 from pixelogue.doctor import diagnose
 from pixelogue.errors import (
     CapabilityError,
@@ -326,6 +327,33 @@ def task_status_command(
     report = task_status_report(load_config(config_path), junit)
     write_task_status_reports(report, output_stem)
     typer.echo(json.dumps({"output_stem": str(output_stem), "summary": report["summary"]}))
+
+
+@app.command("run-diagnostics")
+def run_diagnostics_command(
+    conversations: Annotated[Path, typer.Option("--conversations", exists=True, dir_okay=False)],
+    run_id: Annotated[str, typer.Option("--run-id")],
+    output_stem: Annotated[Path, typer.Option("--output-stem")],
+    config_path: ConfigOption = Path("configs/pilot.yaml"),
+) -> None:
+    """Report private per-image stage and stop evidence from a completed run."""
+    config = load_config(config_path)
+    with RunStore(
+        config.storage.run_root,
+        run_id,
+        require_local_wal=config.storage.require_local_wal,
+    ) as store:
+        report = build_diagnostic_report(store, conversations)
+    write_diagnostic_reports(report, output_stem)
+    typer.echo(
+        json.dumps(
+            {
+                "output_stem": str(output_stem),
+                "status_counts": report["status_counts"],
+                "model_calls": report["model_calls"],
+            }
+        )
+    )
 
 
 @app.command()
