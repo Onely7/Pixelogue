@@ -81,6 +81,12 @@ def test_grid_requires_explicit_blanks_and_rejects_overlapping_merges() -> None:
         TableGrid.model_validate_json(
             grid.model_copy(update={"cells": (*grid.cells, grid.cells[-1])}).model_dump_json()
         )
+    with pytest.raises(ValueError):
+        TableGrid.model_validate_json(grid.model_copy(update={"data_rows": ()}).model_dump_json())
+    with pytest.raises(ValueError):
+        TableGrid.model_validate_json(
+            grid.model_copy(update={"data_rows": (1, 2)}).model_dump_json()
+        )
 
 
 def test_lookup_checks_cell_position_and_blank_value() -> None:

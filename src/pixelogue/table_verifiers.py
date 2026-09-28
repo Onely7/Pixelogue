@@ -67,6 +67,15 @@ class TableGrid(StrictModel):
             row < 0 or row >= self.rows for row in self.data_rows
         ):
             raise ValueError("Invalid data row indices")
+        if self.closed:
+            visible_data_rows = {
+                row
+                for cell in self.cells
+                if cell.kind == "data"
+                for row in range(cell.row, cell.row + cell.rowspan)
+            }
+            if set(self.data_rows) != visible_data_rows:
+                raise ValueError("Closed table data rows do not match visible data cells")
         return self
 
     def at(self, row: int, col: int) -> TableCell | None:
