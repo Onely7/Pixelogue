@@ -25,6 +25,7 @@ uv run --locked pixelogue doctor --config configs/pilot.yaml
 A GPU is considered idle by `doctor` only when utilization is 0% and used memory is below 1 GiB. Inspect the process table in `nvidia-smi` as well. Never take a device used by another process.
 
 Static `ready: true` means the pinned BF16 model servers can be assigned to the currently idle devices. Generator roles that share the same repository, revision, and endpoint are counted as one server. Static readiness is a capacity check, not a successful inference.
+For the pinned FP8 and W4A16 standard checkpoints, `doctor` uses conservative rounded resident-weight estimates and an 8 GiB cache allowance per shard. Recheck these estimates after a checkpoint revision or hardware change.
 
 After launch, `doctor --check-servers` checks the configured served model names. The chosen GPU is no longer idle at that point; a healthy already-running server can satisfy its role without being allocated again.
 

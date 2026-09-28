@@ -21,6 +21,21 @@ PARAMETER_COUNTS = {
     "Qwen/Qwen3.8-27B-FP8": 27_000_000_000,
     "google/gemma-4-31B-it-qat-w4a16-ct": 31_000_000_000,
 }
+# Rounded above the resident weight sizes observed for the pinned quantized snapshots.
+# A model revision change requires a new startup check before relying on these estimates.
+QUANTIZED_WEIGHT_MIB = {
+    ("Qwen/Qwen3.8-27B-FP8", "fp8"): 32 * 1024,
+    ("google/gemma-4-31B-it-qat-w4a16-ct", "compressed-tensors"): 24 * 1024,
+}
+QUANTIZED_KV_RESERVE_MIB = 8 * 1024
+
+
+def _estimated_weight_mib(endpoint: ModelEndpoint) -> int:
+    """Estimate resident weights using the configured quantization."""
+    pinned = QUANTIZED_WEIGHT_MIB.get((endpoint.repo_id, endpoint.quantization))
+    if pinned is not None:
+        return pinned
+    return int(PARAMETER_COUNTS[endpoint.repo_id] * 2 * 1.1 / (1024 * 1024))
 
 
 class GpuDevice(StrictModel):
@@ -117,8 +132,7 @@ def diagnose(config: PixelogueConfig, *, check_servers: bool = False) -> DoctorR
     idle_gpus = tuple(gpu for gpu in gpus if gpu.idle)
     checks: list[ModelCheck] = []
     for role, endpoint, required in endpoints:
-        parameters = PARAMETER_COUNTS[endpoint.repo_id]
-        estimate_mib = int(parameters * 2 * 1.1 / (1024 * 1024))
+        estimate_mib = _estimated_weight_mib(endpoint)
         assigned = allocations.get(role, ())
         if required:
             enough = bool(assigned)
@@ -202,7 +216,12 @@ def _allocate_required_gpus(
         reverse=True,
     )
     for endpoint, roles in required:
-        estimate_mib = int(PARAMETER_COUNTS[endpoint.repo_id] * 2 * 1.1 / (1024 * 1024))
+        estimate_mib = _estimated_weight_mib(endpoint)
+        reserve_mib = (
+            QUANTIZED_KV_RESERVE_MIB
+            if (endpoint.repo_id, endpoint.quantization) in QUANTIZED_WEIGHT_MIB
+            else 0
+        )
         per_shard_mib = (estimate_mib + endpoint.tensor_parallel_size - 1) // (
             endpoint.tensor_parallel_size
         )
@@ -212,7 +231,8 @@ def _allocate_required_gpus(
             if all(
                 remaining_fraction[gpu.index] >= endpoint.gpu_memory_utilization
                 and gpu.free_mib >= int(gpu.total_mib * endpoint.gpu_memory_utilization)
-                and int(gpu.total_mib * endpoint.gpu_memory_utilization) >= per_shard_mib
+                and int(gpu.total_mib * endpoint.gpu_memory_utilization)
+                >= per_shard_mib + reserve_mib
                 for gpu in group
             )
         ]

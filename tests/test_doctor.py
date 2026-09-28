@@ -40,3 +40,41 @@ def test_required_servers_receive_distinct_gpus_or_report_shortfall() -> None:
 
     short = _allocate_required_gpus(endpoints, _gpus(4))
     assert sum(not group for group in short.values()) == 1
+
+
+def test_quantized_standard_pair_can_share_one_large_idle_gpu() -> None:
+    gpu = GpuDevice(
+        index=4,
+        name="96 GiB test device",
+        total_mib=97_887,
+        used_mib=0,
+        free_mib=97_887,
+        utilization_percent=0,
+        idle=True,
+    )
+    endpoints = (
+        (
+            "selector",
+            _endpoint("Qwen/Qwen3.5-2B", 1).model_copy(update={"gpu_memory_utilization": 0.10}),
+            True,
+        ),
+        (
+            "generator_a",
+            _endpoint("Qwen/Qwen3.8-27B-FP8", 1).model_copy(
+                update={"gpu_memory_utilization": 0.44, "quantization": "fp8"}
+            ),
+            True,
+        ),
+        (
+            "generator_b",
+            _endpoint("google/gemma-4-31B-it-qat-w4a16-ct", 1).model_copy(
+                update={"gpu_memory_utilization": 0.35, "quantization": "compressed-tensors"}
+            ),
+            True,
+        ),
+    )
+    assert _allocate_required_gpus(endpoints, (gpu,)) == {
+        "generator_a": (4,),
+        "generator_b": (4,),
+        "selector": (4,),
+    }
