@@ -58,10 +58,19 @@ def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
             "Always emit answer_quote and reported. For MET, quote an exact "
             "substring of the candidate answer and put its literal number in reported. "
         ),
+        "specialist_chemistry_source": (
+            "Decide every visible bond order before emitting JSON. If any atom or bond "
+            "cannot be resolved, return coverage UNKNOWN with empty atoms and bonds. "
+            "Keep reason to one sentence and do not emit repeated whitespace. "
+        ),
     }.get(stage, "")
+    failure = (
+        f"The previous {stage} output reached its token limit before completing JSON. "
+        if error.reason == "MODEL_FINISH_REASON"
+        else f"The previous {stage} output violated its schema: {str(error)[:900]}. "
+    )
     return (
-        f"The previous {stage} output violated its schema: {str(error)[:900]}. "
-        "Return one complete object with the required fields. Every normalized "
+        f"{failure}Return one complete object with the required fields. Every normalized "
         "region must satisfy 0 <= left < right <= 1 and 0 <= top < bottom <= 1. "
         f"{guidance}Do not invent unsupported image details to satisfy the schema."
     )
@@ -194,7 +203,14 @@ def run_specialist_evaluation(
         model_calibration_lock(config.models.generator_a),
         model_calibration_lock(config.models.generator_b),
     )
-    stats = {"completed": 0, "failed": 0, "reused": 0, "stage_reused": 0, "schema_retries": 0}
+    stats = {
+        "completed": 0,
+        "failed": 0,
+        "reused": 0,
+        "stage_reused": 0,
+        "schema_retries": 0,
+        "finish_retries": 0,
+    }
     with RunStore(
         config.storage.run_root, run_id, require_local_wal=config.storage.require_local_wal
     ) as store:
@@ -285,9 +301,16 @@ def run_specialist_evaluation(
                             bypass_cache=judge > 0,
                         )
                     except ExecutionError as error:
-                        if error.reason != "MODEL_SCHEMA_MISMATCH":
+                        if error.reason == "MODEL_SCHEMA_MISMATCH":
+                            stats["schema_retries"] += 1
+                        elif (
+                            error.reason == "MODEL_FINISH_REASON"
+                            and stage.startswith("specialist_")
+                            and stage.endswith("_source")
+                        ):
+                            stats["finish_retries"] += 1
+                        else:
                             raise
-                        stats["schema_retries"] += 1
                         response = clients[judge].invoke(
                             stage,
                             body,

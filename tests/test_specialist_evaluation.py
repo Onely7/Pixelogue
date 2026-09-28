@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from pixelogue.config import load_config
 from pixelogue.contracts import GateVerdict, SourcePurpose, TextPayload
 from pixelogue.errors import ExecutionError
@@ -151,8 +153,15 @@ def test_failed_second_evaluator_resumes_from_first_saved_stage(
     assert calls == [1, 2]
 
 
-def test_schema_invalid_specialist_reading_gets_one_bounded_retry(
-    tmp_path: Path, image_artifact, monkeypatch
+@pytest.mark.parametrize(
+    ("failure_reason", "counter"),
+    [
+        ("MODEL_SCHEMA_MISMATCH", "schema_retries"),
+        ("MODEL_FINISH_REASON", "finish_retries"),
+    ],
+)
+def test_invalid_specialist_reading_gets_one_bounded_retry(
+    tmp_path: Path, image_artifact, monkeypatch, failure_reason: str, counter: str
 ) -> None:
     from pixelogue import specialist_evaluation
 
@@ -195,7 +204,7 @@ def test_schema_invalid_specialist_reading_gets_one_bounded_retry(
             feedback.append(kwargs.get("retry_feedback"))
             output_limits.append(kwargs["max_tokens"])
             if len(feedback) == 1:
-                raise ExecutionError("MODEL_SCHEMA_MISMATCH", "scope_region needs positive extent")
+                raise ExecutionError(failure_reason, "scope_region needs positive extent")
             return SimpleNamespace(
                 value=TextPayload(text="source"),
                 request_hash="a" * 64,
@@ -218,8 +227,11 @@ def test_schema_invalid_specialist_reading_gets_one_bounded_retry(
     monkeypatch.setattr(specialist_evaluation, "VllmClient", FakeClient)
     monkeypatch.setattr(specialist_evaluation, "verify_operation", fake_verify)
     stats = run_specialist_evaluation((case,), config, root, tmp_path / "evaluation", "retry")
-    assert stats["completed"] == 1 and stats["schema_retries"] == 1
+    assert stats["completed"] == 1 and stats[counter] == 1
     assert feedback[0] is None
-    assert "positive extent" in (feedback[1] or "")
+    if failure_reason == "MODEL_FINISH_REASON":
+        assert "token limit" in (feedback[1] or "")
+    else:
+        assert "positive extent" in (feedback[1] or "")
     assert len(feedback) == 3
     assert output_limits == [config.tasks.evidence_max_tokens] * 3
