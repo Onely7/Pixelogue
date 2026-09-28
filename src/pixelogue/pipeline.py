@@ -89,6 +89,7 @@ from pixelogue.task_verification import verify_operation
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
 type PublicTextRejectionReason = Literal[
     "PRIVATE_PROMPT_ECHO",
+    "INTERNAL_REFERENCE_IN_QUESTION",
     "REPEATED_PUBLIC_QUESTION",
     "REPEATED_ANSWERED_REQUEST",
     "IDENTIFICATION_TARGET_IN_QUESTION",
@@ -99,6 +100,17 @@ type PublicTextRejectionReason = Literal[
     "ACTION_ALREADY_PUBLIC",
     "CATEGORY_OPTIONS_NOT_PUBLIC",
 ]
+_INTERNAL_QUESTION_REFERENCE = re.compile(
+    r"(?<![A-Za-z0-9])(?:scope|view|candidate|evidence|obs)_[A-Za-z0-9_]+(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def internal_reference_in_question(text: str) -> bool:
+    """Detect controller reference tokens that cannot identify a visible subject."""
+    return _INTERNAL_QUESTION_REFERENCE.search(text) is not None
+
+
 MODEL_OUTPUT_ABSTENTIONS = frozenset(
     {
         "MODEL_CONTENT_EMPTY",
@@ -451,7 +463,9 @@ class SynthesisCoordinator:
             ) -> None:
                 if result.text is None:
                     return
-                if repeated_public_question(result.text, history):
+                if internal_reference_in_question(result.text):
+                    reason = "INTERNAL_REFERENCE_IN_QUESTION"
+                elif repeated_public_question(result.text, history):
                     reason = "REPEATED_PUBLIC_QUESTION"
                 elif (
                     selected_instruction.task_id == "object_identification"
@@ -511,6 +525,7 @@ class SynthesisCoordinator:
                 )
             except ExecutionError as error:
                 if error.reason not in {
+                    "INTERNAL_REFERENCE_IN_QUESTION",
                     "REPEATED_PUBLIC_QUESTION",
                     "IDENTIFICATION_TARGET_IN_QUESTION",
                     "TEXT_RELATION_UNVERIFIED",
@@ -544,6 +559,18 @@ class SynthesisCoordinator:
                 terminal_status = "REJECTED"
                 terminal_stage = "question_generation"
                 terminal_reason = "PRIVATE_PROMPT_ECHO"
+                break
+            if internal_reference_in_question(question.content):
+                self._record_public_text_rejection(
+                    conversation_id,
+                    turn_index,
+                    field="question",
+                    reason="INTERNAL_REFERENCE_IN_QUESTION",
+                    content=question.content,
+                )
+                terminal_status = "REJECTED"
+                terminal_stage = "question_generation"
+                terminal_reason = "INTERNAL_REFERENCE_IN_QUESTION"
                 break
             if repeated_public_question(question.content, snapshot.public_history):
                 self._record_public_text_rejection(
@@ -843,6 +870,15 @@ class SynthesisCoordinator:
                     reason="CATEGORY_OPTIONS_NOT_PUBLIC",
                     content=turn.question.content,
                 )
+            internal_reference = internal_reference_in_question(turn.question.content)
+            if internal_reference:
+                self._record_public_text_rejection(
+                    conversation.conversation_id,
+                    turn.turn_index,
+                    field="question",
+                    reason="INTERNAL_REFERENCE_IN_QUESTION",
+                    content=turn.question.content,
+                )
             unverified_text_relation = (
                 turn.instruction.task_id == "text_transcription"
                 and unverified_transcription_relation(turn.question.content)
@@ -857,7 +893,11 @@ class SynthesisCoordinator:
                 )
             fit = (
                 GateVerdict.NOT_MET
-                if repeated or disclosure or missing_scene_options or unverified_text_relation
+                if repeated
+                or disclosure
+                or missing_scene_options
+                or unverified_text_relation
+                or internal_reference
                 else GateVerdict.MET
             )
             if fit is GateVerdict.MET and (
@@ -1528,6 +1568,7 @@ class SynthesisCoordinator:
             not question.content.strip()
             or not answer.content.strip()
             or is_private_prompt_echo(question.content)
+            or internal_reference_in_question(question.content)
             or is_private_prompt_echo(answer.content)
             or repeated_public_question(question.content, history)
         )
@@ -1915,6 +1956,7 @@ class SynthesisCoordinator:
             "CANDIDATE_PARAMETER_SOURCE",
             "CANDIDATE_PARAMETER_VALUE",
             "REPEATED_PUBLIC_QUESTION",
+            "INTERNAL_REFERENCE_IN_QUESTION",
             "IDENTIFICATION_TARGET_IN_QUESTION",
             "TEXT_RELATION_UNVERIFIED",
         }
@@ -2090,6 +2132,12 @@ class SynthesisCoordinator:
             return (
                 "The draft repeats an answered question. Keep the selected task and ask for a"
                 " visibly supported new target, attribute, or public condition."
+            )
+        if reason == "INTERNAL_REFERENCE_IN_QUESTION":
+            return (
+                "The draft contains a controller reference such as scope_0."
+                " Refer to the target by its visible location or traits;"
+                " never copy scope_id, view_id, candidate_id, or evidence IDs into public text."
             )
         if reason == "IDENTIFICATION_TARGET_IN_QUESTION":
             return (

@@ -129,7 +129,7 @@ The assigned generation role turns the selected operation into one public questi
 
 Each role returns `MET`, `NOT_MET`, or `UNKNOWN`. A clear negative rejects the turn. Missing evidence or disagreement causes abstention. An answer is never generated for a question that did not pass.
 
-Before those model calls, the controller applies two narrow checks that do not require visual judgment. It rejects a question that is identical to an earlier user question after Unicode, case, whitespace, and final-punctuation normalization. It also rejects a substantial echo of Pixelogue's private model instructions. The rejected text and reason are stored for diagnosis. Paraphrases still go to both image-aware evaluators. After answer generation, the controller rejects a close paraphrase that reproduces the same substantial answer as an earlier turn, before spending answer-review calls.
+Before those model calls, the controller checks exact normalized question repeats, substantial echoes of private model instructions, and internal references such as `scope_0`. Invalid drafts get a bounded correction attempt; unresolved drafts are rejected. The rejected text and reason are stored for diagnosis. Paraphrases still go to both image-aware evaluators. Re-rating stored turns applies the same internal-reference check. After answer generation, the controller rejects a close paraphrase that reproduces the same substantial answer as an earlier turn, before spending answer-review calls.
 
 ### Step 5: freeze public requirements before the answer
 

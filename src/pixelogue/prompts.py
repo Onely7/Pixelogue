@@ -235,7 +235,11 @@ listed candidate lacks a supported new request.""",
 the target language and grounded in the visible scope and public history. Realize the selected
 task_id and operation exactly; do not replace it with an easier nearby task or repeat an answered
 request. Every public parameter must be realized in the question, including scope, counting unit,
-precision, predicates and hypothetical assumptions. For scene_categorization, category_set
+precision, predicates and hypothetical assumptions.
+Controller IDs such as scope_id, view_id, candidate_id and evidence IDs are private references;
+never print their values in the public question. Describe the target using visible location or traits.
+If those cues cannot identify it uniquely, return text=null with a reason.
+For scene_categorization, category_set
 must contain at least two distinct ordinary alternatives, including the supported target category;
 present all alternatives in the public question. Ask exactly one final semantic operation;
 independent compound requests are unsupported and must not be mislabeled as their first operation.

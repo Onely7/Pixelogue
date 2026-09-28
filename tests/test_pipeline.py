@@ -4,7 +4,7 @@ import json
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from pydantic import BaseModel
@@ -72,6 +72,7 @@ class ScriptedClient:
         fail_first_schema: bool = False,
         repeat_question: bool = False,
         echo_question_prompt: bool = False,
+        internal_reference_question: Literal["none", "first", "always"] = "none",
         echo_answer_prompt: bool = False,
         unknown_capability: bool = False,
     ) -> None:
@@ -83,6 +84,7 @@ class ScriptedClient:
         self.fail_first_schema = fail_first_schema
         self.repeat_question = repeat_question
         self.echo_question_prompt = echo_question_prompt
+        self.internal_reference_question = internal_reference_question
         self.echo_answer_prompt = echo_answer_prompt
         self.unknown_capability = unknown_capability
         self.rating_failed = False
@@ -179,6 +181,12 @@ class ScriptedClient:
         elif response_model is TextPayload:
             if stage == "question_generation" and self.echo_question_prompt:
                 text = STAGE_INSTRUCTIONS["question_generation"]
+            elif (
+                stage == "question_generation"
+                and self.internal_reference_question != "none"
+                and (self.internal_reference_question == "always" or retry_feedback is None)
+            ):
+                text = "What is the object at scope_0?"
             elif stage == "question_generation" and self.repeat_question:
                 text = (
                     "What color is the visible region?"
@@ -452,6 +460,7 @@ def _coordinator(
     concurrency_probe: ConcurrencyProbe | None = None,
     repeat_question: bool = False,
     echo_question_prompt: bool = False,
+    internal_reference_question: Literal["none", "first", "always"] = "none",
     echo_answer_prompt: bool = False,
     unknown_capability: bool = False,
     evaluation_mode: str = "detailed",
@@ -474,6 +483,7 @@ def _coordinator(
         concurrency_probe=concurrency_probe,
         repeat_question=repeat_question,
         echo_question_prompt=echo_question_prompt,
+        internal_reference_question=internal_reference_question,
         echo_answer_prompt=echo_answer_prompt,
         unknown_capability=unknown_capability,
     )
@@ -484,6 +494,7 @@ def _coordinator(
         concurrency_probe=concurrency_probe,
         repeat_question=repeat_question,
         echo_question_prompt=echo_question_prompt,
+        internal_reference_question=internal_reference_question,
         echo_answer_prompt=echo_answer_prompt,
         unknown_capability=unknown_capability,
     )
@@ -821,6 +832,40 @@ def test_rerating_rejects_saved_identification_answer_echo_without_model_calls(
     assert calls_after == calls_before
 
 
+def test_rerating_rejects_internal_question_reference_without_model_calls(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, evaluation_mode="holistic"
+    )
+    try:
+        original = coordinator.synthesize_image(image, root)
+        assert original.status == "QUALITY_CANDIDATE"
+        first = original.turns[0]
+        leaked = first.model_copy(
+            update={
+                "question": first.question.model_copy(
+                    update={"content": "What is the object at scope_0?"}
+                )
+            }
+        )
+        saved = original.model_copy(update={"turns": (leaked,), "status": "REJECTED"})
+        calls_before = sum(len(client.calls) for client in (generator_a, generator_b))
+        rerated = coordinator.rate_existing(saved, root)
+        calls_after = sum(len(client.calls) for client in (generator_a, generator_b))
+        rejection_hash = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = 'public-text-rejections' LIMIT 1"
+        ).fetchone()[0]
+        rejection = json.loads(store.read_artifact(rejection_hash))
+    finally:
+        store.close()
+    assert rerated.status == "REJECTED"
+    assert rerated.turns[0].status == "REJECTED"
+    assert calls_after == calls_before
+    assert rejection["reason"] == "INTERNAL_REFERENCE_IN_QUESTION"
+
+
 def test_rerating_rejects_unverified_text_locator_without_model_calls(
     tmp_path: Path, image_artifact
 ) -> None:
@@ -972,6 +1017,58 @@ def test_private_prompt_echo_is_rejected_before_question_fit(
     assert conversation.status == "REJECTED"
     assert not conversation.turns
     assert rejection_count == 1
+    assert all(
+        stage != "question_fit"
+        for client in (generator_a, generator_b)
+        for stage, _ in client.calls
+    )
+
+
+def test_internal_reference_is_corrected_before_question_fit(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, internal_reference_question="first"
+    )
+    try:
+        conversation = coordinator.synthesize_image(image, root)
+        rejection_hash = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = 'public-text-rejections' LIMIT 1"
+        ).fetchone()[0]
+        rejection = json.loads(store.read_artifact(rejection_hash))
+    finally:
+        store.close()
+
+    assert conversation.turns
+    assert all("scope_0" not in turn.question.content for turn in conversation.turns)
+    assert rejection["reason"] == "INTERNAL_REFERENCE_IN_QUESTION"
+    assert rejection["content"] == "What is the object at scope_0?"
+    assert any(
+        feedback and "controller reference" in feedback
+        for client in (generator_a, generator_b)
+        for feedback in client.retry_feedback
+    )
+
+
+def test_persistent_internal_reference_stops_before_question_fit(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, internal_reference_question="always"
+    )
+    try:
+        conversation = coordinator.synthesize_image(image, root)
+        rejection_count = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'public-text-rejections'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+
+    assert conversation.status == "REJECTED"
+    assert not conversation.turns
+    assert rejection_count >= 1
     assert all(
         stage != "question_fit"
         for client in (generator_a, generator_b)
