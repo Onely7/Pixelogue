@@ -411,6 +411,9 @@ class SynthesisCoordinator:
                     self.config.tasks,
                     frozenset(turn.instruction.candidate_id for turn in turns),
                 )
+                candidates = self._drop_answered_candidates(
+                    candidates, turns, conversation_id, turn_index
+                )
             if not candidates:
                 terminal_status = "REJECTED"
                 terminal_stage = "candidate_admission"
@@ -1631,6 +1634,44 @@ class SynthesisCoordinator:
                     (conversation.conversation_id, artifact_hash),
                 )
         return conversation
+
+    def _drop_answered_candidates(
+        self,
+        candidates: Sequence[InstructionCandidate],
+        prior_turns: Sequence[TurnArtifact],
+        conversation_id: str,
+        turn_index: int,
+    ) -> tuple[InstructionCandidate, ...]:
+        """Omit an object-name request already answered in the same visible scope."""
+        retained: list[InstructionCandidate] = []
+        for candidate in candidates:
+            target = next(
+                (item.value for item in candidate.public_parameters if item.name == "target"),
+                None,
+            )
+            same_scope_messages = tuple(
+                message
+                for turn in prior_turns
+                if turn.instruction.scope_id == candidate.scope_id
+                for message in (turn.question, turn.answer)
+            )
+            if (
+                candidate.task_id == "object_identification"
+                and isinstance(target, str)
+                and identification_answer_in_history(target, same_scope_messages)
+            ):
+                self.store.write_json_artifact(
+                    "candidate-admission-rejections",
+                    {
+                        "conversation_id": conversation_id,
+                        "turn_index": turn_index,
+                        "candidate_id": candidate.candidate_id,
+                        "reason": "IDENTIFICATION_ANSWER_ALREADY_PUBLIC",
+                    },
+                )
+                continue
+            retained.append(candidate)
+        return tuple(retained)
 
     @staticmethod
     def _answer_disclosure_reason(

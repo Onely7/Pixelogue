@@ -378,9 +378,16 @@ def test_scene_categories_require_distinct_public_choices() -> None:
 
 def test_answer_labels_are_hidden_from_model_operation_contract() -> None:
     data = inventory(
-        scope("left", visible_entity="MET", scene_context="MET", visible_interaction="MET")
+        scope(
+            "left",
+            visible_entity="MET",
+            visible_attribute="MET",
+            scene_context="MET",
+            visible_interaction="MET",
+        )
     )
     for task_id, label, visible_scope in (
+        ("attribute_lookup", "black", "A black primate sitting on a railing."),
         ("object_identification", "gibbon", "A gibbon sitting on a metal railing."),
         ("scene_categorization", "collapsed bridge", "A collapsed bridge scene."),
         ("visible_action_relation", "sitting", "A black primate sitting on a railing."),

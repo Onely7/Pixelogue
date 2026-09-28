@@ -132,6 +132,7 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
     catalog = task_catalog()
     task = next(task for task in catalog.tasks if task.id == candidate.task_id)
     private_target_task = task.id in {
+        "attribute_lookup",
         "object_identification",
         "scene_categorization",
         "visible_action_relation",
@@ -140,7 +141,7 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         "the selected image scene"
         if task.id == "scene_categorization"
         else "the selected image region"
-        if task.id in {"object_identification", "visible_action_relation"}
+        if task.id in {"attribute_lookup", "object_identification", "visible_action_relation"}
         else candidate.visible_scope
     )
     checks = {name: catalog.eligibility_checks[name] for name in task.eligibility_checks}

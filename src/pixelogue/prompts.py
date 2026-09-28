@@ -135,9 +135,13 @@ not absence. Copy image_id and each view_id exactly. Respect max_scopes and
 max_observations_per_scope. Within one scope, report each capability at most once: a capability
 describes support for an operation across the scope, not one observation per visible object.
 Summarize multiple instances in that observation's detail. Use the actual supplied resolution.
-For a salient resolved subject, include visible_attribute when independent visible properties
-are clear (for example fur color and nose color); name each property separately in the detail
-so later turns can ask for different facts. Do not infer hidden properties.
+For EACH scope with a salient visible animal, person or object, explicitly check for a
+visible_attribute such as color, shape or a visible part. Include a MET visible_attribute
+when clearly supported, even if visible_interaction or scene_context is also present.
+Do not describe only the background's attributes when the main subject is clearly visible.
+Name independent properties separately in the detail (for example fur color and nose color)
+so later turns can ask for different facts. If a property is unclear, mark it UNKNOWN;
+do not infer hidden properties.
 Use only capability names from capability_vocabulary. Do not infer domains from source
 names or annotations. Broad discovery is followed by focused binding of eligible operations.""",
     "candidate_binding": """Bind only the controller-provided candidates to locally supported
@@ -172,6 +176,8 @@ instruction for a public choice/hypothesis, image for observed facts, history fo
 For scene_categorization, category_set is an instruction-origin tuple of at least two distinct
 ordinary category choices, including the image-supported target. Choices must be contrastive and
 nonoverlapping at the same level (for example indoor versus outdoor, not street versus neighborhood).
+A wall, floor or single close-up object alone does not establish indoor versus outdoor; without
+an unambiguous visible cue, mark visible_category_supported UNKNOWN rather than guessing.
 A single answer label is not a set.
 Factual origins need references to this scope's evidence IDs or exact public message IDs.
 An instruction choice has no evidence_refs. An image or history fact must include at least one
@@ -225,6 +231,8 @@ independent compound requests are unsupported and must not be mislabeled as thei
 For object_identification, the target can itself be the category to name and is withheld from this
 public operation view. Do not put that category or a synonym of the answer in the question. Refer by location or visible non-category
 traits; if that does not uniquely identify the target, return text=null with a reason.
+For attribute_lookup, ask for the named public attribute on a uniquely resolved subject without
+stating its value in the question; return text=null if only an answer-bearing description resolves it.
 For text_transcription, bound the requested text to a visible absolute region or an exact public
 scope. Do not locate text relative to another object: the transcript checker has no coordinates
 to verify above, below, beside, left, or right relationships.
