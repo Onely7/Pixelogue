@@ -84,6 +84,28 @@ def test_failed_pilot_can_retry_only_within_existing_budget(
         gpu_watch._retry_failed_pilot(state, "pilot")
 
 
+def test_completed_pilot_can_rerun_without_extending_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gpu_watch, "STATE", tmp_path / "state.json")
+    state = {
+        "used_gpu_seconds": 100.0,
+        "authorized_gpu_seconds": 1000.0,
+        "active": None,
+        "pilot_attempted": True,
+        "pilot_exit_code": 0,
+        "campaigns": [{"id": "pilot", "additional_gpu_seconds": 600}],
+    }
+    with pytest.raises(RuntimeError, match="completed pilot"):
+        gpu_watch._rerun_completed_pilot(state, "unknown")
+    gpu_watch._rerun_completed_pilot(state, "pilot")
+    assert state["pilot_attempted"] is False
+    assert state["pilot_exit_code"] is None
+    assert state["authorized_gpu_seconds"] == 1000.0
+    with pytest.raises(RuntimeError, match="completed pilot"):
+        gpu_watch._rerun_completed_pilot(state, "pilot")
+
+
 def test_pilot_summary_requires_all_rows_without_execution_errors(tmp_path: Path) -> None:
     output = tmp_path / "pilot"
     output.mkdir()

@@ -102,6 +102,22 @@ def _retry_failed_pilot(state: dict[str, Any], campaign_id: str | None) -> None:
     print(f"retrying failed pilot under campaign {campaign_id}", flush=True)
 
 
+def _rerun_completed_pilot(state: dict[str, Any], campaign_id: str | None) -> None:
+    """Permit one new code revision to be checked using unspent campaign time."""
+    if (
+        campaign_id is None
+        or not any(item["id"] == campaign_id for item in state.get("campaigns", []))
+        or state.get("active") is not None
+        or state.get("pilot_exit_code") != 0
+        or _remaining(state) <= 600
+    ):
+        raise RuntimeError("Rerun requires a completed pilot and remaining campaign budget")
+    state["pilot_attempted"] = False
+    state["pilot_exit_code"] = None
+    _save(state)
+    print(f"rerunning completed pilot under campaign {campaign_id}", flush=True)
+
+
 def _begin(state: dict[str, Any], phase: str, gpu: int, pid: int) -> None:
     state["active"] = {
         "phase": phase,
@@ -363,6 +379,7 @@ def _watch(
     additional_hours: float,
     reserve_only: bool,
     retry_failed_pilot: bool,
+    rerun_completed_pilot: bool,
 ) -> None:
     if not PYTHON_WITH_TORCH.is_file():
         raise RuntimeError("Install the separate runtime/vllm lock first")
@@ -374,6 +391,8 @@ def _watch(
             _authorize_campaign(state, campaign_id, additional_hours)
         if retry_failed_pilot:
             _retry_failed_pilot(state, campaign_id)
+        if rerun_completed_pilot:
+            _rerun_completed_pilot(state, campaign_id)
         last: set[int] = set()
         last_heartbeat = time.monotonic()
         print(
@@ -438,6 +457,7 @@ def main() -> None:
     parser.add_argument("--additional-gpu-hours", type=float, default=0.0)
     parser.add_argument("--reserve-only", action="store_true")
     parser.add_argument("--retry-failed-pilot", action="store_true")
+    parser.add_argument("--rerun-completed-pilot", action="store_true")
     args = parser.parse_args()
     if not 5 <= args.poll_seconds <= 300 or not 0.20 <= args.memory_fraction <= 0.92:
         parser.error("Invalid polling or reservation fraction")
@@ -447,6 +467,10 @@ def main() -> None:
         parser.error("Budget extension must be at most four GPU-hours with a campaign ID")
     if args.retry_failed_pilot and (args.reserve_only or args.mode != "watch"):
         parser.error("Pilot retry requires watch mode without --reserve-only")
+    if args.rerun_completed_pilot and (
+        args.reserve_only or args.mode != "watch" or args.retry_failed_pilot
+    ):
+        parser.error("Completed pilot rerun requires watch mode without other pilot flags")
     signal.signal(signal.SIGTERM, _signal_stop)
     signal.signal(signal.SIGINT, _signal_stop)
     if args.mode == "hold":
@@ -460,6 +484,7 @@ def main() -> None:
             args.additional_gpu_hours,
             args.reserve_only,
             args.retry_failed_pilot,
+            args.rerun_completed_pilot,
         )
 
 

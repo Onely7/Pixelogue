@@ -122,6 +122,8 @@ Add `--reserve-only` while diagnosing a failed pilot. This holds an idle GPU wit
 
 After a failed pilot with budget remaining, `--retry-failed-pilot --campaign-id ID` resets only the one-time attempt flag for that campaign. It does not add GPU hours. Keep the original failure logs and use a new run ID for the corrected code.
 
+After a completed diagnostic pilot, `--rerun-completed-pilot --campaign-id ID` starts another run with the current code if that campaign still has at least ten minutes of unspent GPU time. It does not increase the budget. Stop an existing post-job holder cleanly before using this option; the next run receives a new run ID and again restores the reservation after its job.
+
 ## 4. Wait for real readiness
 
 vLLM continues with compilation, CUDA graph capture, and multimodal warmup after loading weights. Allocated GPU memory or a live PID does not mean the server is ready.

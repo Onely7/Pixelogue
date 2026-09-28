@@ -122,6 +122,8 @@ tail -f artifacts/gpu-watch/monitor.log
 
 pilotが失敗し、予算が残っている場合は `--retry-failed-pilot --campaign-id ID` で、そのキャンペーンの試行済みフラグだけを戻せます。GPU時間は追加しません。元の失敗ログを保存し、修正コードには新しいrun IDを使います。
 
+診断pilotが正常終了した後も、同じキャンペーンに未使用のGPU時間が10分以上あれば `--rerun-completed-pilot --campaign-id ID` で現行コードを再検証できます。予算は増やしません。実行前にジョブ後の予約プロセスを正常停止してください。再実行には新しいrun IDを使い、ジョブ終了後は再度予約します。
+
 ## 4. 実際に応答できるまで待つ
 
 vLLMは重みを読み込んだ後も、compile、CUDA graphの準備、画像入力のウォームアップを行います。PIDが存在し、GPUメモリを確保していても、起動完了とは限りません。
