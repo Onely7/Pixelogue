@@ -13,6 +13,8 @@ Pixelogue は、指示選択と対話生成を別の役割に分けます。stan
 
 `configs/pilot.yaml` は、一時的な検証用の設定です。2つの論理的な役割を、port 8002で動く1つの `Qwen/Qwen3.5-9B` サーバーへ割り当てます。評価要求は別々に送りますが、同じ重みを使うため、確認できるのはパイプラインの接続です。異なるモデルによる評価の多様性は確認できません。
 
+`configs/paired-one-gpu-pilot.yaml` は標準の Qwen3.8／Gemma 4 の組と Qwen3.5-2B 選択器を維持し、空いている 96 GiB 級 GPU 1 台へ3サーバーを配置する pilot 設定です。対応する `runtime/vllm/*-onegpu.yaml` はポート 18102・18103・18100、メモリ比率 0.44・0.41・0.10 を使います。同じ GPU を明示指定して順番に起動し、`doctor --config configs/paired-one-gpu-pilot.yaml --check-servers` で確認します。標準設定のモデル名や量子化は変更しません。RTX PRO 6000 Blackwell 1 台で3サーバーの起動、画像要求、合成、replayを確認しました。他の GPU では容量を再確認してください。
+
 ## 1. GPUを使う直前に調べる
 
 モデルを起動する直前に実行します。
