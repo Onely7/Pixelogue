@@ -82,3 +82,54 @@ def test_input_needs_public_text_and_exact_view() -> None:
         )[0]
         is GateVerdict.UNKNOWN
     )
+
+
+def test_target_consensus_tolerates_irrelevant_controls_but_requires_overlapping_bounds() -> None:
+    first = _source()
+    second = first.model_copy(
+        update={
+            "controls": (
+                first.controls[0].model_copy(
+                    update={
+                        "region": first.controls[0].region.model_copy(
+                            update={"left": 0.21, "right": 0.51, "top": 0.105, "bottom": 0.205}
+                        )
+                    }
+                ),
+                first.controls[0].model_copy(update={"control_id": "unrelated"}),
+            )
+        }
+    )
+    answer = (
+        '{"action":"focus","target_id":"search","view_id":"view-1",'
+        '"x":0.3,"y":0.15,"pixel_x":300,"pixel_y":75,"text":null}'
+    )
+    args = (
+        "static-screen",
+        {"target": "search", "action": "focus"},
+        "s",
+        "view-1",
+        [{"view_id": "view-1", "width": "1000", "height": "500"}],
+        answer,
+    )
+    assert verify_ui_action((first, second), *args)[0] is GateVerdict.MET
+    far = second.model_copy(
+        update={
+            "controls": (
+                second.controls[0].model_copy(
+                    update={
+                        "region": second.controls[0].region.model_copy(
+                            update={"left": 0.7, "right": 0.9}
+                        )
+                    }
+                ),
+            )
+        }
+    )
+    assert verify_ui_action((first, far), *args)[0] is GateVerdict.UNKNOWN
+    wrong_kind = second.model_copy(
+        update={"controls": (second.controls[0].model_copy(update={"kind": "button"}),)}
+    )
+    assert verify_ui_action((first, wrong_kind), *args)[0] is GateVerdict.UNKNOWN
+    missing = second.model_copy(update={"controls": ()})
+    assert verify_ui_action((first, missing), *args)[0] is GateVerdict.UNKNOWN

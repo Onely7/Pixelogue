@@ -66,6 +66,16 @@ class UIActionAnswer(StrictModel):
     text: str | None = None
 
 
+def _region_iou(left: ImageRegion, right: ImageRegion) -> float:
+    """Measure agreement on the public target's visible clickable bounds."""
+    width = max(0.0, min(left.right, right.right) - max(left.left, right.left))
+    height = max(0.0, min(left.bottom, right.bottom) - max(left.top, right.top))
+    intersection = width * height
+    left_area = (left.right - left.left) * (left.bottom - left.top)
+    right_area = (right.right - right.left) * (right.bottom - right.top)
+    return intersection / (left_area + right_area - intersection)
+
+
 def verify_ui_action(
     sources: tuple[UIActionSource, UIActionSource],
     domain: str,
@@ -84,9 +94,21 @@ def verify_ui_action(
         for source in sources
     ):
         return GateVerdict.UNKNOWN, {"reason": "Incomplete or mismatched screen evidence"}
-    canonical = [source.model_dump(mode="json", exclude={"reason"}) for source in sources]
-    if canonical[0] != canonical[1]:
-        return GateVerdict.UNKNOWN, {"reason": "Independent control inventories disagree"}
+    target = parameters.get("target")
+    action = parameters.get("action")
+    matched = [
+        [control for control in source.controls if control.control_id == target]
+        for source in sources
+    ]
+    if action not in {"click", "focus", "input"} or any(len(items) != 1 for items in matched):
+        return GateVerdict.UNKNOWN, {"reason": "Public action or unique target is unresolved"}
+    first, second = matched[0][0], matched[1][0]
+    agreement = _region_iou(first.region, second.region)
+    if first.kind != second.kind or first.enabled != second.enabled or agreement < 0.7:
+        return GateVerdict.UNKNOWN, {
+            "reason": "Independent target controls disagree",
+            "target_region_iou": agreement,
+        }
     if not isinstance(image_views, list) or len(image_views) != 1:
         return GateVerdict.UNKNOWN, {"reason": "Delivered image view is unresolved"}
     view = image_views[0]
@@ -105,22 +127,17 @@ def verify_ui_action(
         answer = UIActionAnswer.model_validate_json(candidate_answer)
     except (ExternalInputError, ValueError, TypeError):
         return GateVerdict.UNKNOWN, {"reason": "Malformed UI action output"}
-    target = parameters.get("target")
-    action = parameters.get("action")
-    controls = [item for item in sources[0].controls if item.control_id == target]
-    if action not in {"click", "focus", "input"} or len(controls) != 1:
-        return GateVerdict.UNKNOWN, {"reason": "Public action or unique target is unresolved"}
-    control = controls[0]
-    if not control.enabled or (action in {"focus", "input"} and control.kind != "field"):
+    if not first.enabled or (action in {"focus", "input"} and first.kind != "field"):
         return GateVerdict.UNKNOWN, {"reason": "Target cannot perform public action"}
     input_text = parameters.get("input_text")
     if action == "input" and not isinstance(input_text, str):
         return GateVerdict.UNKNOWN, {"reason": "Public input text is missing"}
     if action != "input" and input_text is not None:
         return GateVerdict.UNKNOWN, {"reason": "Text supplied for non-input action"}
-    region = control.region
-    point_inside = (
-        region.left <= answer.x <= region.right and region.top <= answer.y <= region.bottom
+    point_inside = all(
+        control.region.left <= answer.x <= control.region.right
+        and control.region.top <= answer.y <= control.region.bottom
+        for control in (first, second)
     )
     converted = (min(width - 1, int(answer.x * width)), min(height - 1, int(answer.y * height)))
     correct = (
@@ -132,7 +149,8 @@ def verify_ui_action(
         and answer.text == input_text
     )
     return (GateVerdict.MET if correct else GateVerdict.NOT_MET), {
-        "target_region": region.model_dump(mode="json"),
+        "target_regions": [control.region.model_dump(mode="json") for control in (first, second)],
+        "target_region_iou": agreement,
         "converted_pixel": converted,
         "view_dimensions": (width, height),
     }
