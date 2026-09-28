@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from html.parser import HTMLParser
 from typing import Annotated, Literal
@@ -11,8 +10,9 @@ from pydantic import Field, model_validator
 
 from pixelogue.config import StrictModel
 from pixelogue.contracts import GateVerdict
-from pixelogue.errors import ExecutionError
+from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.rules import parse_numeric_lexeme
+from pixelogue.serialization import strict_json_object
 from pixelogue.task_evidence import ImageRegion
 
 TABLE_TASKS = frozenset(
@@ -269,8 +269,8 @@ def _cells_signature(cells: tuple[TableCell, ...]) -> tuple[tuple[object, ...], 
 
 def _parse_json_table(answer: str) -> TableGrid | None:
     try:
-        decoded = json.loads(answer)
-        if not isinstance(decoded, dict) or set(decoded) != {
+        decoded = strict_json_object(answer)
+        if set(decoded) != {
             "table_id",
             "rows",
             "cols",
@@ -290,7 +290,7 @@ def _parse_json_table(answer: str) -> TableGrid | None:
             }:
                 return None
         return TableGrid.model_validate_json(answer)
-    except (ValueError, TypeError, KeyError):
+    except (ExternalInputError, ValueError, TypeError, KeyError):
         return None
 
 

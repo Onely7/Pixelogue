@@ -183,6 +183,11 @@ def test_reconstruction_separates_schema_from_content_and_preserves_spans() -> N
         GateVerdict.UNKNOWN,
         GateVerdict.NOT_MET,
     )
+    duplicated = correct.replace('"text": "20"', '"text": "21", "text": "20"')
+    assert _check(source, None, duplicated, format="structured_json") == (
+        GateVerdict.UNKNOWN,
+        GateVerdict.NOT_MET,
+    )
 
 
 def test_html_and_simple_markdown_are_parsed_without_executing_markup() -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import io
-import json
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -13,7 +12,8 @@ from pydantic import Field
 
 from pixelogue.config import StrictModel
 from pixelogue.contracts import GateVerdict
-from pixelogue.errors import ExecutionError
+from pixelogue.errors import ExecutionError, ExternalInputError
+from pixelogue.serialization import strict_json_object
 from pixelogue.specialist_env import call_renderer
 from pixelogue.task_evidence import ImageRegion
 
@@ -95,11 +95,11 @@ def verify_render(
         return GateVerdict.UNKNOWN, {"reason": "Reference view identity mismatch"}
     try:
         width, height = int(view["width"]), int(view["height"])
-        raw = json.loads(candidate_answer)
-        if not isinstance(raw, dict) or set(raw) != {"format", "code"}:
+        raw = strict_json_object(candidate_answer)
+        if set(raw) != {"format", "code"}:
             raise ValueError("Wrong code output schema")
         answer = RenderAnswer.model_validate_json(candidate_answer)
-    except (KeyError, TypeError, ValueError):
+    except (ExternalInputError, KeyError, TypeError, ValueError):
         return GateVerdict.UNKNOWN, {"reason": "Malformed code answer or viewport"}
     if answer.format != expected_format or not 1 <= width <= 2048 or not 1 <= height <= 2048:
         return GateVerdict.UNKNOWN, {"reason": "Unsupported format or viewport"}

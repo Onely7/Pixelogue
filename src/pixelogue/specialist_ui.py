@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Annotated, Literal
 
@@ -10,6 +9,8 @@ from pydantic import Field, model_validator
 
 from pixelogue.config import StrictModel
 from pixelogue.contracts import GateVerdict
+from pixelogue.errors import ExternalInputError
+from pixelogue.serialization import strict_json_object
 from pixelogue.task_evidence import ImageRegion
 
 
@@ -98,11 +99,11 @@ def verify_ui_action(
     if not 1 <= width <= 20_000 or not 1 <= height <= 20_000:
         return GateVerdict.UNKNOWN, {"reason": "Delivered image dimensions are invalid"}
     try:
-        raw = json.loads(candidate_answer)
-        if not isinstance(raw, dict) or set(raw) != set(UIActionAnswer.model_fields):
+        raw = strict_json_object(candidate_answer)
+        if set(raw) != set(UIActionAnswer.model_fields):
             raise ValueError("Wrong UI action output schema")
         answer = UIActionAnswer.model_validate_json(candidate_answer)
-    except (ValueError, TypeError):
+    except (ExternalInputError, ValueError, TypeError):
         return GateVerdict.UNKNOWN, {"reason": "Malformed UI action output"}
     target = parameters.get("target")
     action = parameters.get("action")

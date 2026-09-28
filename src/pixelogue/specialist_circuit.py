@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from itertools import combinations
 from typing import Annotated, Literal
 
@@ -10,6 +9,8 @@ from pydantic import Field, model_validator
 
 from pixelogue.config import StrictModel
 from pixelogue.contracts import GateVerdict
+from pixelogue.errors import ExternalInputError
+from pixelogue.serialization import strict_json_object
 from pixelogue.task_evidence import ImageRegion
 
 
@@ -129,11 +130,9 @@ def verify_circuit(
     if _topology(sources[0]) != _topology(sources[1]):
         return GateVerdict.UNKNOWN, {"reason": "Independent circuit extractions disagree"}
     try:
-        raw = json.loads(candidate_answer)
-        if not isinstance(raw, dict):
-            raise ValueError("Circuit output must be an object")
+        raw = strict_json_object(candidate_answer)
         answer = CircuitAnswer.model_validate_json(candidate_answer)
-    except (ValueError, TypeError):
+    except (ExternalInputError, ValueError, TypeError):
         return GateVerdict.UNKNOWN, {"reason": "Malformed circuit output"}
     if operation in {"parallel_pairs", "series_pairs"}:
         if set(raw) != {"pairs"} or answer.pairs is None:

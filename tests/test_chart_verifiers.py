@@ -200,3 +200,8 @@ def test_reconstruction_schema_and_content_are_independent() -> None:
         GateVerdict.UNKNOWN,
         GateVerdict.NOT_MET,
     )
+    duplicated = valid.replace('"lower": "20"', '"lower": "21", "lower": "20"')
+    assert _check(source, None, duplicated, format="structured_json") == (
+        GateVerdict.UNKNOWN,
+        GateVerdict.NOT_MET,
+    )

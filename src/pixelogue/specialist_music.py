@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
 from pixelogue.config import StrictModel
 from pixelogue.contracts import GateVerdict
-from pixelogue.errors import ExecutionError
+from pixelogue.errors import ExecutionError, ExternalInputError
+from pixelogue.serialization import strict_json_object
 from pixelogue.specialist_env import call_worker
 from pixelogue.task_evidence import ImageRegion
 
@@ -123,11 +123,11 @@ def verify_music(
     if canonical[0] != canonical[1]:
         return GateVerdict.UNKNOWN, {"reason": "Independent score extractions disagree"}
     try:
-        raw = json.loads(candidate_answer)
-        if not isinstance(raw, dict) or set(raw) != {"events"}:
+        raw = strict_json_object(candidate_answer)
+        if set(raw) != {"events"}:
             raise ValueError("Unsupported score output schema")
         parsed = MusicAnswer.model_validate_json(candidate_answer)
-    except (ValueError, TypeError):
+    except (ExternalInputError, ValueError, TypeError):
         return GateVerdict.UNKNOWN, {"reason": "Malformed public score output"}
     worker_source = sources[0].model_dump(
         mode="json", exclude={"reason", "scope_id", "view_id", "scope_region", "domain", "coverage"}

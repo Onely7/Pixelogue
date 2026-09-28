@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Annotated, Literal
 
@@ -10,6 +9,8 @@ from pydantic import Field, model_validator
 
 from pixelogue.config import StrictModel
 from pixelogue.contracts import GateVerdict
+from pixelogue.errors import ExternalInputError
+from pixelogue.serialization import strict_json_object
 from pixelogue.task_evidence import ImageRegion
 
 DOCUMENT_TASKS = frozenset({"text_field_extraction", "document_structure_reconstruction"})
@@ -151,10 +152,10 @@ def _parse_fields(
     candidate_answer: str, requested_fields: tuple[str, ...]
 ) -> dict[str, str | None] | None:
     try:
-        decoded = json.loads(candidate_answer)
-    except ValueError:
+        decoded = strict_json_object(candidate_answer)
+    except ExternalInputError:
         return None
-    if not isinstance(decoded, dict) or set(decoded) != {"fields"}:
+    if set(decoded) != {"fields"}:
         return None
     fields = decoded["fields"]
     if not isinstance(fields, dict) or set(fields) != set(requested_fields):
@@ -166,8 +167,8 @@ def _parse_fields(
 
 def _parse_nodes(candidate_answer: str) -> tuple[PublicDocumentNode, ...] | None:
     try:
-        decoded = json.loads(candidate_answer)
-        if not isinstance(decoded, dict) or set(decoded) != {"nodes"}:
+        decoded = strict_json_object(candidate_answer)
+        if set(decoded) != {"nodes"}:
             return None
         if not isinstance(decoded["nodes"], list) or any(
             not isinstance(item, dict)
@@ -176,7 +177,7 @@ def _parse_nodes(candidate_answer: str) -> tuple[PublicDocumentNode, ...] | None
         ):
             return None
         return tuple(PublicDocumentNode.model_validate(item) for item in decoded["nodes"])
-    except (ValueError, TypeError):
+    except (ExternalInputError, ValueError, TypeError):
         return None
 
 

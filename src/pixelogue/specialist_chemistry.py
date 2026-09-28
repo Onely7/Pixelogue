@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
 from pixelogue.config import StrictModel
 from pixelogue.contracts import GateVerdict
-from pixelogue.errors import ExecutionError
+from pixelogue.errors import ExecutionError, ExternalInputError
+from pixelogue.serialization import strict_json_object
 from pixelogue.specialist_env import call_worker
 from pixelogue.task_evidence import ImageRegion
 
@@ -104,11 +104,11 @@ def verify_chemistry(
     if canonical[0] != canonical[1]:
         return GateVerdict.UNKNOWN, {"reason": "Independent molecular graphs disagree"}
     try:
-        raw = json.loads(candidate_answer)
-        if not isinstance(raw, dict) or set(raw) != {"smiles"}:
+        raw = strict_json_object(candidate_answer)
+        if set(raw) != {"smiles"}:
             raise ValueError("Unsupported chemical output schema")
         answer = ChemicalAnswer.model_validate_json(candidate_answer)
-    except (ValueError, TypeError):
+    except (ExternalInputError, ValueError, TypeError):
         return GateVerdict.UNKNOWN, {"reason": "Malformed chemical output"}
     worker_source = sources[0].model_dump(
         mode="json",

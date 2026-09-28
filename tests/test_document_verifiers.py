@@ -89,6 +89,11 @@ def test_requested_field_values_missing_status_and_schema() -> None:
         GateVerdict.UNKNOWN,
         GateVerdict.NOT_MET,
     )
+    duplicated = '{"fields":{"invoice":"wrong","invoice":"INV-42","date":null}}'
+    assert _check(source, duplicated, format="structured_json", fields=("invoice", "date")) == (
+        GateVerdict.UNKNOWN,
+        GateVerdict.NOT_MET,
+    )
 
 
 def test_fields_must_be_publicly_requested_and_two_sources_agree() -> None:
@@ -133,6 +138,13 @@ def test_document_tree_preserves_content_hierarchy_and_order() -> None:
     assert _check(source, json.dumps(correct), format="structured_json") == (
         GateVerdict.MET,
         GateVerdict.MET,
+    )
+    duplicated = json.dumps(correct).replace(
+        '"text": "Notice"', '"text": "Wrong", "text": "Notice"'
+    )
+    assert _check(source, duplicated, format="structured_json") == (
+        GateVerdict.UNKNOWN,
+        GateVerdict.NOT_MET,
     )
     correct["nodes"][1]["text"] = "Open tomorrow."
     assert _check(source, json.dumps(correct), format="structured_json") == (

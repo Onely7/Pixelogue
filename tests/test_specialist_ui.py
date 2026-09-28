@@ -42,6 +42,8 @@ def test_click_point_checks_both_target_bounds_and_view_pixel_transform() -> Non
         '"x":0.3,"y":0.15,"pixel_x":300,"pixel_y":75,"text":null}'
     )
     assert verify_ui_action(*args, answer)[0] is GateVerdict.MET
+    duplicated = answer.replace('"action":"focus"', '"action":"click","action":"focus"')
+    assert verify_ui_action(*args, duplicated)[0] is GateVerdict.UNKNOWN
     assert (
         verify_ui_action(*args, answer.replace('"pixel_x":300', '"pixel_x":301'))[0]
         is GateVerdict.NOT_MET

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from fractions import Fraction
 from typing import Annotated, Literal
@@ -11,8 +10,9 @@ from pydantic import Field, model_validator
 
 from pixelogue.config import StrictModel
 from pixelogue.contracts import GateVerdict
-from pixelogue.errors import ExecutionError
+from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.rules import NumericValue, parse_numeric_lexeme
+from pixelogue.serialization import strict_json_object
 from pixelogue.task_evidence import ImageRegion
 
 CHART_TASKS = frozenset(
@@ -305,11 +305,11 @@ def verify_chart(
         if public_parameters.get("format") != query.format:
             return unknown
         try:
-            raw = json.loads(candidate_answer)
-            if not isinstance(raw, dict) or set(raw) != {"unit", "marks"}:
+            raw = strict_json_object(candidate_answer)
+            if set(raw) != {"unit", "marks"}:
                 raise ValueError("Invalid public chart JSON shape")
             decoded = ChartDataAnswer.model_validate_json(candidate_answer)
-        except (ValueError, TypeError):
+        except (ExternalInputError, ValueError, TypeError):
             return GateVerdict.UNKNOWN, GateVerdict.NOT_MET
         actual = sorted(
             (m.series, m.category, m.lower, m.upper, m.precision) for m in decoded.marks
