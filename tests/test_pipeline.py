@@ -332,6 +332,34 @@ def test_candidate_binding_requires_exact_target_parameter() -> None:
         )
 
 
+def test_exhausted_candidate_binding_checks_abstain_without_accepting(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    original = coordinator._invoke
+
+    def invoke(client, stage, payload, images, model, **kwargs):
+        if stage == "candidate_binding":
+            raise ExecutionError(
+                "CANDIDATE_CHECKS_MISMATCH", "Missing or unknown eligibility check"
+            )
+        return original(client, stage, payload, images, model, **kwargs)
+
+    monkeypatch.setattr(coordinator, "_invoke", invoke)
+    try:
+        conversation = coordinator.synthesize_image(image, root)
+        private_count = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'binding-abstentions'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+
+    assert conversation.status == "ABSTAINED"
+    assert not conversation.turns
+    assert private_count == 1
+
+
 class ConcurrencyProbe:
     """Track overlapping scripted model calls across test clients."""
 

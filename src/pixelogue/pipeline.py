@@ -317,24 +317,51 @@ class SynthesisCoordinator:
                         frozenset(turn.instruction.candidate_id for turn in turns),
                     )
 
-                bindings_report = self._invoke(
-                    generator,
-                    "candidate_binding",
-                    {
-                        "target_language": target_language,
-                        "public_history": self._history(snapshot.public_history),
-                        "candidates": [selector_candidate(candidate) for candidate in candidates],
-                        "scope_evidence": inventory.model_dump(mode="json"),
-                        "answer_max_tokens": self.config.tasks.answer_max_tokens,
-                        "image_views": image_views,
-                    },
-                    (model_image,),
-                    CandidateBindingsReport,
-                    max_tokens=self.config.tasks.binding_max_tokens,
-                    temperature=0.0,
-                    seed=self.config.seed + turn_index,
-                    post_validate=validate_bindings,
-                )
+                try:
+                    bindings_report = self._invoke(
+                        generator,
+                        "candidate_binding",
+                        {
+                            "target_language": target_language,
+                            "public_history": self._history(snapshot.public_history),
+                            "candidates": [
+                                selector_candidate(candidate) for candidate in candidates
+                            ],
+                            "scope_evidence": inventory.model_dump(mode="json"),
+                            "answer_max_tokens": self.config.tasks.answer_max_tokens,
+                            "image_views": image_views,
+                        },
+                        (model_image,),
+                        CandidateBindingsReport,
+                        max_tokens=self.config.tasks.binding_max_tokens,
+                        temperature=0.0,
+                        seed=self.config.seed + turn_index,
+                        post_validate=validate_bindings,
+                    )
+                except ExecutionError as error:
+                    if error.reason not in {
+                        "MODEL_CONTENT_EMPTY",
+                        "MODEL_FINISH_REASON",
+                        "MODEL_SCHEMA_MISMATCH",
+                        "CANDIDATE_BINDING_ID",
+                        "CANDIDATE_EVIDENCE_SCOPE",
+                        "CANDIDATE_CHECKS_MISMATCH",
+                        "CANDIDATE_PARAMETER_UNKNOWN",
+                        "CANDIDATE_PARAMETER_SOURCE",
+                        "CANDIDATE_PARAMETER_VALUE",
+                    }:
+                        raise
+                    self.store.write_json_artifact(
+                        "binding-abstentions",
+                        {
+                            "conversation_id": conversation_id,
+                            "turn_index": turn_index,
+                            "reason": error.reason,
+                            "message": str(error),
+                        },
+                    )
+                    terminal_status = "ABSTAINED"
+                    break
                 bindings = bindings_report.to_bindings()
                 self.store.write_json_artifact(
                     "candidate-bindings", bindings.model_dump(mode="json")
