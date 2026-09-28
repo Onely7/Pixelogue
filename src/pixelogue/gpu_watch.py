@@ -468,19 +468,19 @@ def _watch(
             eligible = _post_job_candidates(current, last, state)
             last = current
             if not eligible:
-                pending = state.get("post_job_reservation", {}).get("status") == "pending"
+                pending = (state.get("post_job_reservation") or {}).get("status") == "pending"
                 time.sleep(min(poll_seconds, 5) if pending else poll_seconds)
                 continue
             gpu = eligible[0]
             if not _doctor_ready():
-                pending = state.get("post_job_reservation", {}).get("status") == "pending"
+                pending = (state.get("post_job_reservation") or {}).get("status") == "pending"
                 time.sleep(min(poll_seconds, 5) if pending else poll_seconds)
                 continue
             starting_pilot = not state["pilot_attempted"] and not reserve_only
             holder = _holder(gpu, state, memory_fraction=0.25 if starting_pilot else 0.90)
             if holder is None:
                 last = set()
-                pending = state.get("post_job_reservation", {}).get("status") == "pending"
+                pending = (state.get("post_job_reservation") or {}).get("status") == "pending"
                 time.sleep(min(poll_seconds, 5) if pending else poll_seconds)
                 continue
             if starting_pilot:
