@@ -42,6 +42,7 @@ tasks:
 ```
 
 Scope and observation limits are operational settings, not a demand to enumerate all 50 capabilities. Focused candidate binding follows the initial scope discovery. A dense page must be bounded publicly, given a reviewed larger budget, or skipped. Public question/answer completions ending at the token limit are rejected even if JSON delimiters could be repaired. A valid schema or two matching judges is not proof of visual truth.
+Each candidate exposes separate required check IDs, allowed public parameter names, and required public parameter names. A binding with MET checks but missing a required choice is a contract error with a bounded retry; the controller never fills it in automatically.
 
 The evidence response Schema names only the supplied capability vocabulary and permits each capability key once per scope. Duplicate JSON keys still fail strict decoding; missing observations remain unknown. A repeated question or an object-identification question that names its selected target gets bounded feedback and another model attempt before any question evaluator call. For object identification, a short answer already present in the question is rejected before answer rating. These checks preserve the minimum conversation length and the existing visual quality gates.
 For action questions on still images, lack of motion blur alone is insufficient evidence that an object is stationary.

@@ -364,6 +364,7 @@ class SynthesisCoordinator:
                         "CANDIDATE_EVIDENCE_SCOPE",
                         "CANDIDATE_CHECKS_MISMATCH",
                         "CANDIDATE_PARAMETER_UNKNOWN",
+                        "CANDIDATE_PARAMETER_MISSING",
                         "CANDIDATE_PARAMETER_SOURCE",
                         "CANDIDATE_PARAMETER_VALUE",
                     }:
@@ -1769,6 +1770,7 @@ class SynthesisCoordinator:
             "CANDIDATE_EVIDENCE_SCOPE",
             "CANDIDATE_CHECKS_MISMATCH",
             "CANDIDATE_PARAMETER_UNKNOWN",
+            "CANDIDATE_PARAMETER_MISSING",
             "CANDIDATE_PARAMETER_SOURCE",
             "CANDIDATE_PARAMETER_VALUE",
             "REPEATED_PUBLIC_QUESTION",

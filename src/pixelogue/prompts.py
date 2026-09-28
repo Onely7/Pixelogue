@@ -169,6 +169,9 @@ and parameters, NOT_MET is a definite failure, and missing evidence is UNKNOWN. 
 false_premise use the alternative profile_guard instead of normal answerability prerequisites.
 For EACH candidate, copy all and only its required_check_ids into checks[].check_id. Use
 bindable_parameter_names only for public_parameters[].name; these are two different name lists.
+When all checks for a binding are MET, include every required_parameter_names entry in
+public_parameters. If a required choice cannot be grounded or stated publicly, omit the binding
+or mark its relevant check UNKNOWN; never emit a MET binding with that parameter missing.
 Do not put a check ID, policy name, or verdict word into public_parameters. If the image cannot
 support a check, report UNKNOWN or NOT_MET for that check instead of omitting it.
 A limitation needs a locally visible target and a specific unreadable/cropped/ambiguous condition.

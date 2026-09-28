@@ -180,6 +180,7 @@ def selector_candidate(candidate: InstructionCandidate) -> dict[str, Any]:
         **contract,
         "required_check_ids": list(contract["eligibility_checks"]),
         "bindable_parameter_names": list(bindable_parameter_names(task)),
+        "required_parameter_names": list(required_parameter_names(task, candidate.profile)),
     }
 
 
@@ -196,6 +197,25 @@ def bindable_parameter_names(task: TaskDefinition) -> tuple[str, ...]:
             }
         )
     )
+
+
+def required_parameter_names(task: TaskDefinition, profile: str = "normal") -> tuple[str, ...]:
+    """List public parameter names needed before a MET normal-profile binding can be used."""
+    if profile != "normal":
+        return ()
+    required = (
+        {key for key, value in task.parameters.items() if isinstance(value, tuple)}
+        - {"derived_forms"}
+        - POLICY_PARAMETERS
+    )
+    required |= {
+        GUARD_PARAMETERS[check] for check in task.eligibility_checks if check in GUARD_PARAMETERS
+    }
+    if task.id == "scene_categorization":
+        required.add("category_set")
+    if task.id == "referring_expression_generation":
+        required.add("target_binding")
+    return tuple(sorted(required))
 
 
 def fingerprint(candidate: InstructionCandidate, image_id: str) -> str:
@@ -297,7 +317,10 @@ def bind_candidates(
         parameters = {p.name: p for p in binding.public_parameters}
         # Every candidate needs a publicly explicit target. Other choices follow its operation.
         if "target" not in parameters:
-            continue
+            raise ExecutionError(
+                "CANDIDATE_PARAMETER_MISSING",
+                f"Candidate {binding.candidate_id}: missing separate target binding",
+            )
         task = next(task for task in task_catalog().tasks if task.id == template.task_id)
         allowed = set(bindable_parameter_names(task))
         if not parameters.keys() <= allowed:
@@ -321,22 +344,13 @@ def bind_candidates(
             if isinstance(choices, tuple) and parameter.value not in choices:
                 raise ExecutionError("CANDIDATE_PARAMETER_VALUE", "Unsupported parameter choice")
         if template.profile == "normal":
-            required_choices = (
-                {key for key, value in task.parameters.items() if isinstance(value, tuple)}
-                - {"derived_forms"}
-                - POLICY_PARAMETERS
-            )
-            required_choices |= {
-                GUARD_PARAMETERS[check]
-                for check in task.eligibility_checks
-                if check in GUARD_PARAMETERS
-            }
-            if task.id == "scene_categorization":
-                required_choices.add("category_set")
-            if task.id == "referring_expression_generation":
-                required_choices.add("target_binding")
-            if not required_choices <= parameters.keys():
-                continue
+            required_choices = set(required_parameter_names(task))
+            if missing := required_choices - parameters.keys():
+                raise ExecutionError(
+                    "CANDIDATE_PARAMETER_MISSING",
+                    f"Candidate {binding.candidate_id}: missing public parameter names "
+                    f"{sorted(missing)}; required names {sorted(required_choices)}",
+                )
             if task.id == "ui_action_specification":
                 if parameters["action"].value == "input" and "input_text" not in parameters:
                     continue

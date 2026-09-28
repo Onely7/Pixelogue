@@ -252,6 +252,24 @@ def test_candidate_input_separates_check_ids_from_parameter_names() -> None:
     assert set(exposed["required_check_ids"]) == set(exposed["eligibility_checks"])
     assert "target" in exposed["bindable_parameter_names"]
     assert not set(exposed["required_check_ids"]) & set(exposed["bindable_parameter_names"])
+    assert set(exposed["required_parameter_names"]) <= set(exposed["bindable_parameter_names"])
+
+
+def test_met_binding_missing_required_public_choice_is_retryable_contract_error() -> None:
+    data = inventory(scope("left", scene_context="MET"))
+    template = next(item for item in candidates(data) if item.task_id == "scene_categorization")
+    exposed = selector_candidate(template)
+    assert exposed["required_parameter_names"] == ["category_set"]
+    with pytest.raises(ExecutionError) as caught:
+        bind_candidates(
+            (template,),
+            CandidateBindings(bindings=(binding(template),)),
+            data,
+            (),
+            TaskRuntimeConfig(),
+        )
+    assert caught.value.reason == "CANDIDATE_PARAMETER_MISSING"
+    assert "category_set" in str(caught.value)
 
 
 def test_missing_required_evidence_rejects_only_that_candidate() -> None:
