@@ -116,6 +116,8 @@ tail -f artifacts/gpu-watch/monitor.log
 
 `artifacts/gpu-watch/state.json` は最後の確認時刻、使用中のPID、GPU、段階、累積GPU秒数、確定した各割当区間を記録します。各runの `phase-events.jsonl` にはモデル読み込み、各推論バッチ、停止処理の境界時刻を残します。予約プロセスとモデルが重なる時間も、同じGPUの割当として1回だけ計上します。ログにも定期的に生存状況を出します。停止して予約を解放するにはtmuxのpaneへ `Ctrl-C` を送ります。累積上限に達する前に自動停止し、再起動しても記録済み時間を引き継ぎます。実行結果は `artifacts/gpu-watch/<run-id>/` に保存します。このホストのGPU 0〜5は見えているSlurmのGPU区画外なので、監視は実際のローカルGPUを直接確認します。
 
+現在のpilotは、固定Open Images比較の後に[60分類の検証用画像](data_ja.md#多様なweb画像による検証用サンプル)も処理します。結果、診断、replayはrun内の `diverse/` と `diverse-*.log` に分けて保存します。このpilotは一時的な1GPUモデル設定を使い、独立した正解ラベルを持ちません。受理件数だけでは検証器の精度は確認できません。
+
 後から明示的に許可された検証では、`watch` コマンドへ `--campaign-id recheck-YYYYMMDD --additional-gpu-hours 2` を加えます。既存の累積台帳にこの時間をキャンペーンIDごとに1回だけ加算します。同じIDで再起動しても予算を再加算せず、完了済みのpilotも再実行しません。新しいキャンペーンはpilotを1回実行し、job後に空きGPUを再予約して延長予算の上限まで保持します。
 
 失敗したpilotを調査する間は `--reserve-only` を加えます。空きGPUを保持してpilotを起動しません。修正後にwatcherを停止し、同じキャンペーンIDでこの指定を外して再起動します。両方の段階を同じ累積GPU台帳に算入します。

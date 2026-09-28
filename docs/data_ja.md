@@ -53,6 +53,22 @@ uv run --locked pixelogue ingest \
 
 公式資料には [V7 validation と取得方法](https://storage.googleapis.com/openimages/web/download_v7.html)および[回転値が反時計回りの角度であること](https://storage.googleapis.com/openimages/web/2018-05-17-rotation-information.html)が説明されています。
 
+## 多様なWeb画像による検証用サンプル
+
+[固定したCommons manifest](../validation/diverse_web_eval_manifest.jsonl) に、60の大分類から外観を確認した画像を各1枚記録しています。文書、表、チャート、図、医用画像、画面、写真などを含みます。画像本体はGit管理外の `data/` に置き、取得元ページ、サムネイルのハッシュ、寸法、帰属情報だけをcommitします。用途は**検証専用**です。独立した正解ラベルは付いていないため、モデルが生成した質問・回答を正解として扱いません。
+
+```sh
+uv run --locked python validation/fetch_diverse_eval.py
+uv run --locked pixelogue ingest \
+  --config configs/gpu-watch-diverse.yaml \
+  --sources data/diverse-web-eval/sources.jsonl \
+  --rights data/diverse-web-eval/rights.jsonl \
+  --image-root data/diverse-web-eval \
+  --artifact-root artifacts/prepared-diverse-web-eval
+```
+
+取得処理は固定したCommonsページID、サムネイルSHA-256、記録済みライセンスURIを照合します。`ingest` でも通常どおり画像と利用条件を検査します。`failures.jsonl` を確認し、合成前に60枚すべてが受理されたことを確認してください。分類40は複数フレームを並べた**静止コンタクトシート**です。アニメーション画像そのものは取り込み対象外です。分類名とCommonsの説明文はモデル入力に渡しません。検証器の精度を測る校正には、別途、独立した人手ラベルが必要です。
+
 ## 取得済みのCVDF train画像を使う
 
 `prepare-local-train` は、未加工のCVDF画像 `<ImageID>.jpg` が並ぶディレクトリと

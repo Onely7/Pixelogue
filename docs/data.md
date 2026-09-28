@@ -57,6 +57,22 @@ Create one JSON object per line in both manifests. Paths in a source record are 
 
 The Open Images site documents the [V7 validation split and manual download path](https://storage.googleapis.com/openimages/web/download_v7.html). Its [rotation note](https://storage.googleapis.com/openimages/web/2018-05-17-rotation-information.html) defines the metadata values as counterclockwise degrees.
 
+## Diverse web evaluation sample
+
+The [pinned Commons manifest](../validation/diverse_web_eval_manifest.jsonl) records one visually checked raster for each of 60 broad image categories, including documents, tables, charts, diagrams, medical images, screenshots, and photographs. Image bytes stay under ignored `data/`; the committed file records titles, source pages, thumbnail hashes, dimensions, and attribution. These are **evaluation-only inputs**, with no independent answer labels. A model's generated question or answer does not become a ground-truth label.
+
+```sh
+uv run --locked python validation/fetch_diverse_eval.py
+uv run --locked pixelogue ingest \
+  --config configs/gpu-watch-diverse.yaml \
+  --sources data/diverse-web-eval/sources.jsonl \
+  --rights data/diverse-web-eval/rights.jsonl \
+  --image-root data/diverse-web-eval \
+  --artifact-root artifacts/prepared-diverse-web-eval
+```
+
+The fetcher verifies the pinned Commons page ID, thumbnail SHA-256, and recorded licence URI. `ingest` still applies the normal image and permission checks; inspect `failures.jsonl` and require 60 accepted images before synthesis. Category 40 is a *static contact sheet* representing multiple frames because animated images are deliberately unsupported by ingestion. The category names and Commons descriptions are retained outside model inputs. A separate calibration set with independent human labels is still required to estimate verifier accuracy.
+
 ## Prepare existing CVDF training images
 
 `prepare-local-train` is a CPU-only adapter for an existing flat directory of

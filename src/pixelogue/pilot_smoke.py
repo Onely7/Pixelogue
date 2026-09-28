@@ -208,9 +208,10 @@ def _synthesis_command(
     config: str = CONFIG,
     workers: int = 2,
     source_ids: tuple[str, ...] = (),
+    prepared: Path | None = None,
 ) -> list[str]:
     """Build one exact synthesis invocation over the rights-checked manifest."""
-    prepared = ROOT / "artifacts/prepared-open-images"
+    prepared = prepared or ROOT / "artifacts/prepared-open-images"
     command = [
         "uv",
         "run",
@@ -298,6 +299,12 @@ def main() -> None:
     expected = sum(1 for _ in (prepared / "images.jsonl").open(encoding="utf-8"))
     if not expected or not (prepared / "manifest.json").exists():
         raise RuntimeError("Prepared evaluation-only images are missing")
+    diverse_prepared = ROOT / "artifacts/prepared-diverse-web-eval"
+    if not (diverse_prepared / "images.jsonl").exists():
+        raise RuntimeError("The diverse evaluation set must be prepared before GPU work")
+    diverse_count = sum(1 for _ in (diverse_prepared / "images.jsonl").open(encoding="utf-8"))
+    if diverse_count != 60 or not (diverse_prepared / "manifest.json").exists():
+        raise RuntimeError("The 60-image diverse evaluation set is incomplete")
     signal.signal(signal.SIGTERM, _signal_stop)
     signal.signal(signal.SIGINT, _signal_stop)
     output_dir: Path = args.output_dir
@@ -506,6 +513,56 @@ def main() -> None:
         )
         _check_results(output_dir, expected)
         _phase(output_dir, "full_complete")
+        diverse_output = output_dir / "diverse" / "conversations.jsonl"
+        diverse_run_id = f"{args.run_id}-diverse"
+        _phase(output_dir, "diverse_inference")
+        _run_logged(
+            _synthesis_command(
+                diverse_run_id,
+                diverse_output,
+                config="configs/gpu-watch-diverse.yaml",
+                prepared=diverse_prepared,
+            ),
+            output_dir / "diverse.log",
+            5400,
+            diverse_output,
+        )
+        _check_results(output_dir / "diverse", diverse_count)
+        _run_logged(
+            [
+                "uv",
+                "run",
+                "--locked",
+                "pixelogue",
+                "run-diagnostics",
+                "--config",
+                "configs/gpu-watch-diverse.yaml",
+                "--run-id",
+                diverse_run_id,
+                "--conversations",
+                str(diverse_output),
+                "--output-stem",
+                str(output_dir / "diverse-diagnostics"),
+            ],
+            output_dir / "diverse-diagnostics.log",
+            90,
+        )
+        _run_logged(
+            [
+                "uv",
+                "run",
+                "--locked",
+                "pixelogue",
+                "replay",
+                "--config",
+                "configs/gpu-watch-diverse.yaml",
+                "--run-id",
+                diverse_run_id,
+            ],
+            output_dir / "diverse-replay.log",
+            300,
+        )
+        _phase(output_dir, "diverse_complete")
         model_calls_before_resume = _model_call_count(args.run_id)
         output_hash_before_resume = hashlib.sha256(full_output.read_bytes()).hexdigest()
         _run_logged(

@@ -139,3 +139,15 @@ def test_generator_handoff_keeps_reservation_until_acknowledged(
 
     monkeypatch.setattr(pilot_smoke.time, "sleep", acknowledge)
     pilot_smoke._request_holder_handoff(tmp_path)
+
+
+def test_diverse_pilot_uses_its_own_prepared_manifest(tmp_path: Path) -> None:
+    command = pilot_smoke._synthesis_command(
+        "diverse-run",
+        tmp_path / "conversations.jsonl",
+        config="configs/gpu-watch-diverse.yaml",
+        prepared=tmp_path / "prepared-diverse",
+    )
+    assert command[command.index("--config") + 1] == "configs/gpu-watch-diverse.yaml"
+    assert command[command.index("--images") + 1] == str(tmp_path / "prepared-diverse/images.jsonl")
+    assert command[command.index("--artifact-root") + 1] == str(tmp_path / "prepared-diverse")
