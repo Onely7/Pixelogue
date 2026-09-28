@@ -23,6 +23,10 @@ TARGETED_SOURCE_IDS = (
     "open-images-v7:1d21ad091d7d5898",
     "open-images-v7:23a34e17e221bc47",
 )
+PRESCREEN_SOURCE_IDS = (
+    "open-images-v7:f3b66b38c1b8e6f6",
+    "open-images-v7:1507692d028aaffd",
+)
 SERVERS: list[tuple[subprocess.Popen[str], TextIO]] = []
 stop = False
 
@@ -429,6 +433,68 @@ def main() -> None:
             300,
         )
         _phase(output_dir, "targeted_complete")
+        prescreen_output = output_dir / "prescreen" / "conversations.jsonl"
+        prescreen_run_id = f"{args.run_id}-prescreen"
+        (output_dir / "prescreen-selection.json").write_text(
+            json.dumps(
+                {
+                    "source_ids": PRESCREEN_SOURCE_IDS,
+                    "purpose": "human-confirmed two-question route probe",
+                    "human_verified_for_multi_turn": True,
+                    "human_gold_answers_supplied": False,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        _phase(output_dir, "prescreen_inference")
+        _run_logged(
+            _synthesis_command(
+                prescreen_run_id,
+                prescreen_output,
+                workers=1,
+                source_ids=PRESCREEN_SOURCE_IDS,
+            ),
+            output_dir / "prescreen.log",
+            1800,
+            prescreen_output,
+        )
+        _check_results(output_dir / "prescreen", len(PRESCREEN_SOURCE_IDS))
+        _run_logged(
+            [
+                "uv",
+                "run",
+                "--locked",
+                "pixelogue",
+                "run-diagnostics",
+                "--config",
+                CONFIG,
+                "--run-id",
+                prescreen_run_id,
+                "--conversations",
+                str(prescreen_output),
+                "--output-stem",
+                str(output_dir / "prescreen-diagnostics"),
+            ],
+            output_dir / "prescreen-diagnostics.log",
+            90,
+        )
+        _run_logged(
+            [
+                "uv",
+                "run",
+                "--locked",
+                "pixelogue",
+                "replay",
+                "--config",
+                CONFIG,
+                "--run-id",
+                prescreen_run_id,
+            ],
+            output_dir / "prescreen-replay.log",
+            300,
+        )
+        _phase(output_dir, "prescreen_complete")
         full_output = output_dir / "conversations.jsonl"
         full_command = _synthesis_command(args.run_id, full_output)
         _phase(output_dir, "full_inference")
