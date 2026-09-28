@@ -157,10 +157,16 @@ The verdicts field is an allowed output vocabulary, NEVER a desired answer param
 such as execution/source_errors/coordinate_output are not bindable public choices.
 Bind enumerated input operation choices (except optional derived_forms and output/policy vocabularies)
 to one permitted value. Choose concrete public predicates, targets, precision and hypotheses;
-never put the answer or a hidden factual operand into a parameter. Each parameter names its origin:
+never put the answer or a hidden factual operand into public_parameters. The separate target is a
+controller-private image binding: for object_identification it may be the object category to name;
+for scene_categorization it MUST be exactly one image-supported category_set choice with origin=image
+and local evidence_refs. Do not replace that target with a generic phrase such as "the scene".
+Each parameter names its origin:
 instruction for a public choice/hypothesis, image for observed facts, history for committed messages.
 For scene_categorization, category_set is an instruction-origin tuple of at least two distinct
-ordinary category choices, including the image-supported target. A single answer label is not a set.
+ordinary category choices, including the image-supported target. Choices must be contrastive and
+nonoverlapping at the same level (for example indoor versus outdoor, not street versus neighborhood).
+A single answer label is not a set.
 Factual origins need references to this scope's evidence IDs or exact public message IDs.
 An instruction choice has no evidence_refs. An image or history fact must include at least one
 matching evidence_id or public message ID. If origin is image, use only local evidence_ids;

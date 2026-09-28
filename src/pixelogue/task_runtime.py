@@ -374,12 +374,13 @@ def bind_candidates(
                     or not isinstance(choices.value, tuple)
                     or len(choices.value) < 2
                     or len({value.casefold() for value in choices.value}) != len(choices.value)
+                    or parameters["target"].origin != "image"
                     or parameters["target"].value not in choices.value
                 ):
                     raise ExecutionError(
                         "CANDIDATE_PARAMETER_VALUE",
                         "Scene categories require at least two distinct public alternatives "
-                        "including the bound target",
+                        "including the exact image-origin target label with local evidence refs",
                     )
             if task.id == "ui_action_specification":
                 if parameters["action"].value == "input" and "input_text" not in parameters:

@@ -316,6 +316,26 @@ def test_scene_categories_require_distinct_public_choices() -> None:
     )
     assert len(admitted) == 1
 
+    generic_target = PublicParameter(
+        name="target", value="residential street", origin="instruction"
+    )
+    with pytest.raises(ExecutionError) as uncited:
+        bind_candidates(
+            (template,),
+            CandidateBindings(
+                bindings=(
+                    binding(
+                        template,
+                        public_parameters=(generic_target, alternatives),
+                    ),
+                )
+            ),
+            data,
+            (),
+            TaskRuntimeConfig(),
+        )
+    assert uncited.value.reason == "CANDIDATE_PARAMETER_VALUE"
+
 
 def test_answer_labels_are_hidden_from_model_operation_contract() -> None:
     data = inventory(scope("left", visible_entity="MET", scene_context="MET"))
