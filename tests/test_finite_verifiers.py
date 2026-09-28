@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from pydantic import BaseModel
 
 from pixelogue.catalog import task_catalog
@@ -115,6 +116,20 @@ def test_hypothetical_add_remove_and_relabel_follow_public_update() -> None:
         }
     )
     assert _check(relabel, _answer("count", 3), update="relabel") is GateVerdict.MET
+
+
+def test_hypothetical_removal_can_yield_a_closed_empty_member_set() -> None:
+    source = _source(
+        "grounded_hypothetical_update",
+        FiniteQuery(answer_form="members", update="remove", update_ids=("a", "b", "c")),
+    )
+    empty = _answer("members", ())
+    assert _check(source, empty, update="remove") is GateVerdict.MET
+    assert _check(source, _answer("members", ("a",)), update="remove") is GateVerdict.NOT_MET
+    with pytest.raises(ValueError, match="Member enumeration cannot include a scalar result"):
+        FiniteAnswer(
+            coverage="MET", answer_form="members", members=(), count=0, reason="conflicting"
+        )
 
 
 def test_each_finite_operation_rejects_wrong_results_and_unclosed_sources() -> None:

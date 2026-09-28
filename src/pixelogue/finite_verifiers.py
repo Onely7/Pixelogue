@@ -91,17 +91,18 @@ class FiniteAnswer(StrictModel):
     def check_shape(self) -> FiniteAnswer:
         """Require exactly the declared result kind."""
         populated = {
-            "members": bool(self.members),
             "count": self.count is not None,
             "boolean": self.truth is not None,
             "relation": self.relation is not None,
         }
-        if self.coverage != "MET" and any(populated.values()):
+        if self.coverage != "MET" and (self.members or any(populated.values())):
             raise ValueError("Incomplete answer extraction cannot present a result")
-        if self.coverage == "MET" and sum(populated.values()) != 1:
-            raise ValueError("Complete answer extraction needs exactly one result")
-        if self.coverage == "MET" and not populated[self.answer_form]:
-            raise ValueError("Result does not match its declared form")
+        if self.coverage == "MET":
+            if self.answer_form == "members":
+                if any(populated.values()):
+                    raise ValueError("Member enumeration cannot include a scalar result")
+            elif self.members or sum(populated.values()) != 1 or not populated[self.answer_form]:
+                raise ValueError("Complete answer extraction needs its declared result")
         if self.coverage == "MET" and len(self.members) != len(set(self.members)):
             raise ValueError("Duplicate answer members are not a valid enumeration")
         return self
