@@ -6,6 +6,7 @@ dtype: bfloat16
 quantization: compressed-tensors
 tensor-parallel-size: 2
 max-model-len: 32768
+max-num-seqs: 64
 generation-config: vllm
 limit-mm-per-prompt:
   image: 1

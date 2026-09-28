@@ -37,7 +37,7 @@ GPU用パッケージがCPU開発環境を暗黙に変えないよう、vLLMは�
 uv sync --project runtime/vllm --locked
 ```
 
-vLLMは0.29.0に固定しています。サーバー設定には、モデルのrevision、dtype(BF16)、context長、tensor parallel数、GPUメモリ使用率、生成時の既定値を記録しています。量子化は生成器ごとに固定されており、`generator-a.yaml`はQwen3.8-27B-FP8向けに`quantization: fp8`を、`generator-b.yaml`はW4A16版Gemma向けに`quantization: compressed-tensors`を指定します。`configs/standard.yaml`も同じ値を反映しており、`ModelConfig.validate_roles`はこれら以外の量子化指定を拒否します。
+vLLMは0.29.0に固定しています。サーバー設定には、モデルのrevision、dtype(BF16)、context長、tensor parallel数、GPUメモリ使用率、生成時の既定値を記録しています。標準生成モデルは同時系列数を64に制限します。1GPU起動試験ではvLLMのより大きい既定値がQwenのMambaキャッシュ容量を超えました。量子化は生成器ごとに固定されており、`generator-a.yaml`はQwen3.8-27B-FP8向けに`quantization: fp8`を、`generator-b.yaml`はW4A16版Gemma向けに`quantization: compressed-tensors`を指定します。`configs/standard.yaml`も同じ値を反映しており、`ModelConfig.validate_roles`はこれら以外の量子化指定を拒否します。
 
 ## 3. 長時間の GPU 処理を tmux 内で動かす
 

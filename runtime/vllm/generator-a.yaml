@@ -6,6 +6,7 @@ dtype: bfloat16
 quantization: fp8
 tensor-parallel-size: 2
 max-model-len: 32768
+max-num-seqs: 64
 generation-config: vllm
 default-chat-template-kwargs:
   enable_thinking: false
