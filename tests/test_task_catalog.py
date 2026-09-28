@@ -184,6 +184,18 @@ def test_family_rotation_is_deterministic_and_does_not_sample_only_large_familie
     assert len({item.family for item in candidates(data, limit=8)}) == 8
 
 
+def test_later_turn_prefers_unused_tasks_within_candidate_limit() -> None:
+    observations: dict[str, ObservationVerdict] = {
+        key: "MET" for key in task_catalog().capabilities
+    }
+    data = inventory(scope("all", **observations))
+    first = instruction_candidates(data, seed=13, turn_index=1, limit=8)
+    used = frozenset(candidate.task_id for candidate in first)
+    later = instruction_candidates(data, seed=13, turn_index=2, limit=8, used_task_ids=used)
+    assert len(later) == 8
+    assert not used & {candidate.task_id for candidate in later}
+
+
 def test_binding_cannot_borrow_refs_or_ignore_unknown_eligibility():
     data = inventory(scope("left", visible_entity="MET"), scope("right", visible_entity="MET"))
     left = next(c for c in candidates(data) if c.scope_id == "left")

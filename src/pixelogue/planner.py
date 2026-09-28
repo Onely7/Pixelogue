@@ -94,17 +94,19 @@ def instruction_candidates(
     family_order = family_order[offset:] + family_order[:offset]
     for candidates in families.values():
         candidates.sort(key=lambda c: (c.task_id in used_task_ids, rank(c.candidate_id)))
-    result: list[InstructionCandidate] = []
+    ranked: list[InstructionCandidate] = []
     depth = 0
-    while len(result) < limit:
+    while True:
         round_candidates = [
             families[name][depth] for name in family_order if len(families[name]) > depth
         ]
         if not round_candidates:
             break
-        result.extend(round_candidates[: limit - len(result)])
+        ranked.extend(round_candidates)
         depth += 1
-    return tuple(result)
+    fresh = [candidate for candidate in ranked if candidate.task_id not in used_task_ids]
+    used = [candidate for candidate in ranked if candidate.task_id in used_task_ids]
+    return tuple((fresh + used)[:limit])
 
 
 def allocated_role(

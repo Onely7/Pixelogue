@@ -142,6 +142,10 @@ public operation choices BEFORE any answer exists. Return at most one binding pe
 Use that candidate's scope evidence only. Every binding MUST include the separate target object
 with value, origin and evidence_refs. Do not put target in public_parameters. target_binding,
 object, or category_set cannot replace target.
+Read public_history before choosing a target, attribute, or condition. A completed question and
+answer already cover that exact request. Prefer a visibly supported new target, attribute, or public
+condition; omit a binding if it can only repeat a completed request. Never infer an old answer from
+the image when deciding whether a new request is available.
 Use target_binding only as an additional parameter for referring_expression_generation. Provide a
 count_unit for counting; predicate for selection, group_key for grouping, frame for spatial
 relations, precision for numerical readings, claim for verification/localization, local_question for
