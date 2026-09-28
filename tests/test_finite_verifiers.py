@@ -117,6 +117,51 @@ def test_hypothetical_add_remove_and_relabel_follow_public_update() -> None:
     assert _check(relabel, _answer("count", 3), update="relabel") is GateVerdict.MET
 
 
+def test_each_finite_operation_rejects_wrong_results_and_unclosed_sources() -> None:
+    cases = (
+        (
+            _source("spatial_ordering", FiniteQuery(answer_form="members")),
+            _answer("members", ("b", "a", "c")),
+            _answer("members", ("a", "b", "c")),
+            {},
+        ),
+        (
+            _source(
+                "set_cardinality_comparison",
+                FiniteQuery(answer_form="relation", left_group="red", right_group="blue"),
+            ),
+            _answer("relation", "greater"),
+            _answer("relation", "equal"),
+            {},
+        ),
+        (
+            _source(
+                "quantified_statement_verification",
+                FiniteQuery(answer_form="boolean", quantifier="exactly", threshold=2),
+            ),
+            _answer("boolean", True),
+            _answer("boolean", False),
+            {"quantifier": "exactly"},
+        ),
+        (
+            _source(
+                "grounded_hypothetical_update",
+                FiniteQuery(answer_form="count", update="remove", update_ids=("b",)),
+            ),
+            _answer("count", 2),
+            _answer("count", 3),
+            {"update": "remove"},
+        ),
+    )
+    for source, correct, wrong, parameters in cases:
+        assert _check(source, correct, **parameters) is GateVerdict.MET
+        assert _check(source, wrong, **parameters) is GateVerdict.NOT_MET
+        assert (
+            _check(source.model_copy(update={"closed": False}), correct, **parameters)
+            is GateVerdict.UNKNOWN
+        )
+
+
 def test_uncertain_source_disagreement_and_nonlocal_scope_never_pass() -> None:
     source = _source("spatial_ordering", FiniteQuery(answer_form="members"))
     answer = _answer("members", ("b", "a", "c"))

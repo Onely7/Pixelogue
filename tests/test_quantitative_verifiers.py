@@ -101,6 +101,26 @@ def test_comparison_and_cross_region_consistency_require_comparable_units() -> N
     assert _check(incomparable, answer) is GateVerdict.UNKNOWN
 
 
+def test_quantity_comparison_and_consistency_reject_wrong_relation_and_unreadable_source() -> None:
+    values = (_operand("a", "2", "kg"), _operand("b", "3", "kg"))
+    comparison = _source("quantity_comparison", "compare", values)
+    wrong_relation = QuantityAnswer(
+        coverage="MET", answer_quote="greater", relation="greater", reason="literal"
+    )
+    assert _check(comparison, wrong_relation) is GateVerdict.NOT_MET
+    assert (
+        _check(comparison.model_copy(update={"coverage": "UNKNOWN"}), wrong_relation)
+        is GateVerdict.UNKNOWN
+    )
+    consistency = _source("cross_region_consistency_check", "equal", values)
+    wrong_truth = QuantityAnswer(coverage="MET", answer_quote="true", truth=True, reason="literal")
+    assert _check(consistency, wrong_truth) is GateVerdict.NOT_MET
+    assert (
+        _check(consistency.model_copy(update={"coverage": "UNKNOWN"}), wrong_truth)
+        is GateVerdict.UNKNOWN
+    )
+
+
 def test_closed_aggregation_and_half_up_rounding() -> None:
     values = (_operand("a", "1", "m"), _operand("b", "2", "m"), _operand("c", "2", "m"))
     source = _source("grounded_aggregation", "mean", values, decimal_places=2, rounding="half_up")
