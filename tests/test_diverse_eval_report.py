@@ -40,12 +40,26 @@ def test_report_includes_unattempted_category_and_does_not_infer_gold() -> None:
         "invalid_calls": 0,
         "stage_reach_images": {"evidence_extraction": 1},
     }
-    summary, rows = build_report(diagnostics, manifest)
+    conversations = [
+        {
+            "image": {"source_id": "commons-eval:1"},
+            "turns": [
+                {"instruction": {"task_id": "attribute_lookup"}},
+                {"instruction": {"task_id": "object_identification"}},
+            ],
+        }
+    ]
+    summary, rows = build_report(diagnostics, manifest, conversations)
     assert summary["attempted"] == 1
     assert summary["status_counts"] == {"NOT_RUN": 1, "QUALITY_CANDIDATE": 1}
     assert summary["gold_labels"] is False
     assert summary["human_audit_complete"] is False
+    assert summary["committed_task_counts"] == {
+        "attribute_lookup": 1,
+        "object_identification": 1,
+    }
     assert [row["status"] for row in rows] == ["QUALITY_CANDIDATE", "NOT_RUN"]
+    assert rows[0]["task_ids"] == "attribute_lookup,object_identification"
     assert rows[1]["model_calls"] is None
 
 

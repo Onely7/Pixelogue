@@ -555,6 +555,8 @@ def main() -> None:
                 "pixelogue.diverse_eval_report",
                 "--diagnostics",
                 str(output_dir / "diverse-diagnostics.json"),
+                "--conversations",
+                str(diverse_output),
                 "--manifest",
                 str(ROOT / "validation/diverse_web_eval_manifest.jsonl"),
                 "--output-stem",

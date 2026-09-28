@@ -15,6 +15,7 @@ FIELDS = (
     "source_id",
     "status",
     "committed_turns",
+    "task_ids",
     "stop_stage",
     "stop_category",
     "stop_reason",
@@ -30,7 +31,9 @@ FIELDS = (
 )
 
 
-def build_report(diagnostics: dict, manifest: list[dict]) -> tuple[dict, list[dict]]:
+def build_report(
+    diagnostics: dict, manifest: list[dict], conversations: list[dict] | None = None
+) -> tuple[dict, list[dict]]:
     """Produce a complete category ledger from one run's diagnostic rows."""
     by_source = {f"commons-eval:{item['commons_page_id']}": item for item in manifest}
     if len(by_source) != len(manifest):
@@ -43,6 +46,17 @@ def build_report(diagnostics: dict, manifest: list[dict]) -> tuple[dict, list[di
         if source_id in observed:
             raise ValueError(f"Duplicate source in diagnostics: {source_id}")
         observed[source_id] = row
+    turns_by_source = {
+        conversation["image"]["source_id"]: tuple(
+            turn["instruction"]["task_id"] for turn in conversation["turns"]
+        )
+        for conversation in conversations or ()
+    }
+    if conversations is not None:
+        if len(turns_by_source) != len(conversations):
+            raise ValueError("Conversation output contains duplicate sources")
+        if set(turns_by_source) != set(observed):
+            raise ValueError("Conversation output differs from diagnostic sources")
     rows = []
     for source_id, item in sorted(by_source.items(), key=lambda pair: pair[1]["category_number"]):
         outcome = observed.get(source_id)
@@ -53,6 +67,7 @@ def build_report(diagnostics: dict, manifest: list[dict]) -> tuple[dict, list[di
                 "source_id": source_id,
                 "status": outcome["status"] if outcome else "NOT_RUN",
                 "committed_turns": outcome["committed_turns"] if outcome else None,
+                "task_ids": ",".join(turns_by_source.get(source_id, ())),
                 "stop_stage": outcome["stop_stage"] if outcome else None,
                 "stop_category": outcome["stop_category"] if outcome else None,
                 "stop_reason": outcome["stop_reason"] if outcome else None,
@@ -74,6 +89,13 @@ def build_report(diagnostics: dict, manifest: list[dict]) -> tuple[dict, list[di
         "categories": len(rows),
         "attempted": len(observed),
         "status_counts": dict(sorted(Counter(row["status"] for row in rows).items())),
+        "committed_task_counts": dict(
+            sorted(
+                Counter(
+                    task_id for task_ids in turns_by_source.values() for task_id in task_ids
+                ).items()
+            )
+        ),
         "stop_category_counts": dict(
             sorted(
                 Counter(str(row["stop_category"]) for row in rows if row["stop_category"]).items()
@@ -98,12 +120,16 @@ def main() -> None:
     """Write JSON, CSV, and Markdown reports without exposing labels to models."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--diagnostics", required=True, type=Path)
+    parser.add_argument("--conversations", required=True, type=Path)
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--output-stem", required=True, type=Path)
     args = parser.parse_args()
     diagnostics = json.loads(args.diagnostics.read_text(encoding="utf-8"))
+    conversations = [
+        json.loads(line) for line in args.conversations.read_text(encoding="utf-8").splitlines()
+    ]
     manifest = [json.loads(line) for line in args.manifest.read_text(encoding="utf-8").splitlines()]
-    summary, rows = build_report(diagnostics, manifest)
+    summary, rows = build_report(diagnostics, manifest, conversations)
     args.output_stem.parent.mkdir(parents=True, exist_ok=True)
     args.output_stem.with_suffix(".json").write_text(
         json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False, indent=2) + "\n",
@@ -121,13 +147,14 @@ def main() -> None:
         "",
         "These are automatic pipeline outcomes. No independent gold labels or human audit are attached.",
         "",
-        "| # | Category | Status | Turns | Stop stage | Model calls | Source |",
-        "|---:|---|---|---:|---|---:|---|",
+        "| # | Category | Status | Turns | Task IDs | Stop stage | Model calls | Source |",
+        "|---:|---|---|---:|---|---|---:|---|",
     ]
     for row in rows:
         lines.append(
             f"| {row['category_number']} | {row['category']} | {row['status']} | "
             f"{row['committed_turns'] if row['committed_turns'] is not None else ''} | "
+            f"{row['task_ids']} | "
             f"{row['stop_stage'] or ''} | "
             f"{row['model_calls'] if row['model_calls'] is not None else ''} | "
             f"[Commons]({row['file_page_url']}) |"
