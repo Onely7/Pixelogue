@@ -182,3 +182,14 @@ uv run --locked pixelogue evaluate-capabilities \
 期待する採否はコントローラー内だけで使い、評価呼び出しへ渡しません。developmentとconfirmationの件数も分けます。少数fixtureの結果で確認できるのは接続であり、自然画像に対する正答率ではありません。
 
 各サーバーが生成と評価のどこで使われるかは、[詳しいパイプラインガイド](pipeline/README_ja.md)で説明しています。
+
+## 評価回帰テスト
+
+GPUと `doctor --check-servers` を確認し、標準モデルのサーバーが起動している間だけ、次の外部モデルテストを実行します。通常のCPUテストではスキップされます。
+
+```sh
+PIXELOGUE_LIVE_RUBRIC=1 PIXELOGUE_LIVE_CONFIG=configs/paired-one-gpu-pilot.yaml \
+  uv run --locked pytest -q -s tests/test_rubric_semantics.py
+```
+
+1 GPU用設定ではport 18102と18103へ接続します。モデルの識別と量子化は標準構成のままです。

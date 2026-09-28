@@ -193,6 +193,8 @@ standard model servers. They do not launch or allocate another model server. Run
 PIXELOGUE_LIVE_RUBRIC=1 uv run --locked pytest -q -s tests/test_rubric_semantics.py
 ```
 
+For the checked one-GPU standard-pair configuration on ports 18102 and 18103, set `PIXELOGUE_LIVE_CONFIG=configs/paired-one-gpu-pilot.yaml` as well. This changes only the test endpoint addresses and keeps the standard model identities.
+
 Ordinary test runs skip these external checks. The holistic checks include both supported answers
 and deliberately false image claims. `rate-existing` can compare holistic review on immutable
 saved questions and answers; it does not regenerate previously missing turns. Compare against

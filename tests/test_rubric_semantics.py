@@ -22,7 +22,7 @@ pytestmark = [
 
 @pytest.fixture(scope="module", params=["generator_a", "generator_b"])
 def judge(request):
-    config = load_config(Path("configs/standard.yaml"))
+    config = load_config(Path(os.environ.get("PIXELOGUE_LIVE_CONFIG", "configs/standard.yaml")))
     client = VllmClient(
         getattr(config.models, request.param), config.runtime, run_id="rubric-semantics-regression"
     )
