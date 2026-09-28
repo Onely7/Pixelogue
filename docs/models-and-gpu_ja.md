@@ -118,6 +118,8 @@ tail -f artifacts/gpu-watch/monitor.log
 
 後から明示的に許可された検証では、`watch` コマンドへ `--campaign-id recheck-YYYYMMDD --additional-gpu-hours 2` を加えます。既存の累積台帳にこの時間をキャンペーンIDごとに1回だけ加算します。同じIDで再起動しても予算を再加算せず、完了済みのpilotも再実行しません。新しいキャンペーンはpilotを1回実行し、job後に空きGPUを再予約して延長予算の上限まで保持します。
 
+失敗したpilotを調査する間は `--reserve-only` を加えます。空きGPUを保持してpilotを起動しません。修正後にwatcherを停止し、同じキャンペーンIDでこの指定を外して再起動します。両方の段階を同じ累積GPU台帳に算入します。
+
 ## 4. 実際に応答できるまで待つ
 
 vLLMは重みを読み込んだ後も、compile、CUDA graphの準備、画像入力のウォームアップを行います。PIDが存在し、GPUメモリを確保していても、起動完了とは限りません。

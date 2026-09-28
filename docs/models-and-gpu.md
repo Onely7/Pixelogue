@@ -118,6 +118,8 @@ tail -f artifacts/gpu-watch/monitor.log
 
 For an explicitly authorized later validation round, add `--campaign-id recheck-YYYYMMDD --additional-gpu-hours 2` to the `watch` command. The extension is added to the preserved cumulative ledger once per campaign ID. Reusing that ID on restart neither adds budget again nor reruns a completed pilot. The watcher runs one new pilot for a new campaign, then reacquires an idle GPU after the job until its extended budget expires.
 
+Add `--reserve-only` while diagnosing a failed pilot. This holds an idle GPU without launching the pilot; stop the watcher and restart with the same campaign ID without that flag to run the corrected job. Both phases consume the same cumulative GPU ledger.
+
 ## 4. Wait for real readiness
 
 vLLM continues with compilation, CUDA graph capture, and multimodal warmup after loading weights. Allocated GPU memory or a live PID does not mean the server is ready.

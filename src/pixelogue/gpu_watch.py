@@ -323,7 +323,9 @@ def _hold_visible_gpu(memory_fraction: float, parent_pid: int) -> None:
         time.sleep(1)
 
 
-def _watch(poll_seconds: int, campaign_id: str | None, additional_hours: float) -> None:
+def _watch(
+    poll_seconds: int, campaign_id: str | None, additional_hours: float, reserve_only: bool
+) -> None:
     if not PYTHON_WITH_TORCH.is_file():
         raise RuntimeError("Install the separate runtime/vllm lock first")
     STATE.parent.mkdir(parents=True, exist_ok=True)
@@ -367,7 +369,7 @@ def _watch(poll_seconds: int, campaign_id: str | None, additional_hours: float) 
                 last = set()
                 time.sleep(poll_seconds)
                 continue
-            if not state["pilot_attempted"]:
+            if not state["pilot_attempted"] and not reserve_only:
                 _release_holder(holder, state)
                 if not _wait_for_handoff(gpu):
                     print("GPU handoff lost; returning to watch", flush=True)
@@ -376,8 +378,9 @@ def _watch(poll_seconds: int, campaign_id: str | None, additional_hours: float) 
                 _pilot(gpu, state)
                 last = set()
                 continue
+            purpose = "diagnostic" if reserve_only else "post-job"
             print(
-                f"post-job GPU {gpu} reserved; holding until remaining budget expires", flush=True
+                f"{purpose} GPU {gpu} reserved; holding until remaining budget expires", flush=True
             )
             try:
                 while holder.poll() is None and _remaining(state) > 60 and not stop:
@@ -397,6 +400,7 @@ def main() -> None:
     parser.add_argument("--parent-pid", type=int)
     parser.add_argument("--campaign-id")
     parser.add_argument("--additional-gpu-hours", type=float, default=0.0)
+    parser.add_argument("--reserve-only", action="store_true")
     args = parser.parse_args()
     if not 5 <= args.poll_seconds <= 300 or not 0.85 <= args.memory_fraction <= 0.92:
         parser.error("Invalid polling or reservation fraction")
@@ -411,7 +415,7 @@ def main() -> None:
             parser.error("Holder requires its supervising parent PID")
         _hold_visible_gpu(args.memory_fraction, args.parent_pid)
     else:
-        _watch(args.poll_seconds, args.campaign_id, args.additional_gpu_hours)
+        _watch(args.poll_seconds, args.campaign_id, args.additional_gpu_hours, args.reserve_only)
 
 
 if __name__ == "__main__":
