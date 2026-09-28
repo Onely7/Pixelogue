@@ -585,6 +585,18 @@ def test_selection_rejection_stops_before_question_or_answer(
         store.close()
 
     stages = [stage for client in (generator_a, generator_b) for stage, _ in client.calls]
+    binding_payloads = [
+        payload
+        for client in (generator_a, generator_b)
+        for stage, payload in client.calls
+        if stage == "candidate_binding"
+    ]
+    assert binding_payloads
+    assert all(
+        "local_evidence_ids" in candidate and "required_evidence_ids" in candidate
+        for payload in binding_payloads
+        for candidate in payload["candidates"]
+    )
     assert conversation.status == "REJECTED"
     assert not conversation.turns
     assert "answer_generation" not in stages

@@ -32,6 +32,7 @@ from pixelogue.task_runtime import (
     admission_report,
     bind_candidates,
     bindable_parameter_names,
+    binding_candidate,
     fingerprint,
     operation_contract,
     selector_candidate,
@@ -201,7 +202,7 @@ def test_later_turn_prefers_unused_tasks_within_candidate_limit() -> None:
 def test_binding_cannot_borrow_refs_or_ignore_unknown_eligibility():
     data = inventory(scope("left", visible_entity="MET"), scope("right", visible_entity="MET"))
     left = next(c for c in candidates(data) if c.scope_id == "left")
-    with pytest.raises(ExecutionError, match="another scope"):
+    with pytest.raises(ExecutionError, match="another scope") as caught:
         bind_candidates(
             (left,),
             CandidateBindings(bindings=(binding(left, evidence_refs=("right:visible_entity",)),)),
@@ -209,6 +210,8 @@ def test_binding_cannot_borrow_refs_or_ignore_unknown_eligibility():
             (),
             TaskRuntimeConfig(),
         )
+    assert "right:visible_entity" in str(caught.value)
+    assert "left:visible_entity" in str(caught.value)
     uncertain = binding(
         left,
         checks=tuple(
@@ -248,9 +251,16 @@ def test_binding_reports_exact_unknown_parameter_without_admitting_it() -> None:
 
 
 def test_candidate_input_separates_check_ids_from_parameter_names() -> None:
-    data = inventory(scope("left", visible_entity="MET"))
-    template = candidates(data)[0]
+    data = inventory(
+        scope("left", visible_entity="MET", visible_attribute="UNKNOWN"),
+        scope("right", visible_entity="MET"),
+    )
+    template = next(item for item in candidates(data) if item.scope_id == "left")
     exposed = selector_candidate(template)
+    bound_input = binding_candidate(template, data)
+    assert bound_input["local_evidence_ids"] == ["left:visible_attribute", "left:visible_entity"]
+    assert set(bound_input["required_evidence_ids"]) <= set(bound_input["local_evidence_ids"])
+    assert bound_input["required_evidence_ids"] == ["left:visible_entity"]
     assert set(exposed["required_check_ids"]) == set(exposed["eligibility_checks"])
     assert "target" in exposed["bindable_parameter_names"]
     assert not set(exposed["required_check_ids"]) & set(exposed["bindable_parameter_names"])

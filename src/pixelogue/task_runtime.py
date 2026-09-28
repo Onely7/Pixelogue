@@ -199,6 +199,22 @@ def selector_candidate(candidate: InstructionCandidate) -> dict[str, Any]:
     }
 
 
+def binding_candidate(
+    candidate: InstructionCandidate, inventory: ScopedEvidenceInventory
+) -> dict[str, Any]:
+    """Expose only this candidate's evidence IDs for blind local binding."""
+    scope = next(scope for scope in inventory.scopes if scope.scope_id == candidate.scope_id)
+    return {
+        **selector_candidate(candidate),
+        "local_evidence_ids": sorted(item.evidence_id for item in scope.observations),
+        "required_evidence_ids": sorted(
+            item.evidence_id
+            for item in scope.observations
+            if item.capability in candidate.required_capabilities and item.verdict == "MET"
+        ),
+    }
+
+
 def bindable_parameter_names(task: TaskDefinition) -> tuple[str, ...]:
     """List public choices that a model may bind for one catalog task."""
     return tuple(
@@ -313,7 +329,10 @@ def bind_candidates(
         local_refs = {item.evidence_id for item in scope.observations}
         if not set(binding.evidence_refs) <= local_refs:
             raise ExecutionError(
-                "CANDIDATE_EVIDENCE_SCOPE", "Binding borrows evidence from another scope"
+                "CANDIDATE_EVIDENCE_SCOPE",
+                f"Candidate {binding.candidate_id} borrows evidence from another scope: "
+                f"invalid IDs {sorted(set(binding.evidence_refs) - local_refs)}; "
+                f"local IDs {sorted(local_refs)}",
             )
         if template.profile == "normal":
             required_refs = {

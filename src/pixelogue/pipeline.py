@@ -80,6 +80,7 @@ from pixelogue.task_evidence import (
 )
 from pixelogue.task_runtime import (
     bind_candidates,
+    binding_candidate,
     operation_contract,
     selector_candidate,
     validate_evidence,
@@ -374,7 +375,7 @@ class SynthesisCoordinator:
                             "target_language": target_language,
                             "public_history": self._history(snapshot.public_history),
                             "candidates": [
-                                selector_candidate(candidate) for candidate in candidates
+                                binding_candidate(candidate, inventory) for candidate in candidates
                             ],
                             "scope_evidence": inventory.model_dump(mode="json"),
                             "answer_max_tokens": self.config.tasks.answer_max_tokens,

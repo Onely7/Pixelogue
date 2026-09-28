@@ -156,7 +156,9 @@ Use only capability names from capability_vocabulary. Do not infer domains from 
 names or annotations. Broad discovery is followed by focused binding of eligible operations.""",
     "candidate_binding": """Bind only the controller-provided candidates to locally supported
 public operation choices BEFORE any answer exists. Return at most one binding per candidate ID.
-Use that candidate's scope evidence only. Every binding MUST include the separate target object
+Use that candidate's local_evidence_ids only. Include every required_evidence_ids entry in
+the binding evidence_refs. Never copy an ID from another candidate unless it also appears in
+this candidate's local_evidence_ids. Every binding MUST include the separate target object
 with value, origin and evidence_refs. Do not put target in public_parameters. target_binding,
 object, or category_set cannot replace target.
 Read public_history before choosing a target, attribute, or condition. A completed question and
