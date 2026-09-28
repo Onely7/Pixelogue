@@ -103,7 +103,9 @@ def verify_geometry_problem(
         for source in sources
     ):
         return GateVerdict.UNKNOWN, {"reason": "Incomplete or mismatched visual premise domain"}
-    canonical = [source.model_dump(mode="json", exclude={"reason"}) for source in sources]
+    canonical = [
+        source.model_dump(mode="json", exclude={"reason", "scope_region"}) for source in sources
+    ]
     for item in canonical:
         for premise in item["premises"]:
             premise.pop("region", None)

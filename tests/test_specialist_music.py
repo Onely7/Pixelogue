@@ -102,3 +102,20 @@ def test_key_signature_changes_pitch_without_changing_staff_position() -> None:
         }
     )
     assert verify_music((score, score), score.domain, "1-1", "s", "v", answer)[0] is GateVerdict.MET
+
+
+def test_equivalent_score_readings_allow_different_enclosing_regions() -> None:
+    score = _score()
+    other = score.model_copy(
+        update={"scope_region": score.scope_region.model_copy(update={"bottom": 0.9})}
+    )
+    answer = json.dumps(
+        {
+            "events": [
+                {"pitch": "E4", "duration": "1", "tie": None},
+                {"pitch": "F4", "duration": "1", "tie": None},
+                {"pitch": None, "duration": "2", "tie": None},
+            ]
+        }
+    )
+    assert verify_music((score, other), score.domain, "1-1", "s", "v", answer)[0] is GateVerdict.MET

@@ -52,3 +52,38 @@ def test_unresolved_stereochemistry_and_disputed_graph_abstain() -> None:
         )[0]
         is GateVerdict.UNKNOWN
     )
+
+
+def test_graph_equivalence_ignores_atom_ids_and_explicit_hydrogens() -> None:
+    source = _source()
+    graph = source.model_dump(mode="json")
+    renamed = dict(graph)
+    renamed["atoms"] = tuple(
+        {**atom, "atom_id": {"c1": "left", "c2": "middle", "o": "right"}[atom["atom_id"]]}
+        for atom in reversed(graph["atoms"])
+    )
+    renamed["bonds"] = tuple(
+        {
+            **bond,
+            "a": {"c1": "left", "c2": "middle", "o": "right"}[bond["a"]],
+            "b": {"c1": "left", "c2": "middle", "o": "right"}[bond["b"]],
+        }
+        for bond in reversed(graph["bonds"])
+    )
+    equivalent = ChemicalSource.model_validate(renamed)
+    args = ((source, equivalent), source.domain, "nonstereo_smiles", "s", "v")
+    assert verify_chemistry(*args, '{"smiles":"CCO"}')[0] is GateVerdict.MET
+    assert verify_chemistry(*args, '{"smiles":"COC"}')[0] is GateVerdict.NOT_MET
+
+    explicit = source.model_dump(mode="json")
+    explicit["atoms"].append({"atom_id": "h", "element": "H", "region": REGION})
+    explicit["bonds"].append({"a": "o", "b": "h", "order": "single", "region": REGION})
+    explicit["atoms"] = tuple(explicit["atoms"])
+    explicit["bonds"] = tuple(explicit["bonds"])
+    with_h = ChemicalSource.model_validate(explicit)
+    assert (
+        verify_chemistry(
+            (source, with_h), source.domain, "nonstereo_smiles", "s", "v", '{"smiles":"CCO"}'
+        )[0]
+        is GateVerdict.MET
+    )

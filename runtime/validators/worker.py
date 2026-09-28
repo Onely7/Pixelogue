@@ -209,6 +209,7 @@ def _chemistry(request: dict[str, Any]) -> dict[str, Any]:
         molecule.AddBond(indices[bond["a"]], indices[bond["b"]], bond_types[bond["order"]])
     expected_mol = molecule.GetMol()
     Chem.SanitizeMol(expected_mol)
+    expected_mol = Chem.RemoveHs(expected_mol)
     expected = Chem.MolToSmiles(expected_mol, isomericSmiles=False, canonical=True)
     reported = request["reported_smiles"]
     if (

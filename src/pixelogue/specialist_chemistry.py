@@ -93,16 +93,6 @@ def verify_chemistry(
         for source in sources
     ):
         return GateVerdict.UNKNOWN, {"reason": "Incomplete or mismatched chemical evidence"}
-    canonical = [
-        source.model_dump(mode="json", exclude={"reason", "scope_region"}) for source in sources
-    ]
-    for item in canonical:
-        for atom in item["atoms"]:
-            atom.pop("region", None)
-        for bond in item["bonds"]:
-            bond.pop("region", None)
-    if canonical[0] != canonical[1]:
-        return GateVerdict.UNKNOWN, {"reason": "Independent molecular graphs disagree"}
     try:
         raw = strict_json_object(candidate_answer)
         if set(raw) != {"smiles"}:
@@ -110,25 +100,41 @@ def verify_chemistry(
         answer = ChemicalAnswer.model_validate_json(candidate_answer)
     except (ExternalInputError, ValueError, TypeError):
         return GateVerdict.UNKNOWN, {"reason": "Malformed chemical output"}
-    worker_source = sources[0].model_dump(
-        mode="json",
-        exclude={"reason", "scope_id", "view_id", "scope_region", "domain", "coverage", "notation"},
-    )
-    for atom in worker_source["atoms"]:
-        atom.pop("region", None)
-    for bond in worker_source["bonds"]:
-        bond.pop("region", None)
     try:
-        response = call_worker(
-            "chemistry",
-            "rdkit",
-            {
-                "operation": "chemistry",
-                "source": worker_source,
-                "reported_smiles": answer.smiles,
-            },
-            timeout_seconds=20,
-        )
+        responses = []
+        for source in sources:
+            worker_source = source.model_dump(
+                mode="json",
+                exclude={
+                    "reason",
+                    "scope_id",
+                    "view_id",
+                    "scope_region",
+                    "domain",
+                    "coverage",
+                    "notation",
+                },
+            )
+            for atom in worker_source["atoms"]:
+                atom.pop("region", None)
+            for bond in worker_source["bonds"]:
+                bond.pop("region", None)
+            responses.append(
+                call_worker(
+                    "chemistry",
+                    "rdkit",
+                    {
+                        "operation": "chemistry",
+                        "source": worker_source,
+                        "reported_smiles": answer.smiles,
+                    },
+                    timeout_seconds=20,
+                )
+            )
     except ExecutionError as exc:
         return GateVerdict.UNKNOWN, {"reason": str(exc)}
-    return GateVerdict(response["verdict"]), response
+    if any(response.get("expected_smiles") is None for response in responses):
+        return GateVerdict.UNKNOWN, {"reason": "Molecular graph or SMILES could not be resolved"}
+    if responses[0]["expected_smiles"] != responses[1]["expected_smiles"]:
+        return GateVerdict.UNKNOWN, {"reason": "Independent molecular graphs disagree"}
+    return GateVerdict(responses[0]["verdict"]), responses[0]

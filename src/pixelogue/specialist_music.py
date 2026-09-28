@@ -115,7 +115,9 @@ def verify_music(
         for source in sources
     ):
         return GateVerdict.UNKNOWN, {"reason": "Score evidence or public bar range is incomplete"}
-    canonical = [source.model_dump(mode="json", exclude={"reason"}) for source in sources]
+    canonical = [
+        source.model_dump(mode="json", exclude={"reason", "scope_region"}) for source in sources
+    ]
     for item in canonical:
         for measure in item["measures"]:
             for event in measure["events"]:
