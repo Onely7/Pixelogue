@@ -514,6 +514,34 @@ def main() -> None:
         )
         _check_results(output_dir, expected)
         _phase(output_dir, "full_complete")
+        model_calls_before_resume = _model_call_count(args.run_id)
+        output_hash_before_resume = hashlib.sha256(full_output.read_bytes()).hexdigest()
+        _run_logged(
+            full_command,
+            output_dir / "resume.log",
+            300,
+            full_output,
+        )
+        if _model_call_count(args.run_id) != model_calls_before_resume:
+            raise RuntimeError("Resuming completed outcomes created extra model calls")
+        if hashlib.sha256(full_output.read_bytes()).hexdigest() != output_hash_before_resume:
+            raise RuntimeError("Resuming changed the committed conversation output")
+        _run_logged(
+            [
+                "uv",
+                "run",
+                "--locked",
+                "pixelogue",
+                "replay",
+                "--config",
+                CONFIG,
+                "--run-id",
+                args.run_id,
+            ],
+            output_dir / "replay.log",
+            300,
+        )
+        _check_results(output_dir, expected)
         diverse_output = output_dir / "diverse" / "conversations.jsonl"
         diverse_run_id = f"{args.run_id}-diverse"
         _phase(output_dir, "diverse_inference")
@@ -581,34 +609,6 @@ def main() -> None:
             300,
         )
         _phase(output_dir, "diverse_complete")
-        model_calls_before_resume = _model_call_count(args.run_id)
-        output_hash_before_resume = hashlib.sha256(full_output.read_bytes()).hexdigest()
-        _run_logged(
-            full_command,
-            output_dir / "resume.log",
-            300,
-            full_output,
-        )
-        if _model_call_count(args.run_id) != model_calls_before_resume:
-            raise RuntimeError("Resuming completed outcomes created extra model calls")
-        if hashlib.sha256(full_output.read_bytes()).hexdigest() != output_hash_before_resume:
-            raise RuntimeError("Resuming changed the committed conversation output")
-        _run_logged(
-            [
-                "uv",
-                "run",
-                "--locked",
-                "pixelogue",
-                "replay",
-                "--config",
-                CONFIG,
-                "--run-id",
-                args.run_id,
-            ],
-            output_dir / "replay.log",
-            300,
-        )
-        _check_results(output_dir, expected)
     finally:
         _phase(output_dir, "server_shutdown")
         _stop_servers()
