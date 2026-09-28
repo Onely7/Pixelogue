@@ -96,7 +96,7 @@ class ScopeEvidenceReport(StrictModel):
     view_id: Nonempty
     public_description: Nonempty
     region: ImageRegion
-    observations: Annotated[dict[Nonempty, CapabilityReport], Field(max_length=50)]
+    observations: Annotated[dict[str, CapabilityReport], Field(max_length=50)]
 
 
 class ScopedEvidenceReport(StrictModel):

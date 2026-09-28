@@ -646,9 +646,31 @@ def test_model_facing_evidence_and_binding_schemas_enforce_shape():
     evidence_schema = ScopedEvidenceReport.model_json_schema()
     scope_schema = evidence_schema["$defs"]["ScopeEvidenceReport"]
     assert scope_schema["properties"]["observations"]["type"] == "object"
+    assert "propertyNames" not in scope_schema["properties"]["observations"]
     binding_schema = CandidateBindingsReport.model_json_schema()["$defs"]["CandidateBindingReport"]
     assert "target" in binding_schema["required"]
     assert "public_parameters" in binding_schema["required"]
+
+
+def test_bad_request_keeps_server_schema_reason():
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            400,
+            json={"error": {"message": "propertyNames is not supported"}},
+            request=request,
+        )
+    )
+    with httpx.Client(base_url="http://127.0.0.1:8000/v1/", transport=transport) as http:
+        client = VllmClient(
+            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
+            RuntimeConfig(),
+            run_id="diagnostic",
+            client=http,
+        )
+        with pytest.raises(ExecutionError) as caught:
+            client._request({"model": "test"})
+    assert caught.value.reason == "MODEL_REQUEST_REJECTED"
+    assert "propertyNames is not supported" in str(caught.value)
 
 
 def test_repeated_capability_key_is_not_silently_overwritten():

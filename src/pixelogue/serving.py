@@ -416,7 +416,23 @@ class VllmClient:
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as error:
                 last_error = error
             except httpx.HTTPStatusError as error:
-                raise ExecutionError("MODEL_REQUEST_REJECTED", str(error)) from error
+                response_body = error.response.text[:2048]
+                if self.store is not None:
+                    self.store.write_json_artifact(
+                        "transport-errors",
+                        {
+                            "request_hash": canonical_hash(body),
+                            "model_repo": self.endpoint.repo_id,
+                            "attempt": attempt + 1,
+                            "status_code": error.response.status_code,
+                            "response_body": response_body,
+                            "truncated": len(error.response.text) > 2048,
+                        },
+                    )
+                raise ExecutionError(
+                    "MODEL_REQUEST_REJECTED",
+                    f"Inference server returned {error.response.status_code}: {response_body}",
+                ) from error
             if attempt + 1 < self.runtime.transport_max_attempts:
                 time.sleep(2**attempt)
         raise ExecutionError("MODEL_TRANSPORT_FAILED", str(last_error)) from last_error
