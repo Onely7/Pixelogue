@@ -20,26 +20,6 @@ def test_idle_device_needs_low_memory_zero_utilization_and_no_compute_process() 
     assert gpu_watch.idle_indices(rows) == {0}
 
 
-def test_handoff_waits_for_released_context_but_rejects_new_process(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    readings = iter(
-        [
-            [{"index": 4, "used_mib": 66, "utilization": 3, "compute_process": 0}],
-            [{"index": 4, "used_mib": 66, "utilization": 0, "compute_process": 0}],
-        ]
-    )
-    monkeypatch.setattr(gpu_watch, "_metrics", lambda: next(readings))
-    monkeypatch.setattr(gpu_watch.time, "sleep", lambda _seconds: None)
-    assert gpu_watch._wait_for_handoff(4)
-    monkeypatch.setattr(
-        gpu_watch,
-        "_metrics",
-        lambda: [{"index": 4, "used_mib": 2000, "utilization": 0, "compute_process": 1}],
-    )
-    assert not gpu_watch._wait_for_handoff(4)
-
-
 def test_active_reservation_consumes_budget_and_stale_pid_is_counted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -120,3 +100,18 @@ def test_pilot_detects_lost_budget_supervisor(monkeypatch: pytest.MonkeyPatch) -
     assert pilot_smoke._parent_alive()
     monkeypatch.setattr(pilot_smoke.os, "getppid", lambda: 1)
     assert not pilot_smoke._parent_alive()
+
+
+def test_generator_handoff_keeps_reservation_until_acknowledged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PIXELOGUE_WATCH_PID", "12345")
+    monkeypatch.setattr(pilot_smoke, "_parent_alive", lambda: True)
+    monkeypatch.setattr(pilot_smoke, "stop", False)
+
+    def acknowledge(_seconds: float) -> None:
+        assert (tmp_path / "handoff-request").read_text() == "generator-ready\n"
+        (tmp_path / "handoff-complete").write_text("released\n")
+
+    monkeypatch.setattr(pilot_smoke.time, "sleep", acknowledge)
+    pilot_smoke._request_holder_handoff(tmp_path)

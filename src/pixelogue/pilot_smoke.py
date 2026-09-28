@@ -116,6 +116,20 @@ def _wait_model(process: subprocess.Popen[str], port: int, expected: str, second
     raise RuntimeError(f"Model readiness timed out: {expected}; {last_error}")
 
 
+def _request_holder_handoff(output_dir: Path) -> None:
+    """Keep the reservation present until the generator owns the GPU."""
+    if os.environ.get("PIXELOGUE_WATCH_PID") is None:
+        return
+    (output_dir / "handoff-request").write_text("generator-ready\n", encoding="utf-8")
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline and not stop and _parent_alive():
+        if (output_dir / "handoff-complete").exists():
+            print("reservation released after generator readiness", flush=True)
+            return
+        time.sleep(1)
+    raise RuntimeError("GPU reservation handoff was not acknowledged")
+
+
 def _run_logged(
     command: list[str], log_path: Path, timeout: int, progress_path: Path | None = None
 ) -> None:
@@ -280,6 +294,7 @@ def main() -> None:
     try:
         generator = _start_server("generator", "runtime/vllm/generator-gpu-watch.yaml", output_dir)
         _wait_model(generator, 18002, "Qwen/Qwen3.5-9B", 1800)
+        _request_holder_handoff(output_dir)
         selector = _start_server("selector", "runtime/vllm/selector-gpu-watch.yaml", output_dir)
         _wait_model(selector, 18000, "Qwen/Qwen3.5-2B", 900)
         _run_logged(

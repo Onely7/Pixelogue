@@ -103,9 +103,9 @@ Redirect each window to a unique local log. A pane with `pane_dead=0` is only on
 
 ### Bounded idle-GPU watcher
 
-`gpu_watch.py` checks every local physical GPU twice with `nvidia-smi`, including the compute-process table. It starts only after `doctor` reports the one-GPU pilot ready. The memory reservation adapts the supplied CUDA allocation script, but omits continuous matrix multiplication so the four GPU-hour budget is spent primarily on the actual test. The holder is released immediately before model launch. After the pilot, the watcher reacquires an idle GPU and holds it until stopped or the cumulative budget is reached. It never takes a GPU with another compute process, even if Slurm reports its node as idle.
+`gpu_watch.py` checks every local physical GPU twice with `nvidia-smi`, including the compute-process table. It starts only after `doctor` reports the one-GPU pilot ready. The memory reservation adapts the supplied CUDA allocation script, but omits continuous matrix multiplication. During model startup the holder keeps 25% of GPU memory allocated; the generator starts while that process remains present. After the generator answers `/v1/models`, the watcher releases the holder and acknowledges the handoff before the selector starts. This avoids an unreserved gap. After the pilot, the watcher reacquires an idle GPU with a 90% holder until stopped or the cumulative budget is reached. It never takes a GPU with another compute process, even if Slurm reports its node as idle.
 
-The watcher uses separate ports 18002 and 18000 because the usual selector port may be occupied by another local service. It uses the same pinned, unquantized Qwen3.5-9B and Qwen3.5-2B model revisions and an evaluation-only 20-image prepared set. The one-time job first runs a one-image smoke test, then the full 20-image wiring check. It checks both served names, `doctor --check-servers`, synthesis, replay integrity, output row count, and terminal errors. Server and run logs are saved separately. It does not certify the standard model pair or specialist calibration.
+The watcher uses separate ports 18002 and 18000 because the usual selector port may be occupied by another local service. It uses the same pinned, unquantized Qwen3.5-9B and Qwen3.5-2B model revisions and an evaluation-only 20-image prepared set. The job runs one failed-image probe, two assistant-screened functional images with an intentional interruption and resume, then the full 20-image comparison and a completed-run resume check. The two functional images are not human-vetted cases. It checks served names, `doctor --check-servers`, synthesis, replay integrity, output row count, terminal errors, and reused model calls. Server and run logs are saved separately. It does not certify the standard model pair or specialist calibration.
 
 ```sh
 mkdir -p artifacts/gpu-watch
@@ -119,6 +119,8 @@ tail -f artifacts/gpu-watch/monitor.log
 For an explicitly authorized later validation round, add `--campaign-id recheck-YYYYMMDD --additional-gpu-hours 2` to the `watch` command. The extension is added to the preserved cumulative ledger once per campaign ID. Reusing that ID on restart neither adds budget again nor reruns a completed pilot. The watcher runs one new pilot for a new campaign, then reacquires an idle GPU after the job until its extended budget expires.
 
 Add `--reserve-only` while diagnosing a failed pilot. This holds an idle GPU without launching the pilot; stop the watcher and restart with the same campaign ID without that flag to run the corrected job. Both phases consume the same cumulative GPU ledger.
+
+After a failed pilot with budget remaining, `--retry-failed-pilot --campaign-id ID` resets only the one-time attempt flag for that campaign. It does not add GPU hours. Keep the original failure logs and use a new run ID for the corrected code.
 
 ## 4. Wait for real readiness
 

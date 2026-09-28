@@ -165,19 +165,6 @@ def idle_indices(rows: list[dict[str, int | str]]) -> set[int]:
     }
 
 
-def _wait_for_handoff(gpu: int, seconds: int = 30) -> bool:
-    """Allow the released CUDA context's utilization sample to settle."""
-    deadline = time.monotonic() + seconds
-    while not stop and time.monotonic() < deadline:
-        row = next((item for item in _metrics() if int(item["index"]) == gpu), None)
-        if row is None or int(row["used_mib"]) >= 1024 or int(row["compute_process"]):
-            return False
-        if int(row["utilization"]) == 0:
-            return True
-        time.sleep(1)
-    return False
-
-
 def _doctor_ready() -> bool:
     output = ROOT / "artifacts/gpu-watch/doctor.json"
     result = subprocess.run(
@@ -204,7 +191,9 @@ def _doctor_ready() -> bool:
     return json.loads(output.read_text(encoding="utf-8"))["ready"] is True
 
 
-def _holder(gpu: int, state: dict[str, Any]) -> subprocess.Popen[str] | None:
+def _holder(
+    gpu: int, state: dict[str, Any], *, memory_fraction: float = 0.90
+) -> subprocess.Popen[str] | None:
     environment = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "PYTHONUNBUFFERED": "1"}
     process = subprocess.Popen(
         [
@@ -212,7 +201,7 @@ def _holder(gpu: int, state: dict[str, Any]) -> subprocess.Popen[str] | None:
             str(Path(__file__)),
             "hold",
             "--memory-fraction",
-            "0.90",
+            str(memory_fraction),
             "--parent-pid",
             str(os.getpid()),
         ],
@@ -256,7 +245,7 @@ def _release_holder(process: subprocess.Popen[str], state: dict[str, Any]) -> No
     _end(state)
 
 
-def _pilot(gpu: int, state: dict[str, Any]) -> None:
+def _pilot(gpu: int, state: dict[str, Any], holder: subprocess.Popen[str]) -> None:
     run_id = f"gpu-watch-pilot-{int(time.time())}"
     output = ROOT / "artifacts/gpu-watch" / run_id
     output.mkdir(parents=True, exist_ok=False)
@@ -282,11 +271,20 @@ def _pilot(gpu: int, state: dict[str, Any]) -> None:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-        _begin(state, "pilot", gpu, process.pid)
         print(f"pilot started: GPU {gpu}, PID {process.pid}, {output}", flush=True)
+        holder_active = True
         try:
             while process.poll() is None and _remaining(state) > 60 and not stop:
-                time.sleep(5)
+                if holder_active and (output / "handoff-request").exists():
+                    _release_holder(holder, state)
+                    holder_active = False
+                    _begin(state, "pilot", gpu, process.pid)
+                    (output / "handoff-complete").write_text("released\n", encoding="utf-8")
+                    print(f"generator ready; holder released on GPU {gpu}", flush=True)
+                if holder_active and holder.poll() is not None:
+                    print("holder exited before generator readiness", flush=True)
+                    break
+                time.sleep(1)
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGTERM)
                 try:
@@ -306,6 +304,8 @@ def _pilot(gpu: int, state: dict[str, Any]) -> None:
             state["pilot_attempted"] = True
             state["pilot_exit_code"] = process.returncode
         finally:
+            if holder_active:
+                _release_holder(holder, state)
             _end(state)
             _save(state)
 
@@ -332,7 +332,7 @@ def _hold_visible_gpu(memory_fraction: float, parent_pid: int) -> None:
         allocations.append(torch.empty(chunk, dtype=torch.uint8, device="cuda:0"))
     torch.cuda.synchronize()
     own = torch.cuda.memory_allocated(0)
-    if own < total * 0.85:
+    if own < target * 0.95:
         raise RuntimeError("Reservation did not acquire sufficient GPU memory")
     print(f"READY allocated_mib={own // (1024 * 1024)}", flush=True)
     signal.signal(signal.SIGTERM, _signal_stop)
@@ -388,18 +388,14 @@ def _watch(
             if not _doctor_ready():
                 time.sleep(poll_seconds)
                 continue
-            holder = _holder(gpu, state)
+            starting_pilot = not state["pilot_attempted"] and not reserve_only
+            holder = _holder(gpu, state, memory_fraction=0.25 if starting_pilot else 0.90)
             if holder is None:
                 last = set()
                 time.sleep(poll_seconds)
                 continue
-            if not state["pilot_attempted"] and not reserve_only:
-                _release_holder(holder, state)
-                if not _wait_for_handoff(gpu):
-                    print("GPU handoff lost; returning to watch", flush=True)
-                    last = set()
-                    continue
-                _pilot(gpu, state)
+            if starting_pilot:
+                _pilot(gpu, state, holder)
                 last = set()
                 continue
             purpose = "diagnostic" if reserve_only else "post-job"
@@ -427,7 +423,7 @@ def main() -> None:
     parser.add_argument("--reserve-only", action="store_true")
     parser.add_argument("--retry-failed-pilot", action="store_true")
     args = parser.parse_args()
-    if not 5 <= args.poll_seconds <= 300 or not 0.85 <= args.memory_fraction <= 0.92:
+    if not 5 <= args.poll_seconds <= 300 or not 0.20 <= args.memory_fraction <= 0.92:
         parser.error("Invalid polling or reservation fraction")
     if not 0 <= args.additional_gpu_hours <= 4 or (
         args.additional_gpu_hours and not args.campaign_id
