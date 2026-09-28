@@ -11,6 +11,7 @@ import signal
 import socket
 import sqlite3
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -545,6 +546,19 @@ def main() -> None:
                 str(output_dir / "diverse-diagnostics"),
             ],
             output_dir / "diverse-diagnostics.log",
+            90,
+        )
+        _run_logged(
+            [
+                sys.executable,
+                "-m",
+                "pixelogue.diverse_eval_report",
+                "--diagnostics",
+                str(output_dir / "diverse-diagnostics.json"),
+                "--output-stem",
+                str(output_dir / "diverse-category-report"),
+            ],
+            output_dir / "diverse-category-report.log",
             90,
         )
         _run_logged(
