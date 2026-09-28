@@ -611,6 +611,10 @@ def test_public_text_checks_catch_observed_multiturn_leaks() -> None:
     )
     assert identification_answer_in_history("knit hat", history)
     assert not identification_answer_in_history("sedan", history)
+    assert identification_answer_in_history(
+        "Three QR codes",
+        (PublicMessage(message_id="a0", turn_index=1, role="assistant", content="QR code"),),
+    )
     assert transcription_answer_in_question(
         'What does the text "PSEUDO COLOR 0243_2" read?', "PSEUDO COLOR\n0243_2"
     )
@@ -624,6 +628,11 @@ def test_public_text_checks_catch_observed_multiturn_leaks() -> None:
         "What action is the hand performing?",
         "The hand is drawing a sketch.",
         ("What object is being used to draw the sketch?",),
+    )
+    assert action_answer_already_public(
+        "What is the beetle doing while resting on the fabric?",
+        "The beetle is resting on the fabric.",
+        (),
     )
     assert not action_answer_already_public(
         "What is the man doing near the wall?", "The man is painting.", ("The man is standing.",)

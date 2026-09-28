@@ -115,13 +115,65 @@ def identification_answer_in_question(question: str, answer: str) -> bool:
 
 def identification_answer_in_history(answer: str, history: Sequence[PublicMessage]) -> bool:
     """Reject a short identification label already present in public dialogue."""
-    words = _public_words(answer)
-    if words and words[0] in {"a", "an", "the"}:
-        words = words[1:]
+    words = normalized_identification_words(answer)
     return bool(
         0 < len(words) <= 6
         and len("".join(words)) >= 3
-        and any(_contains_public_phrase(message.content, words) for message in history)
+        and any(_contains_identification_phrase(message.content, words) for message in history)
+    )
+
+
+_QUANTITY_PREFIXES = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+    }
+)
+
+
+def _singular_identification_word(word: str) -> str:
+    if word in {"series", "species"}:
+        return word
+    if len(word) > 4 and word.endswith("ies"):
+        return f"{word[:-3]}y"
+    if len(word) > 4 and word.endswith(("ches", "shes", "sses", "xes", "zes")):
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        return word[:-1]
+    return word
+
+
+def normalized_identification_words(text: str) -> list[str]:
+    """Normalize a short object label for duplicate checks, not visual truth."""
+    words = _public_words(text)
+    while words and (words[0] in _QUANTITY_PREFIXES or words[0].isdigit()):
+        words = words[1:]
+    if words[:2] in (["pair", "of"], ["group", "of"], ["set", "of"]):
+        words = words[2:]
+    if words:
+        words[-1] = _singular_identification_word(words[-1])
+    return words
+
+
+def _contains_identification_phrase(text: str, words: list[str]) -> bool:
+    if not words:
+        return False
+    observed = _public_words(text)
+    return any(
+        observed[start : start + len(words) - 1] == words[:-1]
+        and _singular_identification_word(observed[start + len(words) - 1]) == words[-1]
+        for start in range(len(observed) - len(words) + 1)
     )
 
 
@@ -153,6 +205,7 @@ _ACTION_FORMS = {
         "drink": ("drink", "drinks", "drinking"),
         "eat": ("eat", "eats", "eating"),
         "draw": ("draw", "draws", "drawing"),
+        "rest": ("rest", "rests", "resting"),
         "paint": ("paint", "paints", "painting"),
         "write": ("write", "writes", "writing"),
         "read": ("read", "reads", "reading"),

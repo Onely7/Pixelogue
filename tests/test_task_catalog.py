@@ -32,6 +32,7 @@ from pixelogue.task_runtime import (
     admission_report,
     bind_candidates,
     bindable_parameter_names,
+    fingerprint,
     operation_contract,
     selector_candidate,
     validate_evidence,
@@ -340,6 +341,28 @@ def test_answer_labels_are_hidden_from_model_operation_contract() -> None:
         assert label not in json.dumps(contract).lower()
         assert all(parameter["name"] != "target" for parameter in contract["public_parameters"])
         assert label not in json.dumps(selector_candidate(candidate)).lower()
+        assert contract["scope"] != visible_scope
+
+
+def test_identification_fingerprint_collapses_label_format_and_plural() -> None:
+    data = inventory(scope("left", visible_entity="MET"))
+    template = next(item for item in candidates(data) if item.task_id == "object_identification")
+    identities = set()
+    for label in ("qr_code", "QR code", "Three QR codes"):
+        candidate = template.model_copy(
+            update={
+                "public_parameters": (
+                    PublicParameter(
+                        name="target",
+                        value=label,
+                        origin="image",
+                        evidence_refs=("left:visible_entity",),
+                    ),
+                ),
+            }
+        )
+        identities.add(fingerprint(candidate, data.image_id))
+    assert len(identities) == 1
 
 
 def test_missing_required_evidence_rejects_only_that_candidate() -> None:

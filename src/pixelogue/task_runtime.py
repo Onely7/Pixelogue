@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -11,6 +10,7 @@ from pixelogue.catalog import task_catalog
 from pixelogue.config import ModelConfig, TaskRuntimeConfig
 from pixelogue.contracts import InstructionCandidate, PublicMessage
 from pixelogue.errors import ExecutionError
+from pixelogue.evaluation import normalized_identification_words
 from pixelogue.serialization import canonical_hash
 from pixelogue.task_catalog import TaskDefinition
 from pixelogue.task_evidence import CandidateBindings, ScopedEvidenceInventory
@@ -132,25 +132,13 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
     catalog = task_catalog()
     task = next(task for task in catalog.tasks if task.id == candidate.task_id)
     answer_label_task = task.id in {"object_identification", "scene_categorization"}
-    target = next(
-        (
-            parameter.value
-            for parameter in candidate.public_parameters
-            if parameter.name == "target"
-        ),
-        None,
+    scope = (
+        "the selected image scene"
+        if task.id == "scene_categorization"
+        else "the selected image region"
+        if task.id == "object_identification"
+        else candidate.visible_scope
     )
-    scope = candidate.visible_scope
-    if answer_label_task and isinstance(target, str):
-        if task.id == "scene_categorization":
-            scope = "the selected image scene"
-        else:
-            scope = re.sub(
-                rf"(?<!\w){re.escape(target)}(?!\w)",
-                "the selected subject",
-                scope,
-                flags=re.IGNORECASE,
-            )
     checks = {name: catalog.eligibility_checks[name] for name in task.eligibility_checks}
     if candidate.calibrated_domain is not None:
         checks["calibrated_domain_supported"] = (
@@ -259,7 +247,13 @@ def fingerprint(candidate: InstructionCandidate, image_id: str) -> str:
             "profile": candidate.profile,
             "calibrated_domain": candidate.calibrated_domain,
             "parameters": {
-                p.name: normalize(p.value)
+                p.name: (
+                    " ".join(normalized_identification_words(p.value))
+                    if candidate.task_id == "object_identification"
+                    and p.name == "target"
+                    and isinstance(p.value, str)
+                    else normalize(p.value)
+                )
                 for p in sorted(candidate.public_parameters, key=lambda item: item.name)
             },
         }

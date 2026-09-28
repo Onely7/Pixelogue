@@ -643,7 +643,7 @@ class SynthesisCoordinator:
                 terminal_reason = "REPEATED_ANSWERED_REQUEST"
                 break
             disclosure = self._answer_disclosure_reason(
-                selected, question.content, answer.content, snapshot.public_history, turns
+                selected, question.content, answer.content, turns
             )
             if disclosure is not None:
                 self._record_public_text_rejection(
@@ -803,7 +803,6 @@ class SynthesisCoordinator:
                 turn.instruction,
                 turn.question.content,
                 turn.answer.content,
-                snapshot.public_history,
                 rated_turns,
             )
             if disclosure is not None:
@@ -1619,26 +1618,26 @@ class SynthesisCoordinator:
         instruction: InstructionCandidate,
         question: str,
         answer: str,
-        history: Sequence[PublicMessage],
         prior_turns: Sequence[TurnArtifact],
     ) -> PublicTextRejectionReason | None:
         """Find answer text or a leading action already disclosed to the reader."""
+        same_scope_messages = tuple(
+            message
+            for turn in prior_turns
+            if turn.instruction.scope_id == instruction.scope_id
+            for message in (turn.question, turn.answer)
+        )
         if instruction.task_id == "object_identification":
             if identification_answer_in_question(question, answer):
                 return "IDENTIFICATION_ANSWER_IN_QUESTION"
-            if identification_answer_in_history(answer, history):
+            if identification_answer_in_history(answer, same_scope_messages):
                 return "IDENTIFICATION_ANSWER_ALREADY_PUBLIC"
         if instruction.task_id == "text_transcription" and transcription_answer_in_question(
             question, answer
         ):
             return "TRANSCRIPTION_ANSWER_IN_QUESTION"
         if instruction.task_id == "visible_action_relation":
-            same_scope_texts = tuple(
-                message.content
-                for turn in prior_turns
-                if turn.instruction.scope_id == instruction.scope_id
-                for message in (turn.question, turn.answer)
-            )
+            same_scope_texts = tuple(message.content for message in same_scope_messages)
             if action_answer_already_public(question, answer, same_scope_texts):
                 return "ACTION_ALREADY_PUBLIC"
         return None
