@@ -115,10 +115,24 @@ def identification_answer_in_question(question: str, answer: str) -> bool:
 
 def _contains_public_phrase(question: str, phrase_words: list[str]) -> bool:
     question_words = _public_words(question)
-    return any(
-        question_words[index : index + len(phrase_words)] == phrase_words
-        for index in range(len(question_words) - len(phrase_words) + 1)
-    )
+    for start, word in enumerate(question_words):
+        if word != phrase_words[0]:
+            continue
+        position = start
+        for next_word in phrase_words[1:]:
+            position = next(
+                (
+                    index
+                    for index in range(position + 1, min(position + 4, len(question_words)))
+                    if question_words[index] == next_word
+                ),
+                len(question_words),
+            )
+            if position == len(question_words):
+                break
+        else:
+            return True
+    return False
 
 
 def _public_words(text: str) -> list[str]:

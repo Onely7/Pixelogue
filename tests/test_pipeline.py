@@ -575,7 +575,13 @@ def test_identification_question_must_not_contain_its_target_or_answer():
     assert identification_label_in_question(
         "What is the name of this silver race car?", "silver race car"
     )
+    assert identification_label_in_question(
+        "What is the name of this silver vintage race car?", "silver race car"
+    )
     assert identification_answer_in_question("What object is this red strawberry?", "A strawberry.")
+    assert identification_answer_in_question(
+        "What is this silver vintage race car?", "silver race car"
+    )
     assert not identification_answer_in_question("What insect is visible on the fabric?", "ladybug")
     assert not identification_label_in_question("What kind of animal is visible?", "animal")
     assert identification_answer_in_question("What kind of animal is visible?", "animal")
