@@ -307,6 +307,31 @@ def test_structured_retry_receives_bounded_correction_feedback(tmp_path: Path) -
     ]
 
 
+def test_evidence_schema_retry_explains_nonempty_nested_regions(tmp_path: Path) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "region-retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a, fail_first_schema=True)
+    coordinator = SynthesisCoordinator(config, "region-retry", store, client, client, client)
+    try:
+        result = coordinator._invoke(
+            client,
+            "evidence_extraction",
+            {"image_id": "image", "image_views": [{"view_id": "view"}]},
+            (),
+            ScopedEvidenceReport,
+            max_tokens=256,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        store.close()
+
+    assert result.scopes
+    assert len(client.retry_feedback) == 2
+    assert "left < right" in (client.retry_feedback[1] or "")
+    assert "inside its scope" in (client.retry_feedback[1] or "")
+
+
 def test_semantic_contract_failure_retries_without_accepting_invalid_result(
     tmp_path: Path,
 ) -> None:

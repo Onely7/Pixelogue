@@ -135,7 +135,9 @@ compound results are UNKNOWN. Do not infer what the correct image answer should 
 scopes. Report only relevant capability observations, never the entire vocabulary. The observations
 field is an object keyed by capability name, not an array. Each value has a unique evidence_id,
 a MET/NOT_MET/UNKNOWN verdict, a visible detail, and a normalized region
-inside its scope. Do not combine capabilities from unrelated regions. Missing evidence is UNKNOWN,
+inside its scope. Every region must satisfy 0 <= left < right <= 1 and
+0 <= top < bottom <= 1; a point or an all-1 box is invalid. Observation regions
+must remain inside their parent scope. Do not combine capabilities from unrelated regions. Missing evidence is UNKNOWN,
 not absence. Copy image_id and each view_id exactly. Respect max_scopes and
 max_observations_per_scope. Within one scope, report each capability at most once: a capability
 describes support for an operation across the scope, not one observation per visible object.

@@ -2031,7 +2031,10 @@ class SynthesisCoordinator:
                             retry_feedback += (
                                 " observations must be an object keyed by each capability name."
                                 " Combine visible instances in that key's single value and use"
-                                " only capability_vocabulary."
+                                " only capability_vocabulary. Every scope and observation region"
+                                " must satisfy 0 <= left < right <= 1 and"
+                                " 0 <= top < bottom <= 1. Keep each observation inside its scope;"
+                                " never use a point or an all-1 box."
                             )
                         elif stage == "candidate_binding":
                             retry_feedback += (
