@@ -26,13 +26,24 @@ def test_status_covers_all_tasks_without_claiming_unrun_cpu_checks(tmp_path: Pat
     assert all(item["cpu_contract_status"] == "not_recorded" for item in untested["tasks"])
     junit = tmp_path / "junit.xml"
     junit.write_text(
-        '<testsuite><testcase classname="tests.test_specialist_render" name="test_parser"/></testsuite>'
+        '<testsuite><testcase classname="tests.test_specialist_render" '
+        'name="test_svg_and_html_reject_executable_syntax"/></testsuite>'
     )
     tested = task_status_report(config, junit)
     renderer = next(item for item in tested["tasks"] if item["task_id"] == "diagram_to_code")
     assert renderer["implemented"]
     assert renderer["cpu_contract_status"] == "shared_contract_tests_passed"
+    assert renderer["cpu_task_specific_boundaries"].startswith("passed:")
+    assert tested["summary"]["cpu_named_boundary_passed"] == 2
     assert renderer["calibration"] == "pending"
+
+    junit.write_text(
+        '<testsuite><testcase classname="tests.test_specialist_render" '
+        'name="test_svg_and_html_reject_executable_syntax"><skipped/></testcase></testsuite>'
+    )
+    skipped = task_status_report(config, junit)
+    renderer = next(item for item in skipped["tasks"] if item["task_id"] == "diagram_to_code")
+    assert renderer["cpu_task_specific_boundaries"] == "not_recorded"
 
 
 def test_status_records_actual_gpu_turn_without_claiming_all_boundaries(
