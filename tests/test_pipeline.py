@@ -360,6 +360,37 @@ def test_exhausted_candidate_binding_checks_abstain_without_accepting(
     assert private_count == 1
 
 
+def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_error(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    original = coordinator._invoke
+    reason = "MODEL_SCHEMA_MISMATCH"
+
+    def invoke(client, stage, payload, images, model, **kwargs):
+        if stage == "evidence_extraction":
+            raise ExecutionError(reason, "DUPLICATE_JSON_KEY: readable_text")
+        return original(client, stage, payload, images, model, **kwargs)
+
+    monkeypatch.setattr(coordinator, "_invoke", invoke)
+    try:
+        job = SynthesisJob(image=image, target_language="en", generator_role="generator_a")
+        abstained = coordinator._synthesize_job(job, root)
+        reason = "MODEL_HTTP_STATUS"
+        failed = coordinator._synthesize_job(job, root)
+        abstention_count = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'model-output-abstentions'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+
+    assert abstained.status == "ABSTAINED"
+    assert not abstained.turns
+    assert failed.status == "ERROR"
+    assert abstention_count == 1
+
+
 class ConcurrencyProbe:
     """Track overlapping scripted model calls across test clients."""
 

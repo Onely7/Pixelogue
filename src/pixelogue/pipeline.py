@@ -80,6 +80,19 @@ from pixelogue.task_runtime import (
 from pixelogue.task_verification import verify_operation
 
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
+MODEL_OUTPUT_ABSTENTIONS = frozenset(
+    {
+        "MODEL_CONTENT_EMPTY",
+        "MODEL_FINISH_REASON",
+        "MODEL_SCHEMA_MISMATCH",
+        "EVIDENCE_IMAGE_MISMATCH",
+        "EVIDENCE_CAPABILITY_UNKNOWN",
+        "EVIDENCE_SCOPE_LIMIT",
+        "EVIDENCE_VIEW_MISMATCH",
+        "EVIDENCE_OBSERVATION_LIMIT",
+        "EXTRACTION_SOURCE_INVALID",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -859,7 +872,7 @@ class SynthesisCoordinator:
         generator_role: Literal["generator_a", "generator_b"],
         error: ExecutionError,
     ) -> ConversationArtifact:
-        """Persist an image-scoped inference failure without certifying a partial turn."""
+        """Persist a failed image, abstaining when model output exhausted retries."""
         conversation_id = canonical_hash(
             {"run": self.run_id, "image": image.image_id, "language": target_language}
         )
@@ -868,16 +881,17 @@ class SynthesisCoordinator:
             TurnArtifact.model_validate_json(self.store.read_artifact(artifact_hash))
             for artifact_hash in self.store.committed_artifact_hashes(conversation_id)
         )
+        abstained = error.reason in MODEL_OUTPUT_ABSTENTIONS
         conversation = ConversationArtifact(
             conversation_id=conversation_id,
             image=image,
             target_language=target_language,
             generation_model=generator.endpoint.repo_id,
             turns=turns,
-            status="ERROR",
+            status="ABSTAINED" if abstained else "ERROR",
         )
         self.store.write_json_artifact(
-            "errors",
+            "model-output-abstentions" if abstained else "errors",
             {
                 "conversation_id": conversation_id,
                 "image_id": image.image_id,
