@@ -38,6 +38,8 @@ uv run --locked pixelogue synthesize \
 
 The checked-in profiles allow four images in flight through `runtime.max_concurrent_images`. This gives vLLM independent requests to combine with continuous batching. `--workers` can override the value for a measured run. Pixelogue preserves the scheduled input order in `conversations.jsonl`, while every turn within one conversation remains sequential because it depends on committed public history.
 
+For a focused diagnostic run, repeat `--source-id ID` to select exact sources from the already rights-checked prepared manifest. The full manifest must still match `images.jsonl`; unknown or repeated IDs fail before any model call. Use a new run ID for each selected set.
+
 After a run, write private per-image and per-turn diagnostics from the saved request records:
 
 ```sh

@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import signal
 import socket
+import sqlite3
 import subprocess
 import time
 import urllib.error
@@ -17,6 +19,10 @@ from typing import TextIO
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = "configs/gpu-watch-pilot.yaml"
+TARGETED_SOURCE_IDS = (
+    "open-images-v7:1d21ad091d7d5898",
+    "open-images-v7:23a34e17e221bc47",
+)
 SERVERS: list[tuple[subprocess.Popen[str], TextIO]] = []
 stop = False
 
@@ -171,6 +177,87 @@ def _check_results(output_dir: Path, expected: int) -> None:
         raise RuntimeError("Pilot has missing rows or terminal execution errors")
 
 
+def _synthesis_command(
+    run_id: str,
+    output: Path,
+    *,
+    config: str = CONFIG,
+    workers: int = 2,
+    source_ids: tuple[str, ...] = (),
+) -> list[str]:
+    """Build one exact synthesis invocation over the rights-checked manifest."""
+    prepared = ROOT / "artifacts/prepared-open-images"
+    command = [
+        "uv",
+        "run",
+        "--locked",
+        "pixelogue",
+        "synthesize",
+        "--config",
+        config,
+        "--images",
+        str(prepared / "images.jsonl"),
+        "--artifact-root",
+        str(prepared),
+        "--run-id",
+        run_id,
+        "--workers",
+        str(workers),
+        "--output",
+        str(output),
+    ]
+    for source_id in source_ids:
+        command.extend(("--source-id", source_id))
+    return command
+
+
+def _model_call_count(run_id: str) -> int:
+    """Count persisted calls from a completed or interrupted local run."""
+    path = Path("/var/tmp/pixelogue") / run_id / "run.sqlite3"
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
+        return int(connection.execute("SELECT COUNT(*) FROM model_call").fetchone()[0])
+
+
+def _run_interrupted(
+    command: list[str], log_path: Path, progress_path: Path, *, timeout: int
+) -> None:
+    """Stop after the first persisted image to exercise WAL and CLI resume."""
+    print(f"running interruption probe: {' '.join(command)}; log={log_path}", flush=True)
+    with log_path.open("w", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + timeout
+        while (
+            process.poll() is None and not stop and _parent_alive() and time.monotonic() < deadline
+        ):
+            time.sleep(1)
+            rows = (
+                sum(1 for _ in progress_path.open(encoding="utf-8"))
+                if progress_path.exists()
+                else 0
+            )
+            if rows >= 1:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                if rows != 1:
+                    raise RuntimeError("Interruption probe missed the one-image boundary")
+                print("interruption probe stopped after one persisted image", flush=True)
+                return
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=20)
+        raise RuntimeError("Interruption probe ended before saving one image")
+
+
 def main() -> None:
     """Start pinned servers, exercise evaluation-only inputs, then release the GPU."""
     parser = argparse.ArgumentParser()
@@ -213,25 +300,12 @@ def main() -> None:
         )
         first_image = output_dir / "first-image" / "conversations.jsonl"
         _run_logged(
-            [
-                "uv",
-                "run",
-                "--locked",
-                "pixelogue",
-                "synthesize",
-                "--config",
-                "configs/gpu-watch-smoke.yaml",
-                "--images",
-                str(prepared / "images.jsonl"),
-                "--artifact-root",
-                str(prepared),
-                "--run-id",
+            _synthesis_command(
                 f"{args.run_id}-first-image",
-                "--workers",
-                "1",
-                "--output",
-                str(first_image),
-            ],
+                first_image,
+                config="configs/gpu-watch-smoke.yaml",
+                workers=1,
+            ),
             output_dir / "first-image.log",
             1800,
             first_image,
@@ -252,30 +326,101 @@ def main() -> None:
             300,
         )
         _check_results(output_dir / "first-image", 1)
+        targeted_output = output_dir / "targeted" / "conversations.jsonl"
+        targeted_run_id = f"{args.run_id}-targeted"
+        (output_dir / "targeted-selection.json").write_text(
+            json.dumps(
+                {
+                    "source_ids": TARGETED_SOURCE_IDS,
+                    "purpose": "multi-turn functional probe",
+                    "human_verified": False,
+                    "screening": "assistant visual triage; human confirmation pending",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        targeted_command = _synthesis_command(
+            targeted_run_id,
+            targeted_output,
+            workers=1,
+            source_ids=TARGETED_SOURCE_IDS,
+        )
+        _run_interrupted(
+            targeted_command,
+            output_dir / "targeted-interrupted.log",
+            targeted_output,
+            timeout=1800,
+        )
+        _check_results(output_dir / "targeted", 1)
+        diagnostic_command = [
+            "uv",
+            "run",
+            "--locked",
+            "pixelogue",
+            "run-diagnostics",
+            "--config",
+            CONFIG,
+            "--run-id",
+            targeted_run_id,
+            "--conversations",
+            str(targeted_output),
+        ]
+        _run_logged(
+            [*diagnostic_command, "--output-stem", str(output_dir / "targeted-before")],
+            output_dir / "targeted-before.log",
+            90,
+        )
+        before = json.loads((output_dir / "targeted-before.json").read_text(encoding="utf-8"))
+        first_source = before["rows"][0]["source_id"]
+        first_calls = before["rows"][0]["model_calls"]
+        _run_logged(targeted_command, output_dir / "targeted-resumed.log", 1800, targeted_output)
+        _check_results(output_dir / "targeted", 2)
+        _run_logged(
+            [*diagnostic_command, "--output-stem", str(output_dir / "targeted-after")],
+            output_dir / "targeted-after.log",
+            90,
+        )
+        after = json.loads((output_dir / "targeted-after.json").read_text(encoding="utf-8"))
+        resumed_first = next(row for row in after["rows"] if row["source_id"] == first_source)
+        if resumed_first["model_calls"] != first_calls:
+            raise RuntimeError("Resuming the interrupted run repeated first-image model calls")
         _run_logged(
             [
                 "uv",
                 "run",
                 "--locked",
                 "pixelogue",
-                "synthesize",
+                "replay",
                 "--config",
                 CONFIG,
-                "--images",
-                str(prepared / "images.jsonl"),
-                "--artifact-root",
-                str(prepared),
                 "--run-id",
-                args.run_id,
-                "--workers",
-                "2",
-                "--output",
-                str(output_dir / "conversations.jsonl"),
+                targeted_run_id,
             ],
+            output_dir / "targeted-replay.log",
+            300,
+        )
+        full_output = output_dir / "conversations.jsonl"
+        full_command = _synthesis_command(args.run_id, full_output)
+        _run_logged(
+            full_command,
             output_dir / "synthesize.log",
             5400,
-            output_dir / "conversations.jsonl",
+            full_output,
         )
+        _check_results(output_dir, expected)
+        model_calls_before_resume = _model_call_count(args.run_id)
+        output_hash_before_resume = hashlib.sha256(full_output.read_bytes()).hexdigest()
+        _run_logged(
+            full_command,
+            output_dir / "resume.log",
+            300,
+            full_output,
+        )
+        if _model_call_count(args.run_id) != model_calls_before_resume:
+            raise RuntimeError("Resuming completed outcomes created extra model calls")
+        if hashlib.sha256(full_output.read_bytes()).hexdigest() != output_hash_before_resume:
+            raise RuntimeError("Resuming changed the committed conversation output")
         _run_logged(
             [
                 "uv",

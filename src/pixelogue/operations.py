@@ -99,6 +99,24 @@ class PreparedDataset(StrictModel):
     manifest_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+def select_prepared_images(
+    prepared: PreparedDataset, source_ids: tuple[str, ...]
+) -> tuple[ImageArtifact, ...]:
+    """Select requested source IDs only after the complete prepared manifest is validated."""
+    if not source_ids:
+        return prepared.images
+    requested = set(source_ids)
+    if len(requested) != len(source_ids):
+        raise ExternalInputError("SOURCE_ID_DUPLICATE", "Repeated --source-id is not allowed")
+    selected = tuple(image for image in prepared.images if image.source_id in requested)
+    if len(selected) != len(requested):
+        missing = requested - {image.source_id for image in selected}
+        raise ExternalInputError(
+            "SOURCE_ID_UNKNOWN", f"Unknown prepared source IDs: {sorted(missing)}"
+        )
+    return selected
+
+
 class FrozenPool(StrictModel):
     """Immutable quality-candidate input to constrained selection."""
 

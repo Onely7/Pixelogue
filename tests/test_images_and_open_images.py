@@ -15,7 +15,18 @@ from pixelogue.contracts import RightsRecord, SourcePurpose, SourceRecord
 from pixelogue.errors import ExternalInputError, ShortfallError
 from pixelogue.images import canonicalize_image, group_visual_sources
 from pixelogue.open_images import OpenImagesDownloader, OpenImagesPinnedRecord
-from pixelogue.operations import prepare_sources
+from pixelogue.operations import PreparedDataset, prepare_sources, select_prepared_images
+
+
+def test_prepared_source_filter_rejects_unknown_and_duplicate_ids(image_artifact) -> None:
+    image, _ = image_artifact
+    prepared = PreparedDataset(images=(image,), failures=(), splits={}, manifest_hash="0" * 64)
+    assert select_prepared_images(prepared, ()) == (image,)
+    assert select_prepared_images(prepared, (image.source_id,)) == (image,)
+    with pytest.raises(ExternalInputError, match="Repeated --source-id"):
+        select_prepared_images(prepared, (image.source_id, image.source_id))
+    with pytest.raises(ExternalInputError, match="Unknown prepared source IDs"):
+        select_prepared_images(prepared, ("missing",))
 
 
 def _rights(identifier: str, *, training: bool = True) -> RightsRecord:

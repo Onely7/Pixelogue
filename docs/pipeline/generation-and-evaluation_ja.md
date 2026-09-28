@@ -38,6 +38,8 @@ uv run --locked pixelogue synthesize \
 
 Gitに含まれる設定では、`runtime.max_concurrent_images` により、最大4画像を同時に処理します。独立した要求をvLLMへ重ねて送り、continuous batchingが働くようにするためです。測定時は `--workers` で一時的に上書きできます。`conversations.jsonl` は計画した入力順で保存します。1つの対話内の往復は確定済みの公開履歴に依存するため、順番を変えません。
 
+対象を絞る診断runでは `--source-id ID` を繰り返し指定し、権利確認済みの準備済みmanifestから正確な画像を選択できます。元の `images.jsonl` とmanifest全体の一致は引き続き検査します。未知・重複したIDはモデル呼び出し前に拒否し、選択集合ごとに新しいrun IDを使います。
+
 実行後は保存済み要求から、画像・ターン単位の非公開診断レポートを作成できます。
 
 ```sh

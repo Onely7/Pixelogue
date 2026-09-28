@@ -39,6 +39,7 @@ from pixelogue.operations import (
     compile_configuration,
     make_frozen_pool,
     prepare_sources,
+    select_prepared_images,
     summarize_conversations,
     summarize_operations,
 )
@@ -554,6 +555,7 @@ def synthesize(
         "artifacts/prepared"
     ),
     run_id: Annotated[str, typer.Option("--run-id")] = "pilot",
+    source_ids: Annotated[list[str] | None, typer.Option("--source-id")] = None,
     output: Annotated[Path, typer.Option(dir_okay=False)] = Path(
         "artifacts/pilot/conversations.jsonl"
     ),
@@ -576,6 +578,7 @@ def synthesize(
         raise ExternalInputError(
             "PREPARED_INPUT_CHANGED", "Image list differs from rights-checked manifest"
         )
+    image_records = select_prepared_images(prepared, tuple(source_ids or ()))
     run_contract_hash = canonical_hash(
         {
             "config_hash": config.config_hash,
