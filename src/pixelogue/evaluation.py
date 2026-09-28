@@ -183,6 +183,18 @@ def transcription_answer_in_question(question: str, answer: str) -> bool:
     return bool(words and len("".join(words)) >= 4 and _contains_public_phrase(question, words))
 
 
+_UNVERIFIED_TEXT_RELATION = re.compile(
+    r"\b(?:above|below|beneath|underneath|next\s+to|beside|"
+    r"(?:to\s+the\s+)?(?:left|right)\s+of)\b",
+    re.IGNORECASE,
+)
+
+
+def unverified_transcription_relation(question: str) -> bool:
+    """Flag spatial text locators unsupported by the transcript evidence contract."""
+    return _UNVERIFIED_TEXT_RELATION.search(question) is not None
+
+
 def scene_options_in_question(question: str, options: tuple[str, ...]) -> bool:
     """Require every declared scene choice to be visible in the public request."""
     return bool(

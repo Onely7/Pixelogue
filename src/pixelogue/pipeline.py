@@ -52,6 +52,7 @@ from pixelogue.evaluation import (
     repeated_public_question,
     scene_options_in_question,
     transcription_answer_in_question,
+    unverified_transcription_relation,
 )
 from pixelogue.ledger import (
     Requirement,
@@ -94,6 +95,7 @@ type PublicTextRejectionReason = Literal[
     "IDENTIFICATION_ANSWER_IN_QUESTION",
     "IDENTIFICATION_ANSWER_ALREADY_PUBLIC",
     "TRANSCRIPTION_ANSWER_IN_QUESTION",
+    "TEXT_RELATION_UNVERIFIED",
     "ACTION_ALREADY_PUBLIC",
     "CATEGORY_OPTIONS_NOT_PUBLIC",
 ]
@@ -454,6 +456,10 @@ class SynthesisCoordinator:
                     and identification_label_in_question(result.text, target)
                 ):
                     reason = "IDENTIFICATION_TARGET_IN_QUESTION"
+                elif selected_instruction.task_id == "text_transcription" and (
+                    unverified_transcription_relation(result.text)
+                ):
+                    reason = "TEXT_RELATION_UNVERIFIED"
                 elif selected_instruction.task_id == "scene_categorization" and not (
                     isinstance(
                         options := next(
@@ -504,6 +510,7 @@ class SynthesisCoordinator:
                 if error.reason not in {
                     "REPEATED_PUBLIC_QUESTION",
                     "IDENTIFICATION_TARGET_IN_QUESTION",
+                    "TEXT_RELATION_UNVERIFIED",
                     "CATEGORY_OPTIONS_NOT_PUBLIC",
                 }:
                     raise
@@ -833,9 +840,21 @@ class SynthesisCoordinator:
                     reason="CATEGORY_OPTIONS_NOT_PUBLIC",
                     content=turn.question.content,
                 )
+            unverified_text_relation = (
+                turn.instruction.task_id == "text_transcription"
+                and unverified_transcription_relation(turn.question.content)
+            )
+            if unverified_text_relation:
+                self._record_public_text_rejection(
+                    conversation.conversation_id,
+                    turn.turn_index,
+                    field="question",
+                    reason="TEXT_RELATION_UNVERIFIED",
+                    content=turn.question.content,
+                )
             fit = (
                 GateVerdict.NOT_MET
-                if repeated or disclosure or missing_scene_options
+                if repeated or disclosure or missing_scene_options or unverified_text_relation
                 else GateVerdict.MET
             )
             if fit is GateVerdict.MET and (
@@ -1856,6 +1875,7 @@ class SynthesisCoordinator:
             "CANDIDATE_PARAMETER_VALUE",
             "REPEATED_PUBLIC_QUESTION",
             "IDENTIFICATION_TARGET_IN_QUESTION",
+            "TEXT_RELATION_UNVERIFIED",
         }
         retry_feedback: str | None = None
         for attempt in range(self.config.runtime.structured_output_max_attempts):
@@ -2034,6 +2054,12 @@ class SynthesisCoordinator:
             return (
                 "The draft identifies the object before asking its identity. Refer to its"
                 " location or non-category visible traits without naming the target label."
+            )
+        if reason == "TEXT_RELATION_UNVERIFIED":
+            return (
+                "The transcript verifier has no coordinates for a relative locator."
+                " Bound the text by a visible absolute region or exact public scope;"
+                " do not claim that it is above, below, beside, or left/right of another object."
             )
         return "The previous response was empty. Return one concise, complete JSON object."
 

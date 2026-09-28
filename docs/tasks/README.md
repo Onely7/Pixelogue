@@ -46,6 +46,7 @@ Each candidate exposes separate required check IDs, allowed public parameter nam
 
 The evidence response Schema names only the supplied capability vocabulary and permits each capability key once per scope. Duplicate JSON keys still fail strict decoding; missing observations remain unknown. A repeated question or an object-identification question that names its selected target gets bounded feedback and another model attempt before any question evaluator call. Model-facing operation contracts omit answer-bearing target labels and free-form scope descriptions for object identification and scene categorization. Scene categorization binds its private target to one image-supported category, while the question must state at least two contrastive, nonoverlapping public alternatives. Before answer rating, deterministic checks reject a short object label already in the question or same-scope history, including simple quantity, separator and plural variants; quoted transcription answers; and action answers already stated in the question or same-scope history. These checks preserve the minimum conversation length and the existing visual quality gates.
 For action questions on still images, lack of motion blur alone is insufficient evidence that an object is stationary.
+Text-transcription questions use an absolute image region or public scope. Relative locators such as "below the logo" are rejected before judging because the current transcript evidence has no coordinates to verify the relation; rerating applies the same gate.
 
 ## Migration and analysis
 

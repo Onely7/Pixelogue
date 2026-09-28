@@ -37,6 +37,7 @@ from pixelogue.evaluation import (
     repeated_answered_request,
     scene_options_in_question,
     transcription_answer_in_question,
+    unverified_transcription_relation,
 )
 from pixelogue.export import training_record
 from pixelogue.ledger import RequirementInventory, RequirementSpec
@@ -619,6 +620,9 @@ def test_public_text_checks_catch_observed_multiturn_leaks() -> None:
         'What does the text "PSEUDO COLOR 0243_2" read?', "PSEUDO COLOR\n0243_2"
     )
     assert not transcription_answer_in_question("What does the label read?", "PSEUDO COLOR")
+    assert unverified_transcription_relation("What text is directly below the Roland logo?")
+    assert unverified_transcription_relation("Read the word to the right of the logo.")
+    assert not unverified_transcription_relation("What text is in the upper left corner?")
     assert action_answer_already_public(
         "What action is the gibbon displaying while seated?",
         "The gibbon is sitting upright on the railing.",
@@ -766,6 +770,42 @@ def test_rerating_rejects_saved_identification_answer_echo_without_model_calls(
     assert rerated.status == "REJECTED"
     assert rerated.turns[0].status == "REJECTED"
     assert calls_after == calls_before
+
+
+def test_rerating_rejects_unverified_text_locator_without_model_calls(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, evaluation_mode="holistic"
+    )
+    try:
+        original = coordinator.synthesize_image(image, root)
+        assert original.status == "QUALITY_CANDIDATE"
+        first = original.turns[0]
+        unsupported = first.model_copy(
+            update={
+                "instruction": first.instruction.model_copy(
+                    update={"task_id": "text_transcription"}
+                ),
+                "question": first.question.model_copy(
+                    update={"content": "What text is directly below the Roland logo?"}
+                ),
+            }
+        )
+        saved = original.model_copy(update={"turns": (unsupported,), "status": "REJECTED"})
+        calls_before = sum(len(client.calls) for client in (generator_a, generator_b))
+        rerated = coordinator.rate_existing(saved, root)
+        calls_after = sum(len(client.calls) for client in (generator_a, generator_b))
+        rejection_count = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'public-text-rejections'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+    assert rerated.status == "REJECTED"
+    assert rerated.turns[0].status == "REJECTED"
+    assert calls_after == calls_before
+    assert rejection_count == 1
 
 
 def test_repeated_answered_request_catches_observed_sheep_paraphrase() -> None:

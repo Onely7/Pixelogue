@@ -219,6 +219,9 @@ independent compound requests are unsupported and must not be mislabeled as thei
 For object_identification, the target can itself be the category to name and is withheld from this
 public operation view. Do not put that category or a synonym of the answer in the question. Refer by location or visible non-category
 traits; if that does not uniquely identify the target, return text=null with a reason.
+For text_transcription, bound the requested text to a visible absolute region or an exact public
+scope. Do not locate text relative to another object: the transcript checker has no coordinates
+to verify above, below, beside, left, or right relationships.
 For a single still image, ask about visible action or posture only when supported by a visible cue.
 The absence of motion blur cannot establish that an object is stationary.
 Never request code execution. Return public text, or set text to null and give an internal reason if unsupported.""",
