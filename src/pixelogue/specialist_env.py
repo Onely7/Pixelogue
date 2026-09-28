@@ -67,13 +67,18 @@ def _bwrap_available() -> bool:
         return False
 
 
-def _landlock_command(scratch: Path, action: Literal["probe", "render"], seconds: int) -> list[str]:
+def _landlock_command(
+    scratch: Path,
+    action: Literal["probe", "render"],
+    seconds: int,
+    probe_file: Path | None = None,
+) -> list[str]:
     """Start the restricted launcher in a bounded user service."""
     systemd_run = shutil.which("systemd-run")
     if systemd_run is None:
         raise FileNotFoundError("systemd-run is unavailable")
     root = worker_root()
-    return [
+    command = [
         systemd_run,
         "--user",
         "--wait",
@@ -95,6 +100,9 @@ def _landlock_command(scratch: Path, action: Literal["probe", "render"], seconds
         str(scratch),
         action,
     ]
+    if probe_file is not None:
+        command.append(str(probe_file))
+    return command
 
 
 def _landlock_available() -> bool:
@@ -102,9 +110,14 @@ def _landlock_available() -> bool:
     if not (worker_root() / "landlock_launcher.py").is_file():
         return False
     try:
-        with tempfile.TemporaryDirectory(prefix="pixelogue-render-", dir="/tmp") as directory:
+        with (
+            tempfile.TemporaryDirectory(prefix="pixelogue-render-", dir="/tmp") as directory,
+            tempfile.NamedTemporaryFile(prefix="pixelogue-render-probe-", dir="/tmp") as probe_file,
+        ):
+            probe_file.write(b"private")
+            probe_file.flush()
             probe = subprocess.run(
-                _landlock_command(Path(directory), "probe", 10),
+                _landlock_command(Path(directory), "probe", 10, Path(probe_file.name)),
                 capture_output=True,
                 text=True,
                 timeout=12,
@@ -118,6 +131,7 @@ def _landlock_available() -> bool:
             "ipv6_denied": True,
             "workspace_read_denied": True,
             "workspace_write_denied": True,
+            "tmp_sibling_read_denied": True,
             "scratch_writable": True,
         }:
             return False

@@ -105,7 +105,6 @@ def _apply_landlock(scratch: Path, worker_root: Path, home: Path) -> None:
             Path("/proc"),
             Path("/sys"),
             Path("/opt"),
-            Path("/tmp"),
             Path("/var/cache/fontconfig"),
             home / ".cache/fontconfig",
             worker_root,
@@ -123,7 +122,7 @@ def _apply_landlock(scratch: Path, worker_root: Path, home: Path) -> None:
         os.close(ruleset_fd)
 
 
-def _probe(worker_root: Path, scratch: Path) -> None:
+def _probe(worker_root: Path, scratch: Path, forbidden_read: Path) -> None:
     """Fail unless service networking and private filesystem reads are denied."""
     project_file = worker_root.parents[1] / "pyproject.toml"
 
@@ -139,6 +138,7 @@ def _probe(worker_root: Path, scratch: Path) -> None:
         "ipv6_denied": denied(lambda: socket.socket(socket.AF_INET6, socket.SOCK_STREAM)),
         "workspace_read_denied": denied(project_file.read_bytes),
         "workspace_write_denied": denied(lambda: os.open(project_file, os.O_WRONLY)),
+        "tmp_sibling_read_denied": denied(forbidden_read.read_bytes),
         "scratch_writable": (scratch / "probe.txt").write_text("ok") == 2,
     }
     print(json.dumps(checks), flush=True)
@@ -148,8 +148,12 @@ def _probe(worker_root: Path, scratch: Path) -> None:
 
 def main() -> None:
     """Restrict this process before probing or replacing it with the worker."""
-    if len(sys.argv) != 3 or sys.argv[2] not in {"probe", "render"}:
-        raise SystemExit("usage: landlock_launcher.py SCRATCH probe|render")
+    if (
+        len(sys.argv) not in {3, 4}
+        or sys.argv[2] not in {"probe", "render"}
+        or (sys.argv[2] == "probe") != (len(sys.argv) == 4)
+    ):
+        raise SystemExit("usage: landlock_launcher.py SCRATCH probe PROBE_FILE|render")
     scratch = Path(sys.argv[1]).resolve(strict=True)
     info = scratch.stat()
     if (
@@ -161,6 +165,18 @@ def main() -> None:
     ):
         raise ValueError("Renderer scratch directory must be private")
     worker_root = Path(__file__).resolve().parent
+    forbidden_read: Path | None = None
+    if sys.argv[2] == "probe":
+        forbidden_read = Path(sys.argv[3]).resolve(strict=True)
+        forbidden_info = forbidden_read.stat()
+        if (
+            forbidden_read.parent != Path("/tmp")
+            or not forbidden_read.name.startswith("pixelogue-render-probe-")
+            or not forbidden_read.is_file()
+            or forbidden_info.st_uid != os.getuid()
+            or stat.S_IMODE(forbidden_info.st_mode) != 0o600
+        ):
+            raise ValueError("Renderer probe file must be private and outside scratch")
     real_home = Path.home()
     interpreter = str(worker_root / ".venv/bin/python")
     os.environ.clear()
@@ -180,7 +196,8 @@ def main() -> None:
     os.chdir(scratch)
     _apply_landlock(scratch, worker_root, real_home)
     if sys.argv[2] == "probe":
-        _probe(worker_root, scratch)
+        assert forbidden_read is not None
+        _probe(worker_root, scratch, forbidden_read)
         return
     os.execv(interpreter, [interpreter, str(worker_root / "render_worker.py")])
 
