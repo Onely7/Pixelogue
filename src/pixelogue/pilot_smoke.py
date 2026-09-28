@@ -130,6 +130,12 @@ def _request_holder_handoff(output_dir: Path) -> None:
     raise RuntimeError("GPU reservation handoff was not acknowledged")
 
 
+def _phase(output_dir: Path, name: str) -> None:
+    """Append a wall-clock boundary for model loading, inference, and shutdown."""
+    with (output_dir / "phase-events.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps({"phase": name, "at": time.time()}) + "\n")
+
+
 def _run_logged(
     command: list[str], log_path: Path, timeout: int, progress_path: Path | None = None
 ) -> None:
@@ -292,11 +298,15 @@ def main() -> None:
     signal.signal(signal.SIGINT, _signal_stop)
     output_dir: Path = args.output_dir
     try:
+        _phase(output_dir, "generator_loading")
         generator = _start_server("generator", "runtime/vllm/generator-gpu-watch.yaml", output_dir)
         _wait_model(generator, 18002, "Qwen/Qwen3.5-9B", 1800)
+        _phase(output_dir, "generator_ready")
         _request_holder_handoff(output_dir)
+        _phase(output_dir, "selector_loading")
         selector = _start_server("selector", "runtime/vllm/selector-gpu-watch.yaml", output_dir)
         _wait_model(selector, 18000, "Qwen/Qwen3.5-2B", 900)
+        _phase(output_dir, "selector_ready")
         _run_logged(
             [
                 "uv",
@@ -314,6 +324,7 @@ def main() -> None:
             90,
         )
         first_image = output_dir / "first-image" / "conversations.jsonl"
+        _phase(output_dir, "first_image_inference")
         _run_logged(
             _synthesis_command(
                 f"{args.run_id}-first-image",
@@ -341,6 +352,7 @@ def main() -> None:
             300,
         )
         _check_results(output_dir / "first-image", 1)
+        _phase(output_dir, "first_image_complete")
         targeted_output = output_dir / "targeted" / "conversations.jsonl"
         targeted_run_id = f"{args.run_id}-targeted"
         (output_dir / "targeted-selection.json").write_text(
@@ -361,6 +373,7 @@ def main() -> None:
             workers=1,
             source_ids=TARGETED_SOURCE_IDS,
         )
+        _phase(output_dir, "targeted_inference")
         _run_interrupted(
             targeted_command,
             output_dir / "targeted-interrupted.log",
@@ -415,8 +428,10 @@ def main() -> None:
             output_dir / "targeted-replay.log",
             300,
         )
+        _phase(output_dir, "targeted_complete")
         full_output = output_dir / "conversations.jsonl"
         full_command = _synthesis_command(args.run_id, full_output)
+        _phase(output_dir, "full_inference")
         _run_logged(
             full_command,
             output_dir / "synthesize.log",
@@ -424,6 +439,7 @@ def main() -> None:
             full_output,
         )
         _check_results(output_dir, expected)
+        _phase(output_dir, "full_complete")
         model_calls_before_resume = _model_call_count(args.run_id)
         output_hash_before_resume = hashlib.sha256(full_output.read_bytes()).hexdigest()
         _run_logged(
@@ -453,7 +469,9 @@ def main() -> None:
         )
         _check_results(output_dir, expected)
     finally:
+        _phase(output_dir, "server_shutdown")
         _stop_servers()
+        _phase(output_dir, "ended")
 
 
 if __name__ == "__main__":

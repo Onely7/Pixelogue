@@ -45,7 +45,7 @@ def _load() -> dict[str, Any]:
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
-            state["used_gpu_seconds"] += max(0, time.time() - float(active["started_at"]))
+            _charge_interval(state, active, time.time())
             state["active"] = None
             _save(state)
         else:
@@ -112,11 +112,27 @@ def _begin(state: dict[str, Any], phase: str, gpu: int, pid: int) -> None:
     _save(state)
 
 
+def _charge_interval(state: dict[str, Any], active: dict[str, Any], ended_at: float) -> None:
+    """Count one allocated device interval, including model load and handoff overlap."""
+    seconds = max(0.0, ended_at - float(active["started_at"]))
+    state["used_gpu_seconds"] += seconds
+    state.setdefault("allocation_intervals", []).append(
+        {
+            "phase": active["phase"],
+            "gpu": active["gpu"],
+            "pid": active["pid"],
+            "started_at": active["started_at"],
+            "ended_at": ended_at,
+            "gpu_seconds": seconds,
+        }
+    )
+
+
 def _end(state: dict[str, Any]) -> None:
     active = state["active"]
     if active is None:
         return
-    state["used_gpu_seconds"] += max(0, time.time() - float(active["started_at"]))
+    _charge_interval(state, active, time.time())
     state["active"] = None
     _save(state)
 

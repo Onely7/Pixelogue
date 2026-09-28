@@ -114,7 +114,7 @@ tmux new-session -d -s pixelogue-gpu-watch -c "$PWD" -n monitor \
 tail -f artifacts/gpu-watch/monitor.log
 ```
 
-`artifacts/gpu-watch/state.json` records the last scan, active PID, GPU, phase, and accumulated GPU seconds; the log also emits a periodic heartbeat. To stop and release a reservation, send `Ctrl-C` to the tmux pane. The watcher stops automatically before four GPU-hours; restarting it preserves the ledger. A live model run appears under `artifacts/gpu-watch/<run-id>/`. GPU 0–5 on this host are outside the visible Slurm GPU partition, so this watcher checks the actual local devices directly.
+`artifacts/gpu-watch/state.json` records the last scan, active PID, GPU, phase, accumulated GPU seconds, and each completed allocation interval. A run's `phase-events.jsonl` records model loading, each inference batch, and shutdown boundaries. Intervals count an allocated GPU once even while the holder and model overlap. The log also emits a periodic heartbeat. To stop and release a reservation, send `Ctrl-C` to the tmux pane. The watcher stops automatically at its cumulative limit; restarting it preserves the ledger. A live model run appears under `artifacts/gpu-watch/<run-id>/`. GPU 0–5 on this host are outside the visible Slurm GPU partition, so this watcher checks the actual local devices directly.
 
 For an explicitly authorized later validation round, add `--campaign-id recheck-YYYYMMDD --additional-gpu-hours 2` to the `watch` command. The extension is added to the preserved cumulative ledger once per campaign ID. Reusing that ID on restart neither adds budget again nor reruns a completed pilot. The watcher runs one new pilot for a new campaign, then reacquires an idle GPU after the job until its extended budget expires.
 

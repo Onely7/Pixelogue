@@ -39,6 +39,8 @@ def test_active_reservation_consumes_budget_and_stale_pid_is_counted(
     state = gpu_watch._load()
     assert state["used_gpu_seconds"] == 200.0
     assert state["active"] is None
+    assert state["allocation_intervals"][0]["phase"] == "reservation"
+    assert state["allocation_intervals"][0]["gpu_seconds"] == 100.0
     assert gpu_watch._remaining(state) == gpu_watch.MAX_GPU_SECONDS - 200
 
 
