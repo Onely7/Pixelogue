@@ -28,6 +28,56 @@ from pixelogue.task_evidence import (
 )
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
+SPECIALIST_SOURCE_STAGES = frozenset(
+    {
+        "specialist_render_source",
+        "specialist_ui_source",
+        "specialist_circuit_source",
+        "specialist_chemistry_source",
+        "specialist_music_source",
+        "specialist_geometry_source",
+    }
+)
+
+
+def _bind_specialist_source_schema(
+    schema: dict[str, Any], stage: str, payload: dict[str, Any]
+) -> None:
+    """Fix public domain and image IDs before a blind specialist extraction."""
+    operation = payload.get("expected_operation")
+    views = payload.get("image_views")
+    if not isinstance(operation, dict) or not isinstance(views, list) or len(views) != 1:
+        raise ExecutionError(
+            "MODEL_PAYLOAD_FIELD", "Specialist source needs one bound operation and view"
+        )
+    view = views[0]
+    properties = schema.get("properties")
+    if not isinstance(view, dict) or not isinstance(properties, dict):
+        raise ExecutionError("MODEL_PAYLOAD_FIELD", "Specialist source view or schema is invalid")
+    fixed = {
+        "domain": operation.get("calibrated_domain"),
+        "scope_id": operation.get("scope_id"),
+        "view_id": view.get("view_id"),
+    }
+    if any(
+        not isinstance(value, str) or not value or not isinstance(properties.get(name), dict)
+        for name, value in fixed.items()
+    ):
+        raise ExecutionError("MODEL_PAYLOAD_FIELD", "Specialist source lacks fixed public IDs")
+    for name, value in fixed.items():
+        properties[name]["const"] = value
+    if stage == "specialist_music_source":
+        parameters = operation.get("public_parameters")
+        if not isinstance(parameters, list):
+            raise ExecutionError("MODEL_PAYLOAD_FIELD", "Music source lacks public parameters")
+        ranges = [
+            item.get("value")
+            for item in parameters
+            if isinstance(item, dict) and item.get("name") == "bar_range"
+        ]
+        if len(ranges) != 1 or not isinstance(ranges[0], str) or not ranges[0]:
+            raise ExecutionError("MODEL_PAYLOAD_FIELD", "Music source lacks a unique bar range")
+        properties["bar_range"]["const"] = ranges[0]
 
 
 def _model_json_object(payload: str | bytes) -> dict[str, Any]:
@@ -348,6 +398,8 @@ class VllmClient:
             {"type": "image_url", "image_url": {"url": image.data_uri()}} for image in images
         )
         schema = response_model.model_json_schema()
+        if stage in SPECIALIST_SOURCE_STAGES:
+            _bind_specialist_source_schema(schema, stage, payload)
         if response_model in (EvidenceInventory, ScopedEvidenceInventory, ScopedEvidenceReport):
             image_id = payload.get("image_id")
             if not isinstance(image_id, str) or not image_id:

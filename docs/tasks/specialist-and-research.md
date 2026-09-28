@@ -36,6 +36,7 @@ Use the above model command only after confirming an idle device and explicitly 
 
 `evaluate-specialist`, `research-history`, and `research-ablation` reuse completed trial records on resume. Failed records remain visible; use `--retry-failed` to attempt them again. Specialist evaluation also saves each model stage independently, so evaluator endpoints can be brought up sequentially across retries with the same input and configuration identity.
 For a specialist source that fails structured-output validation, evaluation makes one additional blind call with the exact schema error and region/netlist constraints. The invalid attempt remains recorded; a second failure stays `FAILED` and never counts as a calibration result.
+The specialist source schema fixes the public calibrated domain, scope ID, and delivered view ID; music also fixes the requested bar range. Source extraction uses `tasks.evidence_max_tokens` so a truncated molecular graph cannot be accepted as complete.
 
 ## Research-only commands
 

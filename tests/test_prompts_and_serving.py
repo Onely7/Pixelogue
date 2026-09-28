@@ -16,7 +16,15 @@ from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.profiling import profile_database
 from pixelogue.prompts import validate_stage_payload
 from pixelogue.serialization import canonical_hash
-from pixelogue.serving import ModelAdapter, VllmClient, _model_json_object, read_request_artifact
+from pixelogue.serving import (
+    ModelAdapter,
+    ModelImage,
+    VllmClient,
+    _model_json_object,
+    read_request_artifact,
+)
+from pixelogue.specialist_chemistry import ChemicalSource
+from pixelogue.specialist_music import MusicSource
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import CandidateBindingsReport, ScopedEvidenceReport
 
@@ -704,6 +712,58 @@ def test_evidence_schema_fixes_only_the_requested_image_identity():
             assert schema["properties"]["image_id"]["const"] == image_id
             assert "const" not in schema["properties"]["capabilities"]
         assert "const" not in EvidenceInventory.model_json_schema()["properties"]["image_id"]
+
+
+def test_specialist_source_schema_fixes_public_ids_and_music_bar_range(tmp_path):
+    path = tmp_path / "image.png"
+    path.write_bytes(b"test image")
+    image = ModelImage(
+        view_id="full:view",
+        path=path,
+        encoded_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        media_type="image/png",
+    )
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="fixed")
+    try:
+        for stage, model in (
+            ("specialist_chemistry_source", ChemicalSource),
+            ("specialist_music_source", MusicSource),
+        ):
+            payload = {
+                "image_views": [{"view_id": image.view_id}],
+                "expected_operation": {
+                    "calibrated_domain": "bounded-domain",
+                    "scope_id": "whole-image",
+                    "public_parameters": [{"name": "bar_range", "value": "1-1"}],
+                },
+            }
+            body = client._build_body(
+                stage, payload, (image,), model, max_tokens=4096, temperature=0.0, seed=1
+            )
+            properties = body["response_format"]["json_schema"]["schema"]["properties"]
+            assert {
+                name: properties[name]["const"] for name in ("domain", "scope_id", "view_id")
+            } == {
+                "domain": "bounded-domain",
+                "scope_id": "whole-image",
+                "view_id": image.view_id,
+            }
+            if model is MusicSource:
+                assert properties["bar_range"]["const"] == "1-1"
+            assert "const" not in model.model_json_schema()["properties"]["domain"]
+        with pytest.raises(ExecutionError) as error:
+            client._build_body(
+                "specialist_chemistry_source",
+                {"image_views": [{"view_id": image.view_id}]},
+                (image,),
+                ChemicalSource,
+                max_tokens=4096,
+                temperature=0.0,
+                seed=1,
+            )
+        assert error.value.reason == "MODEL_PAYLOAD_FIELD"
+    finally:
+        client.client.close()
 
 
 def test_model_facing_evidence_and_binding_schemas_enforce_shape():

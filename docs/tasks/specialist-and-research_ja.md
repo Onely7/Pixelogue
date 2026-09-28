@@ -36,6 +36,7 @@ uv run --locked pixelogue calibration-build --results-dir artifacts/specialist-e
 
 `evaluate-specialist`、`research-history`、`research-ablation` は完了済み試行を再利用して再開します。失敗記録は残し、再試行には `--retry-failed` を指定します。専門タスク評価はモデル呼び出しごとにも保存するため、同じ入力・設定識別を保持し、再試行を挟んで評価モデルのendpointを順次起動できます。
 専門抽出が構造化出力の検証に失敗した場合は、具体的なSchema違反と領域・回路接続の条件を伝えてblind callを1回だけ追加します。不正な試行は記録に残し、再度失敗すれば `FAILED` のままで校正件数には入れません。
+専門抽出のSchemaでは、公開済みの校正領域、scope ID、配信した画像view IDを固定し、楽譜では対象小節範囲も固定します。抽出には `tasks.evidence_max_tokens` を使い、途中で切れた分子グラフを完全な結果として扱いません。
 
 ## 研究専用CLI
 

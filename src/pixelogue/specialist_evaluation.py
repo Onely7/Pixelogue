@@ -268,13 +268,18 @@ def run_specialist_evaluation(
                         stats["stage_reused"] += 1
                         return model.model_validate(saved.value)
                     request_images = () if stage in ANSWER_ONLY_STAGES else (image,)
+                    max_tokens = (
+                        config.tasks.evidence_max_tokens
+                        if stage.startswith("specialist_") and stage.endswith("_source")
+                        else 2048
+                    )
                     try:
                         response = clients[judge].invoke(
                             stage,
                             body,
                             request_images,
                             model,
-                            max_tokens=2048,
+                            max_tokens=max_tokens,
                             temperature=0.0,
                             seed=config.seed,
                             bypass_cache=judge > 0,
@@ -288,7 +293,7 @@ def run_specialist_evaluation(
                             body,
                             request_images,
                             model,
-                            max_tokens=2048,
+                            max_tokens=max_tokens,
                             temperature=0.0,
                             seed=config.seed,
                             bypass_cache=True,

@@ -1279,6 +1279,11 @@ class SynthesisCoordinator:
             stage: str, body: dict[str, Any], model: type[BaseModel], judge: int
         ) -> BaseModel:
             client = tuple(self.generators.values())[judge]
+            max_tokens = (
+                self.config.tasks.evidence_max_tokens
+                if stage.startswith("specialist_") and stage.endswith("_source")
+                else 2048
+            )
             return self._invoke(
                 client,
                 stage,
@@ -1298,7 +1303,7 @@ class SynthesisCoordinator:
                 }
                 else (model_image,),
                 model,
-                max_tokens=2048,
+                max_tokens=max_tokens,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
                 bypass_cache=judge > 0,

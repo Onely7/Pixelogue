@@ -182,6 +182,7 @@ def test_schema_invalid_specialist_reading_gets_one_bounded_retry(
         }
     )
     feedback: list[str | None] = []
+    output_limits: list[int] = []
 
     class FakeClient:
         def __init__(self, *args, **kwargs):
@@ -192,6 +193,7 @@ def test_schema_invalid_specialist_reading_gets_one_bounded_retry(
 
         def invoke(self, stage, body, images, model, **kwargs):
             feedback.append(kwargs.get("retry_feedback"))
+            output_limits.append(kwargs["max_tokens"])
             if len(feedback) == 1:
                 raise ExecutionError("MODEL_SCHEMA_MISMATCH", "scope_region needs positive extent")
             return SimpleNamespace(
@@ -220,3 +222,4 @@ def test_schema_invalid_specialist_reading_gets_one_bounded_retry(
     assert feedback[0] is None
     assert "positive extent" in (feedback[1] or "")
     assert len(feedback) == 3
+    assert output_limits == [config.tasks.evidence_max_tokens] * 3
