@@ -101,13 +101,16 @@ type PublicTextRejectionReason = Literal[
     "CATEGORY_OPTIONS_NOT_PUBLIC",
 ]
 _INTERNAL_QUESTION_REFERENCE = re.compile(
-    r"(?<![A-Za-z0-9])(?:scope|view|candidate|evidence|obs)_[A-Za-z0-9_]+(?![A-Za-z0-9])",
+    r"(?<![A-Za-z0-9])(?:"
+    r"(?:scope|view|candidate|evidence|obs)_[A-Za-z0-9_]+"
+    r"|selected (?:image )?(?:region|scope|scene)"
+    r")(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
 
 
 def internal_reference_in_question(text: str) -> bool:
-    """Detect controller reference tokens that cannot identify a visible subject."""
+    """Detect controller references that cannot identify a visible subject."""
     return _INTERNAL_QUESTION_REFERENCE.search(text) is not None
 
 
@@ -2135,8 +2138,8 @@ class SynthesisCoordinator:
             )
         if reason == "INTERNAL_REFERENCE_IN_QUESTION":
             return (
-                "The draft contains a controller reference such as scope_0."
-                " Refer to the target by its visible location or traits;"
+                "The draft contains an unresolved controller reference such as scope_0"
+                " or selected region. Refer to the target by its visible location or traits;"
                 " never copy scope_id, view_id, candidate_id, or evidence IDs into public text."
             )
         if reason == "IDENTIFICATION_TARGET_IN_QUESTION":

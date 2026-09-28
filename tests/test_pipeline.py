@@ -72,7 +72,7 @@ class ScriptedClient:
         fail_first_schema: bool = False,
         repeat_question: bool = False,
         echo_question_prompt: bool = False,
-        internal_reference_question: Literal["none", "first", "always"] = "none",
+        internal_reference_question: Literal["none", "first", "always", "selected_region"] = "none",
         echo_answer_prompt: bool = False,
         unknown_capability: bool = False,
     ) -> None:
@@ -184,9 +184,16 @@ class ScriptedClient:
             elif (
                 stage == "question_generation"
                 and self.internal_reference_question != "none"
-                and (self.internal_reference_question == "always" or retry_feedback is None)
+                and (
+                    self.internal_reference_question in {"always", "selected_region"}
+                    or retry_feedback is None
+                )
             ):
-                text = "What is the object at scope_0?"
+                text = (
+                    "What color is the land in the selected region?"
+                    if self.internal_reference_question == "selected_region"
+                    else "What is the object at scope_0?"
+                )
             elif stage == "question_generation" and self.repeat_question:
                 text = (
                     "What color is the visible region?"
@@ -460,7 +467,7 @@ def _coordinator(
     concurrency_probe: ConcurrencyProbe | None = None,
     repeat_question: bool = False,
     echo_question_prompt: bool = False,
-    internal_reference_question: Literal["none", "first", "always"] = "none",
+    internal_reference_question: Literal["none", "first", "always", "selected_region"] = "none",
     echo_answer_prompt: bool = False,
     unknown_capability: bool = False,
     evaluation_mode: str = "detailed",
@@ -1051,12 +1058,13 @@ def test_internal_reference_is_corrected_before_question_fit(
     )
 
 
+@pytest.mark.parametrize("reference_mode", ["always", "selected_region"])
 def test_persistent_internal_reference_stops_before_question_fit(
-    tmp_path: Path, image_artifact
+    tmp_path: Path, image_artifact, reference_mode: Literal["always", "selected_region"]
 ) -> None:
     image, root = image_artifact
     coordinator, store, _, generator_a, generator_b = _coordinator(
-        tmp_path, internal_reference_question="always"
+        tmp_path, internal_reference_question=reference_mode
     )
     try:
         conversation = coordinator.synthesize_image(image, root)

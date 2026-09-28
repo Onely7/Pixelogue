@@ -237,7 +237,9 @@ task_id and operation exactly; do not replace it with an easier nearby task or r
 request. Every public parameter must be realized in the question, including scope, counting unit,
 precision, predicates and hypothetical assumptions.
 Controller IDs such as scope_id, view_id, candidate_id and evidence IDs are private references;
-never print their values in the public question. Describe the target using visible location or traits.
+never print their values in the public question. Do not refer to a "selected region" or
+"selected image scene"; those are controller descriptions, not public visual locators.
+Describe the target using visible location or traits.
 If those cues cannot identify it uniquely, return text=null with a reason.
 For scene_categorization, category_set
 must contain at least two distinct ordinary alternatives, including the supported target category;
