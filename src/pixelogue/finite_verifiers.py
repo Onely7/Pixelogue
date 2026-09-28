@@ -30,6 +30,13 @@ class FiniteMember(StrictModel):
     order_index: int | None = None
     region: ImageRegion
 
+    @model_validator(mode="after")
+    def check_groups(self) -> FiniteMember:
+        """Keep each visible group membership unique for one member."""
+        if len(self.groups) != len(set(self.groups)):
+            raise ValueError("Duplicate finite member group")
+        return self
+
 
 class FiniteQuery(StrictModel):
     """Answer-independent interpretation of the public question."""
@@ -168,7 +175,11 @@ def _expected(source: FiniteSource) -> tuple[str, object] | None:
             truth = matches <= query.threshold
         return "boolean", truth
     if task == "grounded_hypothetical_update":
-        if query.update is None or not query.update_ids:
+        if (
+            query.update is None
+            or not query.update_ids
+            or len(query.update_ids) != len(set(query.update_ids))
+        ):
             return None
         current = {member.member_id for member in members}
         updates = set(query.update_ids)

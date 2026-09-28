@@ -132,6 +132,19 @@ def test_hypothetical_removal_can_yield_a_closed_empty_member_set() -> None:
         FiniteAnswer(
             coverage="MET", answer_form="members", members=(), count=0, reason="conflicting"
         )
+    duplicate_update = source.model_copy(
+        update={"query": FiniteQuery(answer_form="members", update="remove", update_ids=("a", "a"))}
+    )
+    assert _check(duplicate_update, empty, update="remove") is GateVerdict.UNKNOWN
+
+
+def test_member_cannot_claim_the_same_group_twice() -> None:
+    with pytest.raises(ValueError, match="Duplicate finite member group"):
+        FiniteMember(
+            member_id="a",
+            groups=("red", "red"),
+            region=ImageRegion(left=0, top=0, right=1, bottom=1),
+        )
 
 
 def test_each_finite_operation_rejects_wrong_results_and_unclosed_sources() -> None:
