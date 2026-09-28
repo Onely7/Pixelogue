@@ -14,6 +14,7 @@ In `configs/standard.yaml`, Qwen3.8-27B-FP8 and Gemma 4 31B generate an equal sh
 `configs/pilot.yaml` is a temporary validation override. It maps both logical roles to a shared `Qwen/Qwen3.5-9B` server on port 8002. The calls remain separate and blind, but the shared checkpoint means this profile tests pipeline wiring rather than evaluator-model diversity.
 
 `configs/paired-one-gpu-pilot.yaml` keeps the exact standard Qwen3.8/Gemma 4 pair and Qwen3.5-2B selector, but schedules all three servers on a single idle 96 GiB-class GPU. Its paired `runtime/vllm/*-onegpu.yaml` files use ports 18102, 18103, and 18100 with memory fractions 0.44, 0.41, and 0.10. Start them sequentially on the same explicitly selected device, then run `doctor --config configs/paired-one-gpu-pilot.yaml --check-servers`. This is a pilot scheduling profile with the standard model identities and quantization, not a change to the standard profile. The three-server startup, image requests, synthesis, and replay were exercised on one RTX PRO 6000 Blackwell GPU; recheck capacity on other hardware.
+`configs/paired-one-gpu-diverse.yaml` uses the same endpoints and model locks with a 60-image evaluation target for the pinned Commons category sweep. It keeps evaluation-only inputs separate from training exports.
 
 ## 1. Inspect before using a GPU
 
