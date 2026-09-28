@@ -353,6 +353,32 @@ class VllmClient:
             if not isinstance(image_id, str) or not image_id:
                 raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")
             schema["properties"]["image_id"]["const"] = image_id
+        if response_model is ScopedEvidenceReport:
+            vocabulary = payload.get("capability_vocabulary")
+            limit = payload.get("max_observations_per_scope")
+            max_scopes = payload.get("max_scopes")
+            if (
+                not isinstance(vocabulary, dict)
+                or not vocabulary
+                or any(not isinstance(name, str) or not name for name in vocabulary)
+                or not isinstance(limit, int)
+                or not 0 < limit <= 50
+                or not isinstance(max_scopes, int)
+                or not 0 < max_scopes <= 8
+            ):
+                raise ExecutionError(
+                    "MODEL_PAYLOAD_FIELD", "Scoped evidence requires bounded capability names"
+                )
+            scopes_schema = schema["properties"]["scopes"]
+            scopes_schema["maxItems"] = max_scopes
+            observations_schema = schema["$defs"]["ScopeEvidenceReport"]["properties"][
+                "observations"
+            ]
+            observations_schema["properties"] = {
+                name: {"$ref": "#/$defs/CapabilityReport"} for name in sorted(vocabulary)
+            }
+            observations_schema["additionalProperties"] = False
+            observations_schema["maxProperties"] = limit
         if response_model is CandidateBindingsReport:
             candidates = payload.get("candidates")
             if not isinstance(candidates, list) or not candidates:

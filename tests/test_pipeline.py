@@ -30,6 +30,8 @@ from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import (
     applicable_rubric_items,
     has_natural_language_content,
+    identification_answer_in_question,
+    identification_label_in_question,
     repeated_answered_request,
 )
 from pixelogue.export import training_record
@@ -561,6 +563,117 @@ def test_normalized_repeated_question_stops_before_second_fit(
     assert rejection_count == 1
     assert sum(stage == "question_fit" for stage, _ in generator_a.calls) == 1
     assert sum(stage == "question_fit" for stage, _ in generator_b.calls) == 1
+    assert any(
+        feedback and "repeats an answered question" in feedback
+        for client in (generator_a, generator_b)
+        for feedback in client.retry_feedback
+    )
+
+
+def test_identification_question_must_not_contain_its_target_or_answer():
+    assert identification_label_in_question("What is this gibbon sitting on a railing?", "gibbon")
+    assert identification_label_in_question(
+        "What is the name of this silver race car?", "silver race car"
+    )
+    assert identification_answer_in_question("What object is this red strawberry?", "A strawberry.")
+    assert not identification_answer_in_question("What insect is visible on the fabric?", "ladybug")
+    assert not identification_label_in_question("What kind of animal is visible?", "animal")
+    assert identification_answer_in_question("What kind of animal is visible?", "animal")
+    assert not identification_label_in_question("What insect is visible?", "in")
+
+
+def test_identification_target_leak_retries_before_answer(
+    tmp_path: Path, image_artifact, monkeypatch
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(tmp_path)
+    for client in (generator_a, generator_b):
+        original = client.invoke
+
+        def invoke(stage, payload, *args, _original=original, **kwargs):
+            response = _original(stage, payload, *args, **kwargs)
+            if (
+                stage == "question_generation"
+                and payload["selected_instruction"]["task_id"] == "object_identification"
+            ):
+                target = next(
+                    parameter["value"]
+                    for parameter in payload["selected_instruction"]["public_parameters"]
+                    if parameter["name"] == "target"
+                )
+                return ModelResponse(
+                    value=TextPayload(text=f"What is {target}?"),
+                    request_hash=response.request_hash,
+                    response_hash=response.response_hash,
+                    prompt_tokens=response.prompt_tokens,
+                    completion_tokens=response.completion_tokens,
+                )
+            return response
+
+        monkeypatch.setattr(client, "invoke", invoke)
+    try:
+        result = coordinator.synthesize_image(image, root)
+        rejection_count = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'public-text-rejections'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+    assert result.status == "REJECTED"
+    assert not result.turns
+    assert rejection_count == 1
+    assert not any(
+        stage == "answer_generation"
+        for client in (generator_a, generator_b)
+        for stage, _ in client.calls
+    )
+
+
+def test_identification_answer_echo_stops_before_answer_rating(
+    tmp_path: Path, image_artifact, monkeypatch
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, evaluation_mode="holistic"
+    )
+    for client in (generator_a, generator_b):
+        original = client.invoke
+
+        def invoke(stage, payload, *args, _client=client, _original=original, **kwargs):
+            response = _original(stage, payload, *args, **kwargs)
+            if stage == "question_generation":
+                question = "What is this gibbon?"
+                _client.intent_by_question[(payload["image_views"][0]["view_id"], question)] = (
+                    payload["selected_instruction"]["task_id"]
+                )
+                value = TextPayload(text=question)
+            elif stage == "answer_generation":
+                value = TextPayload(text="gibbon")
+            else:
+                return response
+            return ModelResponse(
+                value=value,
+                request_hash=response.request_hash,
+                response_hash=response.response_hash,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+            )
+
+        monkeypatch.setattr(client, "invoke", invoke)
+    try:
+        result = coordinator.synthesize_image(image, root)
+        rejection_count = store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind = 'public-text-rejections'"
+        ).fetchone()[0]
+    finally:
+        store.close()
+    assert result.status == "REJECTED"
+    assert not result.turns
+    assert rejection_count == 1
+    assert not any(
+        stage == "holistic_review"
+        for client in (generator_a, generator_b)
+        for stage, _ in client.calls
+    )
 
 
 def test_repeated_answered_request_catches_observed_sheep_paraphrase() -> None:

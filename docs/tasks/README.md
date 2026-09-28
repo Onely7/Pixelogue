@@ -43,6 +43,8 @@ tasks:
 
 Scope and observation limits are operational settings, not a demand to enumerate all 50 capabilities. Focused candidate binding follows the initial scope discovery. A dense page must be bounded publicly, given a reviewed larger budget, or skipped. Public question/answer completions ending at the token limit are rejected even if JSON delimiters could be repaired. A valid schema or two matching judges is not proof of visual truth.
 
+The evidence response Schema names only the supplied capability vocabulary and permits each capability key once per scope. Duplicate JSON keys still fail strict decoding; missing observations remain unknown. A repeated question or an object-identification question that names its selected target gets bounded feedback and another model attempt before any question evaluator call. For object identification, a short answer already present in the question is rejected before answer rating. These checks preserve the minimum conversation length and the existing visual quality gates.
+
 ## Migration and analysis
 
 Use a **new run ID**. The run identity includes configuration, code, prompts, Schemas, catalog, specialist lock, model and processor revisions, seed and the prepared input/rights manifest identity. Old 24-task artifacts retain their original labels; `task_catalog_legacy.yaml` and `legacy_24_migration.json` provide advisory mappings only. In particular, `chart_lookup` requires reclassification from the actual question, not automatic assignment to two new operations. Old stores can still be inspected with `replay` and backed up.

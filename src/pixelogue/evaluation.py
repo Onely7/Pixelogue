@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from collections.abc import Sequence
 from difflib import SequenceMatcher
@@ -17,6 +18,29 @@ from pixelogue.contracts import (
     TurnRating,
 )
 from pixelogue.serialization import canonical_hash
+
+GENERIC_IDENTIFICATION_REFERENTS = frozenset(
+    {
+        "animal",
+        "bird",
+        "car",
+        "creature",
+        "dog",
+        "equipment",
+        "flower",
+        "food",
+        "fruit",
+        "insect",
+        "item",
+        "object",
+        "person",
+        "plant",
+        "structure",
+        "subject",
+        "thing",
+        "vehicle",
+    }
+)
 
 
 def consensus(verdicts: Sequence[GateVerdict]) -> GateVerdict:
@@ -65,6 +89,41 @@ def repeated_answered_request(question: str, answer: str, history: Sequence[Publ
         for message in history
         if message.role == "assistant"
     )
+
+
+def identification_label_in_question(question: str, label: str) -> bool:
+    """Find a complete object label already disclosed in an identification question."""
+    label_words = _public_words(label)
+    if (
+        not label_words
+        or not any(character.isalpha() for character in label)
+        or " ".join(label_words) in GENERIC_IDENTIFICATION_REFERENTS
+    ):
+        return False
+    return _contains_public_phrase(question, label_words)
+
+
+def identification_answer_in_question(question: str, answer: str) -> bool:
+    """Catch short literal identification answers that the question already supplies."""
+    words = _public_words(answer)
+    if words[:2] in (["it", "is"], ["this", "is"], ["that", "is"]):
+        words = words[2:]
+    if words and words[0] in {"a", "an", "the"}:
+        words = words[1:]
+    return bool(0 < len(words) <= 6 and _contains_public_phrase(question, words))
+
+
+def _contains_public_phrase(question: str, phrase_words: list[str]) -> bool:
+    question_words = _public_words(question)
+    return any(
+        question_words[index : index + len(phrase_words)] == phrase_words
+        for index in range(len(question_words) - len(phrase_words) + 1)
+    )
+
+
+def _public_words(text: str) -> list[str]:
+    """Use Unicode word boundaries and normalize common label separators."""
+    return re.findall(r"\w+", unicodedata.normalize("NFKC", text).casefold().replace("_", " "))
 
 
 def _normalize_public_question(question: str) -> str:

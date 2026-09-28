@@ -42,6 +42,8 @@ from pixelogue.evaluation import (
     applicable_rubric_items,
     consensus,
     has_natural_language_content,
+    identification_answer_in_question,
+    identification_label_in_question,
     item_id,
     question_fit_consensus,
     repeated_answered_request,
@@ -409,22 +411,74 @@ class SynthesisCoordinator:
                 terminal_stage = "instruction_selection"
                 terminal_reason = "NO_SUPPORTED_NEW_INSTRUCTION"
                 break
-            question_payload = self._invoke(
-                generator,
-                "question_generation",
-                {
-                    "target_language": target_language,
-                    "turn_index": turn_index,
-                    "public_history": self._history(snapshot.public_history),
-                    "selected_instruction": operation_contract(selected),
-                    "image_views": image_views,
-                },
-                (model_image,),
-                TextPayload,
-                max_tokens=256,
-                temperature=0.7,
-                seed=self.config.seed + turn_index,
+            target_value = next(
+                (
+                    parameter.value
+                    for parameter in selected.public_parameters
+                    if parameter.name == "target"
+                ),
+                None,
             )
+
+            def validate_question_draft(
+                result: TextPayload,
+                *,
+                history: tuple[PublicMessage, ...] = snapshot.public_history,
+                selected_instruction: InstructionCandidate = selected,
+                target: str | int | bool | tuple[str, ...] | None = target_value,
+                current_turn: int = turn_index,
+            ) -> None:
+                if result.text is None:
+                    return
+                if repeated_public_question(result.text, history):
+                    reason = "REPEATED_PUBLIC_QUESTION"
+                elif (
+                    selected_instruction.task_id == "object_identification"
+                    and isinstance(target, str)
+                    and identification_label_in_question(result.text, target)
+                ):
+                    reason = "IDENTIFICATION_TARGET_IN_QUESTION"
+                else:
+                    return
+                self._record_public_text_rejection(
+                    conversation_id,
+                    current_turn,
+                    field="question",
+                    reason=reason,
+                    content=result.text,
+                )
+                raise ExecutionError(
+                    reason, "Question draft discloses or repeats its requested fact"
+                )
+
+            try:
+                question_payload = self._invoke(
+                    generator,
+                    "question_generation",
+                    {
+                        "target_language": target_language,
+                        "turn_index": turn_index,
+                        "public_history": self._history(snapshot.public_history),
+                        "selected_instruction": operation_contract(selected),
+                        "image_views": image_views,
+                    },
+                    (model_image,),
+                    TextPayload,
+                    max_tokens=256,
+                    temperature=0.7,
+                    seed=self.config.seed + turn_index,
+                    post_validate=validate_question_draft,
+                )
+            except ExecutionError as error:
+                if error.reason not in {
+                    "REPEATED_PUBLIC_QUESTION",
+                    "IDENTIFICATION_TARGET_IN_QUESTION",
+                }:
+                    raise
+                terminal_status = "REJECTED"
+                terminal_stage = "question_generation"
+                terminal_reason = error.reason
+                break
             if question_payload.status != "OK":
                 terminal_status = "REJECTED"
                 terminal_stage = "question_generation"
@@ -555,6 +609,20 @@ class SynthesisCoordinator:
                 terminal_status = "REJECTED"
                 terminal_stage = "answer_generation"
                 terminal_reason = "REPEATED_ANSWERED_REQUEST"
+                break
+            if selected.task_id == "object_identification" and identification_answer_in_question(
+                question.content, answer.content
+            ):
+                self._record_public_text_rejection(
+                    conversation_id,
+                    turn_index,
+                    field="answer",
+                    reason="IDENTIFICATION_ANSWER_IN_QUESTION",
+                    content=answer.content,
+                )
+                terminal_status = "REJECTED"
+                terminal_stage = "answer_generation"
+                terminal_reason = "IDENTIFICATION_ANSWER_IN_QUESTION"
                 break
             rating = self._rate_turn(
                 conversation_id,
@@ -698,7 +766,19 @@ class SynthesisCoordinator:
                     reason="REPEATED_ANSWERED_REQUEST",
                     content=turn.answer.content,
                 )
-            fit = GateVerdict.NOT_MET if repeated else GateVerdict.MET
+            answer_in_question = (
+                turn.instruction.task_id == "object_identification"
+                and identification_answer_in_question(turn.question.content, turn.answer.content)
+            )
+            if answer_in_question:
+                self._record_public_text_rejection(
+                    conversation.conversation_id,
+                    turn.turn_index,
+                    field="answer",
+                    reason="IDENTIFICATION_ANSWER_IN_QUESTION",
+                    content=turn.answer.content,
+                )
+            fit = GateVerdict.NOT_MET if repeated or answer_in_question else GateVerdict.MET
             if fit is GateVerdict.MET and (
                 self.config.evaluation.mode == "detailed"
                 or turn.instruction.catalog_version is not None
@@ -1481,7 +1561,11 @@ class SynthesisCoordinator:
         *,
         field: Literal["question", "answer"],
         reason: Literal[
-            "PRIVATE_PROMPT_ECHO", "REPEATED_PUBLIC_QUESTION", "REPEATED_ANSWERED_REQUEST"
+            "PRIVATE_PROMPT_ECHO",
+            "REPEATED_PUBLIC_QUESTION",
+            "REPEATED_ANSWERED_REQUEST",
+            "IDENTIFICATION_TARGET_IN_QUESTION",
+            "IDENTIFICATION_ANSWER_IN_QUESTION",
         ],
         content: str,
     ) -> None:
@@ -1687,6 +1771,8 @@ class SynthesisCoordinator:
             "CANDIDATE_PARAMETER_UNKNOWN",
             "CANDIDATE_PARAMETER_SOURCE",
             "CANDIDATE_PARAMETER_VALUE",
+            "REPEATED_PUBLIC_QUESTION",
+            "IDENTIFICATION_TARGET_IN_QUESTION",
         }
         retry_feedback: str | None = None
         for attempt in range(self.config.runtime.structured_output_max_attempts):
@@ -1846,6 +1932,16 @@ class SynthesisCoordinator:
             return (
                 "The previous response was incomplete. Return a concise, complete JSON object "
                 "within the token limit and finish immediately."
+            )
+        if reason == "REPEATED_PUBLIC_QUESTION":
+            return (
+                "The draft repeats an answered question. Keep the selected task and ask for a"
+                " visibly supported new target, attribute, or public condition."
+            )
+        if reason == "IDENTIFICATION_TARGET_IN_QUESTION":
+            return (
+                "The draft identifies the object before asking its identity. Refer to its"
+                " location or non-category visible traits without naming the target label."
             )
         return "The previous response was empty. Return one concise, complete JSON object."
 

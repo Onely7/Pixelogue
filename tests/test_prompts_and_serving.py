@@ -688,6 +688,46 @@ def test_model_facing_evidence_and_binding_schemas_enforce_shape():
     assert "public_parameters" in binding_schema["required"]
 
 
+def test_scoped_evidence_guidance_names_each_capability_once():
+    with httpx.Client(base_url="http://127.0.0.1:8000/v1/") as http:
+        client = VllmClient(
+            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
+            RuntimeConfig(),
+            run_id="evidence-capabilities",
+            client=http,
+        )
+        body = client._build_body(
+            "evidence_extraction",
+            {
+                "image_id": "a" * 64,
+                "image_views": [],
+                "capability_vocabulary": {
+                    "visible_entity": "Visible entity",
+                    "readable_text": "Text",
+                },
+                "max_scopes": 2,
+                "max_observations_per_scope": 3,
+            },
+            (),
+            ScopedEvidenceReport,
+            max_tokens=1024,
+            temperature=0.0,
+            seed=1,
+        )
+    schema = body["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["scopes"]["maxItems"] == 2
+    observations = schema["$defs"]["ScopeEvidenceReport"]["properties"]["observations"]
+    assert list(observations["properties"]) == ["readable_text", "visible_entity"]
+    assert observations["additionalProperties"] is False
+    assert observations["maxProperties"] == 3
+    assert (
+        "properties"
+        not in ScopedEvidenceReport.model_json_schema()["$defs"]["ScopeEvidenceReport"][
+            "properties"
+        ]["observations"]
+    )
+
+
 def test_bad_request_keeps_server_schema_reason():
     transport = httpx.MockTransport(
         lambda request: httpx.Response(

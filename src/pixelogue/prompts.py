@@ -202,6 +202,9 @@ task_id and operation exactly; do not replace it with an easier nearby task or r
 request. Every public parameter must be realized in the question, including scope, counting unit,
 precision, predicates and hypothetical assumptions. Ask exactly one final semantic operation;
 independent compound requests are unsupported and must not be mislabeled as their first operation.
+For object_identification, the target value can itself be the category to name. Do not put that
+category or a synonym of the answer in the question. Refer by location or visible non-category
+traits; if that does not uniquely identify the target, return text=null with a reason.
 Never request code execution. Return public text, or set text to null and give an internal reason if unsupported.""",
     "question_intent": """Independently classify the exact operation requested by the public
 question. Read the image, public history and all supplied task definitions. Choose the single
