@@ -123,6 +123,8 @@ def test_sparse_blank_render_does_not_pass_foreground_comparison(
         {"format": "svg", "code": '<svg xmlns="http://www.w3.org/2000/svg"></svg>'}
     )
     assert verify_render(*args, candidate)[0] is GateVerdict.MET
+    duplicated = candidate.replace('"format": "svg"', '"format": "html_css", "format": "svg"')
+    assert verify_render(*args, duplicated)[0] is GateVerdict.UNKNOWN
     buffer = io.BytesIO()
     blank.save(buffer, format="PNG")
     monkeypatch.setattr(

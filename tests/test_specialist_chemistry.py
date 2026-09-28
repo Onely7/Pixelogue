@@ -38,6 +38,7 @@ def test_rdkit_matches_graph_and_rejects_wrong_connectivity() -> None:
     assert verdict is GateVerdict.MET
     assert evidence["expected_smiles"] == "CCO"
     assert verify_chemistry(*args, '{"smiles":"COC"}')[0] is GateVerdict.NOT_MET
+    assert verify_chemistry(*args, '{"smiles":"COC","smiles":"CCO"}')[0] is GateVerdict.UNKNOWN
 
 
 def test_unresolved_stereochemistry_and_disputed_graph_abstain() -> None:

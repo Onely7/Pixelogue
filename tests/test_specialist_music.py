@@ -69,6 +69,11 @@ def test_music21_score_accepts_exact_pitches_durations_and_rests() -> None:
         verify_music((score, score), score.domain, "1-1", "s", "v", incorrect)[0]
         is GateVerdict.NOT_MET
     )
+    duplicated = answer.replace('"pitch": "E4"', '"pitch": "G4", "pitch": "E4"')
+    assert (
+        verify_music((score, score), score.domain, "1-1", "s", "v", duplicated)[0]
+        is GateVerdict.UNKNOWN
+    )
 
 
 def test_music21_score_abstains_on_incomplete_or_disputed_reading() -> None:

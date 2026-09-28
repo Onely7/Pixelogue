@@ -41,6 +41,7 @@ def test_parallel_pair_requires_both_shared_nets() -> None:
     assert verdict is GateVerdict.MET
     assert evidence["expected_pairs"] == (("R1", "R2"),)
     assert verify_circuit(*args, '{"pairs":[["R1","R3"]]}')[0] is GateVerdict.NOT_MET
+    assert verify_circuit(*args, '{"pairs":[],"pairs":[["R1","R2"]]}')[0] is GateVerdict.UNKNOWN
 
 
 def test_ambiguous_crossing_abstains() -> None:
