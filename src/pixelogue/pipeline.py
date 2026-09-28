@@ -303,6 +303,8 @@ class SynthesisCoordinator:
         terminal_status: Literal["QUALITY_CANDIDATE", "REJECTED", "ABSTAINED", "ERROR"] = (
             "QUALITY_CANDIDATE"
         )
+        terminal_stage = "conversation_length"
+        terminal_reason = "REQUESTED_TURN_COUNT_INCOMPLETE"
         for turn_index in range(len(turns) + 1, count + 1):
             snapshot = build_history_snapshot(conversation_id, turn_index, transcript)
             candidates = instruction_candidates(
@@ -374,6 +376,8 @@ class SynthesisCoordinator:
                         },
                     )
                     terminal_status = "ABSTAINED"
+                    terminal_stage = "candidate_binding"
+                    terminal_reason = error.reason
                     break
                 bindings = bindings_report.to_bindings()
                 self.store.write_json_artifact(
@@ -389,6 +393,8 @@ class SynthesisCoordinator:
                 )
             if not candidates:
                 terminal_status = "REJECTED"
+                terminal_stage = "candidate_admission"
+                terminal_reason = "NO_ADMISSIBLE_CANDIDATE"
                 break
             selected = self._select_instruction(
                 candidates,
@@ -400,6 +406,8 @@ class SynthesisCoordinator:
             )
             if selected is None:
                 terminal_status = "REJECTED"
+                terminal_stage = "instruction_selection"
+                terminal_reason = "NO_SUPPORTED_NEW_INSTRUCTION"
                 break
             question_payload = self._invoke(
                 generator,
@@ -419,6 +427,8 @@ class SynthesisCoordinator:
             )
             if question_payload.status != "OK":
                 terminal_status = "REJECTED"
+                terminal_stage = "question_generation"
+                terminal_reason = "QUESTION_NOT_GENERATED"
                 break
             assert question_payload.text is not None
             question = PublicMessage(
@@ -436,6 +446,8 @@ class SynthesisCoordinator:
                     content=question.content,
                 )
                 terminal_status = "REJECTED"
+                terminal_stage = "question_generation"
+                terminal_reason = "PRIVATE_PROMPT_ECHO"
                 break
             if repeated_public_question(question.content, snapshot.public_history):
                 self._record_public_text_rejection(
@@ -446,6 +458,8 @@ class SynthesisCoordinator:
                     content=question.content,
                 )
                 terminal_status = "REJECTED"
+                terminal_stage = "question_generation"
+                terminal_reason = "REPEATED_PUBLIC_QUESTION"
                 break
             requirements: tuple[Requirement, ...] = ()
             if self.config.evaluation.mode == "detailed" or selected.catalog_version is not None:
@@ -470,6 +484,8 @@ class SynthesisCoordinator:
                     )
                 if fit is not GateVerdict.MET:
                     terminal_status = "ABSTAINED" if fit is GateVerdict.UNKNOWN else "REJECTED"
+                    terminal_stage = "question_gate"
+                    terminal_reason = f"QUESTION_GATE_{fit.value}"
                     break
             if self.config.evaluation.mode == "detailed":
                 requirement_status, requirements = self._extract_requirements(
@@ -482,6 +498,8 @@ class SynthesisCoordinator:
                     terminal_status = (
                         "REJECTED" if requirement_status is GateVerdict.NOT_MET else "ABSTAINED"
                     )
+                    terminal_stage = "requirement_extraction"
+                    terminal_reason = f"REQUIREMENT_{requirement_status.value}"
                     break
             answer_payload = self._invoke(
                 generator,
@@ -504,6 +522,8 @@ class SynthesisCoordinator:
             )
             if answer_payload.status != "OK":
                 terminal_status = "REJECTED"
+                terminal_stage = "answer_generation"
+                terminal_reason = "ANSWER_NOT_GENERATED"
                 break
             assert answer_payload.text is not None
             answer = PublicMessage(
@@ -521,6 +541,8 @@ class SynthesisCoordinator:
                     content=answer.content,
                 )
                 terminal_status = "REJECTED"
+                terminal_stage = "answer_generation"
+                terminal_reason = "PRIVATE_PROMPT_ECHO"
                 break
             if repeated_answered_request(question.content, answer.content, snapshot.public_history):
                 self._record_public_text_rejection(
@@ -531,6 +553,8 @@ class SynthesisCoordinator:
                     content=answer.content,
                 )
                 terminal_status = "REJECTED"
+                terminal_stage = "answer_generation"
+                terminal_reason = "REPEATED_ANSWERED_REQUEST"
                 break
             rating = self._rate_turn(
                 conversation_id,
@@ -607,6 +631,8 @@ class SynthesisCoordinator:
             turns.append(turn)
             if turn_status != "COMMITTED":
                 terminal_status = turn_status
+                terminal_stage = "answer_verification"
+                terminal_reason = f"RATING_{rating.aggregate}"
                 break
             transcript = (*transcript, question, answer)
             artifact_hash = self.store.write_json_artifact("turns", turn.model_dump(mode="json"))
@@ -621,6 +647,17 @@ class SynthesisCoordinator:
         if len(turns) != count or any(turn.status != "COMMITTED" for turn in turns):
             if terminal_status == "QUALITY_CANDIDATE":
                 terminal_status = "REJECTED"
+        if terminal_status != "QUALITY_CANDIDATE":
+            self.store.write_json_artifact(
+                "conversation-stop-reasons",
+                {
+                    "conversation_id": conversation_id,
+                    "turn_index": min(count, len(turns) + 1),
+                    "status": terminal_status,
+                    "stage": terminal_stage,
+                    "reason": terminal_reason,
+                },
+            )
         conversation = ConversationArtifact(
             conversation_id=conversation_id,
             image=image,
@@ -1731,6 +1768,17 @@ class SynthesisCoordinator:
                             "The previous response referred to another image. Re-examine only the "
                             "attached image and regenerate the complete evidence object. "
                             f"Copy the input image_id exactly: {payload['image_id']}."
+                        )
+                    if error.reason.startswith("CANDIDATE_"):
+                        retry_feedback += (
+                            f" Correct this exact contract mismatch: {str(error)[:600]}."
+                        )
+                    if error.reason == "MODEL_SCHEMA_MISMATCH" and str(error).startswith(
+                        "DUPLICATE_JSON_KEY"
+                    ):
+                        retry_feedback += (
+                            f" Duplicate JSON key reported: {str(error)[:180]}."
+                            " In observations, each capability is one key per scope."
                         )
                     continue
                 raise

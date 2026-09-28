@@ -204,7 +204,7 @@ def test_binding_cannot_borrow_refs_or_ignore_unknown_eligibility():
     assert not bind_candidates(
         (left,), CandidateBindings(bindings=(uncertain,)), data, (), TaskRuntimeConfig()
     )
-    with pytest.raises(ExecutionError, match="Missing or unknown"):
+    with pytest.raises(ExecutionError, match=f"Candidate {left.candidate_id}: missing check IDs"):
         bind_candidates(
             (left,),
             CandidateBindings(bindings=(binding(left, checks=()),)),
@@ -212,6 +212,34 @@ def test_binding_cannot_borrow_refs_or_ignore_unknown_eligibility():
             (),
             TaskRuntimeConfig(),
         )
+
+
+def test_binding_reports_exact_unknown_parameter_without_admitting_it() -> None:
+    data = inventory(scope("left", visible_entity="MET"))
+    template = candidates(data)[0]
+    proposed = binding(
+        template,
+        public_parameters=(
+            PublicParameter(name="target", value="cup", origin="instruction"),
+            PublicParameter(name="scope_resolved", value="MET", origin="instruction"),
+        ),
+    )
+    with pytest.raises(ExecutionError) as caught:
+        bind_candidates(
+            (template,), CandidateBindings(bindings=(proposed,)), data, (), TaskRuntimeConfig()
+        )
+    assert caught.value.reason == "CANDIDATE_PARAMETER_UNKNOWN"
+    assert "scope_resolved" in str(caught.value)
+    assert "allowed names" in str(caught.value)
+
+
+def test_candidate_input_separates_check_ids_from_parameter_names() -> None:
+    data = inventory(scope("left", visible_entity="MET"))
+    template = candidates(data)[0]
+    exposed = selector_candidate(template)
+    assert set(exposed["required_check_ids"]) == set(exposed["eligibility_checks"])
+    assert "target" in exposed["bindable_parameter_names"]
+    assert not set(exposed["required_check_ids"]) & set(exposed["bindable_parameter_names"])
 
 
 def test_missing_required_evidence_rejects_only_that_candidate() -> None:
@@ -359,7 +387,7 @@ def test_output_verdict_vocabulary_cannot_be_bound_as_a_desired_answer():
             PublicParameter(name="verdicts", value="supported", origin="instruction"),
         ),
     )
-    with pytest.raises(ExecutionError, match="Unknown public parameter"):
+    with pytest.raises(ExecutionError, match="unknown public parameter"):
         bind_candidates(
             (template,), CandidateBindings(bindings=(proposed,)), data, (), TaskRuntimeConfig()
         )

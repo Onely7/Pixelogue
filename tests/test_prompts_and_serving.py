@@ -89,6 +89,40 @@ def test_image_part_declaration_must_match() -> None:
     assert caught.value.reason == "IMAGE_PART_MISMATCH"
 
 
+def test_candidate_binding_schema_restricts_supplied_names() -> None:
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="x")
+    try:
+        body = client._build_body(
+            "candidate_binding",
+            {
+                "image_views": [],
+                "candidates": [
+                    {
+                        "candidate_id": "candidate-1",
+                        "required_check_ids": ["scope_resolved", "count_unit_defined"],
+                        "bindable_parameter_names": ["target", "count_unit"],
+                    }
+                ],
+            },
+            (),
+            CandidateBindingsReport,
+            max_tokens=100,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    definitions = body["response_format"]["json_schema"]["schema"]["$defs"]
+    assert definitions["CandidateBindingReport"]["properties"]["candidate_id"]["enum"] == [
+        "candidate-1"
+    ]
+    assert definitions["EligibilityObservation"]["properties"]["check_id"]["enum"] == [
+        "count_unit_defined",
+        "scope_resolved",
+    ]
+    assert definitions["PublicParameter"]["properties"]["name"]["enum"] == ["count_unit"]
+
+
 def _rubric_payload() -> dict[str, object]:
     return {
         "target_language": "en",

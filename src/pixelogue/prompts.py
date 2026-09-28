@@ -163,6 +163,10 @@ observation for its required_capabilities, with no duplicate IDs.
 Include exactly the named eligibility checks. MET requires visible support for the actual operation
 and parameters, NOT_MET is a definite failure, and missing evidence is UNKNOWN. For limitation and
 false_premise use the alternative profile_guard instead of normal answerability prerequisites.
+For EACH candidate, copy all and only its required_check_ids into checks[].check_id. Use
+bindable_parameter_names only for public_parameters[].name; these are two different name lists.
+Do not put a check ID, policy name, or verdict word into public_parameters. If the image cannot
+support a check, report UNKNOWN or NOT_MET for that check instead of omitting it.
 A limitation needs a locally visible target and a specific unreadable/cropped/ambiguous condition.
 A false premise needs a visible local contradiction, never failure to retrieve an object.
 Do not manufacture unreadability. Estimate output tokens conservatively; select a publicly bounded

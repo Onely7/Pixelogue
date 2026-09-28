@@ -317,6 +317,7 @@ def test_semantic_contract_failure_retries_without_accepting_invalid_result(
     assert attempts == 2
     assert client.retry_feedback[0] is None
     assert "parameter_contract" in (client.retry_feedback[1] or "")
+    assert "Unknown public parameter" in (client.retry_feedback[1] or "")
 
 
 def test_candidate_binding_requires_exact_target_parameter() -> None:
@@ -352,12 +353,18 @@ def test_exhausted_candidate_binding_checks_abstain_without_accepting(
         private_count = store.connection.execute(
             "SELECT COUNT(*) FROM artifact WHERE kind = 'binding-abstentions'"
         ).fetchone()[0]
+        stop_hash = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = 'conversation-stop-reasons'"
+        ).fetchone()[0]
+        stop = json.loads(store.read_artifact(stop_hash))
     finally:
         store.close()
 
     assert conversation.status == "ABSTAINED"
     assert not conversation.turns
     assert private_count == 1
+    assert stop["stage"] == "candidate_binding"
+    assert stop["reason"] == "CANDIDATE_CHECKS_MISMATCH"
 
 
 def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_error(

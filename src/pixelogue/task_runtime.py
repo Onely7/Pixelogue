@@ -172,11 +172,30 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
 
 def selector_candidate(candidate: InstructionCandidate) -> dict[str, Any]:
     """Keep candidate identity while withholding private evidence observations."""
+    task = next(task for task in task_catalog().tasks if task.id == candidate.task_id)
+    contract = operation_contract(candidate)
     return {
         "candidate_id": candidate.candidate_id,
         "required_capabilities": list(candidate.required_capabilities),
-        **operation_contract(candidate),
+        **contract,
+        "required_check_ids": list(contract["eligibility_checks"]),
+        "bindable_parameter_names": list(bindable_parameter_names(task)),
     }
+
+
+def bindable_parameter_names(task: TaskDefinition) -> tuple[str, ...]:
+    """List public choices that a model may bind for one catalog task."""
+    return tuple(
+        sorted(
+            (set(task.parameters) - POLICY_PARAMETERS)
+            | {"target", "scope"}
+            | {
+                value
+                for check_id, value in GUARD_PARAMETERS.items()
+                if check_id in task.eligibility_checks
+            }
+        )
+    )
 
 
 def fingerprint(candidate: InstructionCandidate, image_id: str) -> str:
@@ -262,9 +281,14 @@ def bind_candidates(
             if not required_refs <= set(binding.evidence_refs):
                 continue
         expected_checks = set(operation_contract(template)["eligibility_checks"])
-        if {check.check_id for check in binding.checks} != expected_checks:
+        supplied_checks = {check.check_id for check in binding.checks}
+        if supplied_checks != expected_checks:
             raise ExecutionError(
-                "CANDIDATE_CHECKS_MISMATCH", "Missing or unknown eligibility check"
+                "CANDIDATE_CHECKS_MISMATCH",
+                f"Candidate {binding.candidate_id}: missing check IDs "
+                f"{sorted(expected_checks - supplied_checks)}; unknown check IDs "
+                f"{sorted(supplied_checks - expected_checks)}; required check IDs "
+                f"{sorted(expected_checks)}",
             )
         if any(check.verdict != "MET" for check in binding.checks):
             continue
@@ -275,13 +299,13 @@ def bind_candidates(
         if "target" not in parameters:
             continue
         task = next(task for task in task_catalog().tasks if task.id == template.task_id)
-        allowed = (set(task.parameters) - POLICY_PARAMETERS) | {
-            "target",
-            "scope",
-            *GUARD_PARAMETERS.values(),
-        }
+        allowed = set(bindable_parameter_names(task))
         if not parameters.keys() <= allowed:
-            raise ExecutionError("CANDIDATE_PARAMETER_UNKNOWN", "Unknown public parameter")
+            raise ExecutionError(
+                "CANDIDATE_PARAMETER_UNKNOWN",
+                f"Candidate {binding.candidate_id}: unknown public parameter names "
+                f"{sorted(parameters.keys() - allowed)}; allowed names {sorted(allowed)}",
+            )
         history_ids = {message.message_id for message in history}
         for parameter in binding.public_parameters:
             refs = set(parameter.evidence_refs)

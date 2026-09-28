@@ -21,7 +21,11 @@ from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_payload
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
 from pixelogue.store import RunStore
-from pixelogue.task_evidence import ScopedEvidenceInventory, ScopedEvidenceReport
+from pixelogue.task_evidence import (
+    CandidateBindingsReport,
+    ScopedEvidenceInventory,
+    ScopedEvidenceReport,
+)
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 
@@ -349,6 +353,24 @@ class VllmClient:
             if not isinstance(image_id, str) or not image_id:
                 raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")
             schema["properties"]["image_id"]["const"] = image_id
+        if response_model is CandidateBindingsReport:
+            candidates = payload.get("candidates")
+            if not isinstance(candidates, list) or not candidates:
+                raise ExecutionError("MODEL_PAYLOAD_FIELD", "Bindings require candidates")
+            candidate_ids = sorted({item["candidate_id"] for item in candidates})
+            check_ids = sorted(
+                {check for item in candidates for check in item["required_check_ids"]}
+            )
+            parameter_names = sorted(
+                {name for item in candidates for name in item["bindable_parameter_names"]}
+                - {"target"}
+            )
+            definitions = schema["$defs"]
+            definitions["CandidateBindingReport"]["properties"]["candidate_id"]["enum"] = (
+                candidate_ids
+            )
+            definitions["EligibilityObservation"]["properties"]["check_id"]["enum"] = check_ids
+            definitions["PublicParameter"]["properties"]["name"]["enum"] = parameter_names
         if response_model is ClaimExtraction:
             tokens = payload.get("answer_tokens")
             if not isinstance(tokens, list) or any(

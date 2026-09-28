@@ -15,6 +15,7 @@ from pixelogue.serialization import strict_json_object
 from pixelogue.store import RunStore
 
 STOP_ARTIFACTS = (
+    "conversation-stop-reasons",
     "errors",
     "model-output-abstentions",
     "binding-abstentions",
@@ -95,6 +96,7 @@ def _stop_records(store: RunStore) -> dict[str, list[dict[str, Any]]]:
             {
                 "kind": row["kind"],
                 "reason": record.get("reason") or record.get("controller_reason") or verdict,
+                "stage": record.get("stage"),
                 "turn_index": record.get("turn_index"),
                 "artifact_hash": row["artifact_hash"],
             }
@@ -112,6 +114,12 @@ def _stop_category(status: str, stops: list[dict[str, Any]]) -> str:
         return "QUALITY_REJECTION"
     if any(stop["kind"] in {"binding-abstentions", "model-output-abstentions"} for stop in stops):
         return "MALFORMED_MODEL_OUTPUT"
+    if any(
+        stop["kind"] == "conversation-stop-reasons"
+        and stop["reason"] in {"QUESTION_GATE_UNKNOWN", "REQUIREMENT_UNKNOWN", "RATING_ABSTAIN"}
+        for stop in stops
+    ):
+        return "EVIDENCE_OR_JUDGE_UNCERTAINTY"
     return "UNRESOLVED_ABSTENTION"
 
 
