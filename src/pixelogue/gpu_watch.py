@@ -47,7 +47,16 @@ def _load() -> dict[str, Any]:
         except ProcessLookupError:
             _charge_interval(state, active, time.time())
             state["active"] = None
-            _save(state)
+            if active["phase"] == "pilot":
+                state["pilot_attempted"] = True
+                state["pilot_exit_code"] = 1
+                _queue_post_job_reservation(state, int(active["gpu"]))
+            else:
+                request = state.get("post_job_reservation")
+                if request is not None and request.get("status") == "held":
+                    request["status"] = "pending"
+                    request["recovered_at"] = time.time()
+                _save(state)
         else:
             raise RuntimeError(f"An earlier reservation or pilot is still active: PID {pid}")
     return state
@@ -197,6 +206,31 @@ def idle_indices(rows: list[dict[str, int | str]]) -> set[int]:
     }
 
 
+def _post_job_candidates(current: set[int], last: set[int], state: dict[str, Any]) -> list[int]:
+    """Attempt the queued post-job reservation on the first idle scan."""
+    request = state.get("post_job_reservation")
+    if not request or request.get("status") != "pending":
+        return sorted(current & last)
+    preferred = int(request["gpu"])
+    return sorted(current, key=lambda gpu: (gpu != preferred, gpu))
+
+
+def _queue_post_job_reservation(state: dict[str, Any], gpu: int) -> None:
+    """Persist a new reservation request for either pilot exit outcome."""
+    state["post_job_reservation"] = {
+        "gpu": gpu,
+        "requested_at": time.time(),
+        "pilot_exit_code": state.get("pilot_exit_code"),
+        "status": "pending",
+    }
+    _save(state)
+    print(
+        f"post-job reservation queued immediately: GPU {gpu}, "
+        f"pilot_exit={state.get('pilot_exit_code')}",
+        flush=True,
+    )
+
+
 def _doctor_ready() -> bool:
     output = ROOT / "artifacts/gpu-watch/doctor.json"
     result = subprocess.run(
@@ -342,6 +376,23 @@ def _pilot(gpu: int, state: dict[str, Any], holder: subprocess.Popen[str]) -> No
             _save(state)
 
 
+def _run_pilot_and_queue(gpu: int, state: dict[str, Any], holder: subprocess.Popen[str]) -> None:
+    """Request the next reservation after success, failure, or supervisor error."""
+    try:
+        _pilot(gpu, state, holder)
+    except Exception as exc:
+        print(f"pilot supervisor failed: {type(exc).__name__}: {exc}", flush=True)
+        if (state.get("active") or {}).get("pid") == holder.pid:
+            _release_holder(holder, state)
+        elif state.get("active") is not None:
+            _end(state)
+        state["pilot_attempted"] = True
+        state["pilot_exit_code"] = 1
+        _save(state)
+    finally:
+        _queue_post_job_reservation(state, gpu)
+
+
 def _hold_visible_gpu(memory_fraction: float, parent_pid: int) -> None:
     """Adapt the attached memory holder without its continuous GEMM load."""
     torch = importlib.import_module("torch")
@@ -414,26 +465,35 @@ def _watch(
                     flush=True,
                 )
                 last_heartbeat = time.monotonic()
-            eligible = sorted(current & last)
+            eligible = _post_job_candidates(current, last, state)
             last = current
             if not eligible:
-                time.sleep(poll_seconds)
+                pending = state.get("post_job_reservation", {}).get("status") == "pending"
+                time.sleep(min(poll_seconds, 5) if pending else poll_seconds)
                 continue
             gpu = eligible[0]
             if not _doctor_ready():
-                time.sleep(poll_seconds)
+                pending = state.get("post_job_reservation", {}).get("status") == "pending"
+                time.sleep(min(poll_seconds, 5) if pending else poll_seconds)
                 continue
             starting_pilot = not state["pilot_attempted"] and not reserve_only
             holder = _holder(gpu, state, memory_fraction=0.25 if starting_pilot else 0.90)
             if holder is None:
                 last = set()
-                time.sleep(poll_seconds)
+                pending = state.get("post_job_reservation", {}).get("status") == "pending"
+                time.sleep(min(poll_seconds, 5) if pending else poll_seconds)
                 continue
             if starting_pilot:
-                _pilot(gpu, state, holder)
+                _run_pilot_and_queue(gpu, state, holder)
                 last = set()
                 continue
             purpose = "diagnostic" if reserve_only else "post-job"
+            request = state.get("post_job_reservation")
+            if request is not None and request.get("status") == "pending":
+                request["status"] = "held"
+                request["held_at"] = time.time()
+                request["held_gpu"] = gpu
+                _save(state)
             print(
                 f"{purpose} GPU {gpu} reserved; holding until remaining budget expires", flush=True
             )
@@ -442,7 +502,16 @@ def _watch(
                     time.sleep(5)
             finally:
                 _release_holder(holder, state)
+                if request is not None and request.get("status") == "held":
+                    request["status"] = "released"
+                    request["released_at"] = time.time()
+                    _save(state)
             last = set()
+        request = state.get("post_job_reservation")
+        if request is not None and request.get("status") == "pending":
+            request["status"] = "stopped" if stop else "budget_exhausted"
+            _save(state)
+            print(f"post-job reservation {request['status']}", flush=True)
         print(f"watch stopped; used GPU-hours={state['used_gpu_seconds'] / 3600:.3f}", flush=True)
 
 
