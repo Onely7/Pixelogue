@@ -235,7 +235,11 @@ def verify_finite(
     if query.update is not None and public_parameters.get("update") != query.update:
         return GateVerdict.UNKNOWN
     expected = _expected(sources[0])
-    if expected is None or answers[0].answer_form != expected[0]:
+    if (
+        expected is None
+        or query.answer_form != expected[0]
+        or answers[0].answer_form != expected[0]
+    ):
         return GateVerdict.UNKNOWN
     form, value = expected
     observed: object

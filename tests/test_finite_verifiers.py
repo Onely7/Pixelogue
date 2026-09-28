@@ -73,6 +73,8 @@ def test_order_requires_all_visible_members_in_requested_sequence() -> None:
     assert _check(source, _answer("members", ("b", "a", "c"))) is GateVerdict.MET
     assert _check(source, _answer("members", ("a", "b", "c"))) is GateVerdict.NOT_MET
     assert _check(source, _answer("members", ("b", "a"))) is GateVerdict.NOT_MET
+    inconsistent = source.model_copy(update={"query": FiniteQuery(answer_form="count")})
+    assert _check(inconsistent, _answer("members", ("b", "a", "c"))) is GateVerdict.UNKNOWN
 
 
 def test_cardinality_comparison_uses_closed_group_counts() -> None:
