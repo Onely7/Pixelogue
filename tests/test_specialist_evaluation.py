@@ -154,14 +154,40 @@ def test_failed_second_evaluator_resumes_from_first_saved_stage(
 
 
 @pytest.mark.parametrize(
-    ("failure_reason", "counter"),
+    ("failure_reason", "counter", "task_id", "stage", "uses_json_fallback"),
     [
-        ("MODEL_SCHEMA_MISMATCH", "schema_retries"),
-        ("MODEL_FINISH_REASON", "finish_retries"),
+        (
+            "MODEL_SCHEMA_MISMATCH",
+            "schema_retries",
+            "music_notation_reading",
+            "specialist_music_source",
+            False,
+        ),
+        (
+            "MODEL_FINISH_REASON",
+            "finish_retries",
+            "music_notation_reading",
+            "specialist_music_source",
+            False,
+        ),
+        (
+            "MODEL_FINISH_REASON",
+            "finish_retries",
+            "chemical_structure_reading",
+            "specialist_chemistry_source",
+            True,
+        ),
     ],
 )
 def test_invalid_specialist_reading_gets_one_bounded_retry(
-    tmp_path: Path, image_artifact, monkeypatch, failure_reason: str, counter: str
+    tmp_path: Path,
+    image_artifact,
+    monkeypatch,
+    failure_reason: str,
+    counter: str,
+    task_id: str,
+    stage: str,
+    uses_json_fallback: bool,
 ) -> None:
     from pixelogue import specialist_evaluation
 
@@ -170,7 +196,7 @@ def test_invalid_specialist_reading_gets_one_bounded_retry(
     case = SpecialistEvaluationCase(
         case_id="retry-case",
         image=image,
-        task_id="music_notation_reading",
+        task_id=task_id,
         domain="single-voice",
         scope_id="score",
         view_id=image.full_view.view_id,
@@ -192,6 +218,7 @@ def test_invalid_specialist_reading_gets_one_bounded_retry(
     )
     feedback: list[str | None] = []
     output_limits: list[int] = []
+    fallback_modes: list[bool] = []
 
     class FakeClient:
         def __init__(self, *args, **kwargs):
@@ -203,6 +230,7 @@ def test_invalid_specialist_reading_gets_one_bounded_retry(
         def invoke(self, stage, body, images, model, **kwargs):
             feedback.append(kwargs.get("retry_feedback"))
             output_limits.append(kwargs["max_tokens"])
+            fallback_modes.append(kwargs.get("json_object_fallback", False))
             if len(feedback) == 1:
                 raise ExecutionError(failure_reason, "scope_region needs positive extent")
             return SimpleNamespace(
@@ -214,11 +242,15 @@ def test_invalid_specialist_reading_gets_one_bounded_retry(
             )
 
     def fake_verify(instruction, payload, invoke, image_path):
-        invoke("specialist_music_source", {"question": payload["question"]}, TextPayload, 0)
-        invoke("specialist_music_source", {"question": payload["question"]}, TextPayload, 1)
+        invoke(stage, {"question": payload["question"]}, TextPayload, 0)
+        invoke(stage, {"question": payload["question"]}, TextPayload, 1)
         return (
             SimpleNamespace(
-                name="music_notation_validator",
+                name=(
+                    "chemical_graph_validator"
+                    if task_id == "chemical_structure_reading"
+                    else "music_notation_validator"
+                ),
                 verdict=GateVerdict.MET,
                 evidence=({"judge": 0}, {"judge": 1}),
             ),
@@ -235,3 +267,4 @@ def test_invalid_specialist_reading_gets_one_bounded_retry(
         assert "positive extent" in (feedback[1] or "")
     assert len(feedback) == 3
     assert output_limits == [config.tasks.evidence_max_tokens] * 3
+    assert fallback_modes == [False, uses_json_fallback, False]

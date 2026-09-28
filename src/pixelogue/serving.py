@@ -225,6 +225,7 @@ class VllmClient:
         seed: int,
         bypass_cache: bool = False,
         retry_feedback: str | None = None,
+        json_object_fallback: bool = False,
     ) -> ModelResponse:
         """Send and validate one non-streaming structured-output request.
 
@@ -244,6 +245,7 @@ class VllmClient:
             temperature=temperature,
             seed=seed,
             retry_feedback=retry_feedback,
+            json_object_fallback=json_object_fallback,
         )
         if bypass_cache:
             body["metadata"] = {"probe_id": canonical_hash(body)}
@@ -373,7 +375,15 @@ class VllmClient:
         temperature: float,
         seed: int,
         retry_feedback: str | None = None,
+        json_object_fallback: bool = False,
     ) -> dict[str, Any]:
+        if json_object_fallback and (
+            stage != "specialist_chemistry_source" or retry_feedback is None
+        ):
+            raise ExecutionError(
+                "MODEL_OUTPUT_FORMAT",
+                "JSON-object fallback is limited to corrected blind chemical extraction",
+            )
         declared_views = payload.get("image_views", [])
         view_ids = [item["view_id"] for item in declared_views]
         attached_ids = [image.view_id for image in images]
@@ -487,14 +497,18 @@ class VllmClient:
             "top_p": 1.0,
             "seed": seed,
             "max_tokens": max_tokens,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": response_model.__name__,
-                    "strict": True,
-                    "schema": schema,
-                },
-            },
+            "response_format": (
+                {"type": "json_object"}
+                if json_object_fallback
+                else {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": response_model.__name__,
+                        "strict": True,
+                        "schema": schema,
+                    },
+                }
+            ),
         }
         body.update(self.adapter.extra_body())
         return body

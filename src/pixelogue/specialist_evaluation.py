@@ -59,8 +59,17 @@ def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
             "substring of the candidate answer and put its literal number in reported. "
         ),
         "specialist_chemistry_source": (
-            "Decide every visible bond order before emitting JSON. If any atom or bond "
-            "cannot be resolved, return coverage UNKNOWN with empty atoms and bonds. "
+            "Return only a blind source object with exactly coverage, domain, scope_id, "
+            "view_id, scope_region, notation, atoms, bonds, reason. Coverage must be MET, "
+            "NOT_MET, or UNKNOWN; never output an answer or SMILES field. Use the public "
+            "domain, scope ID, view ID, and notation. Each atom needs atom_id as a string "
+            "such as C1 or H1, element, charge, aromatic, region. Each bond needs a and b "
+            "as those exact string IDs, order as single/double/triple/aromatic, and region. "
+            "Use a small positive-extent box around each visible atom and bond; widen "
+            "horizontal and vertical line regions slightly so top < bottom and left < right. "
+            "Include H atoms only if H is explicitly drawn. Unlabeled skeletal endpoints "
+            "and corners are carbon atoms. Decide all bonds before emitting JSON. If any "
+            "atom or bond is unresolved, use coverage UNKNOWN with empty atoms and bonds. "
             "Keep reason to one sentence and do not emit repeated whitespace. "
         ),
     }.get(stage, "")
@@ -321,6 +330,10 @@ def run_specialist_evaluation(
                             seed=config.seed,
                             bypass_cache=True,
                             retry_feedback=_schema_retry_feedback(stage, error),
+                            json_object_fallback=(
+                                error.reason == "MODEL_FINISH_REASON"
+                                and stage == "specialist_chemistry_source"
+                            ),
                         )
                     value = model.model_validate(response.value)
                     write_json(

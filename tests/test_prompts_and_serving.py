@@ -762,6 +762,52 @@ def test_specialist_source_schema_fixes_public_ids_and_music_bar_range(tmp_path)
                 seed=1,
             )
         assert error.value.reason == "MODEL_PAYLOAD_FIELD"
+        fallback = client._build_body(
+            "specialist_chemistry_source",
+            payload,
+            (image,),
+            ChemicalSource,
+            max_tokens=4096,
+            temperature=0.0,
+            seed=1,
+            retry_feedback="The previous chemical graph was truncated; output the full source graph.",
+            json_object_fallback=True,
+        )
+        assert fallback["response_format"] == {"type": "json_object"}
+        assert "candidate_answer" not in fallback["messages"][1]["content"][0]["text"]
+        for stage, feedback in (
+            ("specialist_chemistry_source", None),
+            ("specialist_music_source", "correct output"),
+        ):
+            with pytest.raises(ExecutionError) as fallback_error:
+                client._build_body(
+                    stage,
+                    payload,
+                    (image,),
+                    ChemicalSource,
+                    max_tokens=4096,
+                    temperature=0.0,
+                    seed=1,
+                    retry_feedback=feedback,
+                    json_object_fallback=True,
+                )
+            assert fallback_error.value.reason == "MODEL_OUTPUT_FORMAT"
+    finally:
+        client.client.close()
+
+
+def test_chemical_json_object_fallback_cannot_accept_an_answer_instead_of_a_graph():
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="x")
+    response = {
+        "choices": [{"finish_reason": "stop", "message": {"content": '{"answer":"CCO"}'}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 5},
+    }
+    try:
+        with pytest.raises(ExecutionError) as error:
+            client._decode_typed_response(
+                json.dumps(response).encode(), ChemicalSource, max_tokens=1024
+            )
+        assert error.value.reason == "MODEL_SCHEMA_MISMATCH"
     finally:
         client.client.close()
 
