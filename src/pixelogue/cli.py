@@ -321,10 +321,13 @@ def compile_command(
 def task_status_command(
     config_path: ConfigOption = Path("configs/specialist-pilot.yaml"),
     junit: Annotated[Path | None, typer.Option("--junit", exists=True, dir_okay=False)] = None,
+    conversations: Annotated[
+        Path | None, typer.Option("--conversations", exists=True, dir_okay=False)
+    ] = None,
     output_stem: Annotated[Path, typer.Option("--output-stem")] = Path("artifacts/task-status"),
 ) -> None:
     """Report each task's validator, CPU evidence, environment and selection state."""
-    report = task_status_report(load_config(config_path), junit)
+    report = task_status_report(load_config(config_path), junit, conversations)
     write_task_status_reports(report, output_stem)
     typer.echo(json.dumps({"output_stem": str(output_stem), "summary": report["summary"]}))
 

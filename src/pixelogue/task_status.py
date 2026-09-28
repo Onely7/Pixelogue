@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -10,10 +11,11 @@ from xml.etree import ElementTree
 from pixelogue.catalog import task_catalog
 from pixelogue.chart_verifiers import CHART_TASKS
 from pixelogue.config import PixelogueConfig
+from pixelogue.contracts import ConversationArtifact
 from pixelogue.document_verifiers import DOCUMENT_TASKS
 from pixelogue.finite_verifiers import FINITE_TASKS
 from pixelogue.graph_verifiers import GRAPH_TASKS
-from pixelogue.io import write_json
+from pixelogue.io import read_jsonl, write_json
 from pixelogue.pattern_verifiers import PATTERN_TASKS
 from pixelogue.quantitative_verifiers import QUANTITATIVE_TASKS
 from pixelogue.table_verifiers import TABLE_TASKS
@@ -70,10 +72,28 @@ def _junit_cases(path: Path | None) -> dict[str, dict[str, int]]:
     return counts
 
 
-def task_status_report(config: PixelogueConfig, junit_path: Path | None = None) -> dict[str, Any]:
+def task_status_report(
+    config: PixelogueConfig,
+    junit_path: Path | None = None,
+    conversations_path: Path | None = None,
+) -> dict[str, Any]:
     """Join actual admission with scoped test evidence without inferring image accuracy."""
     admissions = admission_report(config.tasks, config.models)
     tests = _junit_cases(junit_path)
+    gpu_cases: dict[str, list[dict[str, Any]]] = {}
+    if conversations_path is not None:
+        for conversation in read_jsonl(conversations_path, ConversationArtifact):
+            for turn in conversation.turns:
+                gpu_cases.setdefault(turn.instruction.task_id, []).append(
+                    {
+                        "image_id": conversation.image.image_id,
+                        "source_id": conversation.image.source_id,
+                        "conversation_id": conversation.conversation_id,
+                        "turn_index": turn.turn_index,
+                        "status": turn.status,
+                        "generator_model": turn.generation_model,
+                    }
+                )
     rows: list[dict[str, Any]] = []
     for task in task_catalog().tasks:
         validators = [registration(name) for name in task.verification_contracts]
@@ -120,11 +140,15 @@ def task_status_report(config: PixelogueConfig, junit_path: Path | None = None) 
                 "cpu_test_module": path,
                 "cpu_contract_status": cpu_status,
                 "cpu_test_counts": test_counts,
+                "cpu_task_specific_boundaries": "not_recorded",
+                "gpu_turn_cases": gpu_cases.get(task.id, []),
+                "gpu_turn_case_count": len(gpu_cases.get(task.id, [])),
             }
         )
     return {
         "config_hash": config.config_hash,
         "junit_path": str(junit_path) if junit_path is not None else None,
+        "conversations_path": str(conversations_path) if conversations_path is not None else None,
         "summary": {
             "tasks": len(rows),
             "implemented": sum(row["implemented"] for row in rows),
@@ -133,9 +157,11 @@ def task_status_report(config: PixelogueConfig, junit_path: Path | None = None) 
             "cpu_shared_contract_passed": sum(
                 row["cpu_contract_status"] == "shared_contract_tests_passed" for row in rows
             ),
+            "gpu_turn_cases": sum(row["gpu_turn_case_count"] for row in rows),
         },
         "tasks": rows,
         "cpu_evidence_limit": "Passing shared fixtures does not establish natural-image accuracy or all three verdict branches per task.",
+        "gpu_evidence_limit": "These are attempted answer turns only. Candidate-only attempts and judge model identities are not inferred from public conversation records.",
     }
 
 
@@ -150,6 +176,9 @@ def write_task_status_reports(report: dict[str, Any], output_stem: Path) -> None
                 "task_id",
                 "implemented",
                 "cpu_contract_status",
+                "cpu_task_specific_boundaries",
+                "gpu_turn_case_count",
+                "gpu_turn_cases",
                 "environment_ready",
                 "calibration",
                 "normal_selectable",
@@ -163,6 +192,9 @@ def write_task_status_reports(report: dict[str, Any], output_stem: Path) -> None
                     item["task_id"],
                     item["implemented"],
                     item["cpu_contract_status"],
+                    item["cpu_task_specific_boundaries"],
+                    item["gpu_turn_case_count"],
+                    json.dumps(item["gpu_turn_cases"], ensure_ascii=False),
                     item["environment_ready"],
                     item["calibration"],
                     item["normal_selectable"],
@@ -174,14 +206,15 @@ def write_task_status_reports(report: dict[str, Any], output_stem: Path) -> None
         "",
         f"Tasks: {report['summary']['tasks']}; normal selectable: {report['summary']['normal_selectable']}.",
         "",
-        "| # | Task | Implemented | CPU contract | Environment | Calibration | Selectable |",
-        "|---:|---|---|---|---|---|---|",
+        "| # | Task | Implemented | CPU contract | GPU turns | Environment | Calibration | Selectable |",
+        "|---:|---|---|---|---:|---|---|---|",
     ]
     for item in report["tasks"]:
         lines.append(
             f"| {item['number']} | {item['task_id']} | {item['implemented']} | "
-            f"{item['cpu_contract_status']} | {item['environment_ready']} | "
+            f"{item['cpu_contract_status']} | {item['gpu_turn_case_count']} | "
+            f"{item['environment_ready']} | "
             f"{item['calibration']} | {item['normal_selectable']} |"
         )
-    lines += ["", report["cpu_evidence_limit"], ""]
+    lines += ["", report["cpu_evidence_limit"], report["gpu_evidence_limit"], ""]
     output_stem.with_suffix(".md").write_text("\n".join(lines), encoding="utf-8")

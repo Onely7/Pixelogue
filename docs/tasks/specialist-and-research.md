@@ -13,6 +13,8 @@ uv run --locked pixelogue compile --config configs/specialist-pilot.yaml --outpu
 uv run --locked pixelogue task-status --config configs/specialist-pilot.yaml --output-stem artifacts/task-status
 ```
 
+Pass `--junit artifacts/junit.xml` after a full CPU test run, and `--conversations artifacts/<run>/conversations.jsonl` for a specific GPU run. The per-task report then lists recorded answer turns and their generator model. Shared CPU fixtures do not establish positive, incorrect-answer and insufficient-evidence boundaries for every task; those task-specific branches remain `not_recorded` until measured. Candidate-only GPU attempts are not counted as answer turns.
+
 The specialist lock contains SymPy, music21, RDKit and Playwright. It is separate from the application and `runtime/vllm/` environments. The registered rules cover explicit rational geometry, single-voice complete score bars, nonstereo atom/bond graphs, resolved two-terminal circuit nets, one visible UI action, static SVG or limited TikZ, and static HTML/CSS. Unsupported notation, incomplete source evidence and disagreement between two blind image readings produce `UNKNOWN`. A passing syntax check alone cannot certify a visual task.
 
 The render worker accepts a small static syntax grammar, disables JavaScript and Service Workers, blocks browser requests, and runs behind `bwrap` with no network and read-only system mounts. The controller compares the isolated screenshot with the delivered image view under the published RGB and foreground thresholds. If OS isolation or Chromium is unavailable, both render tasks are environment-blocked. Never launch candidate code outside this path. UI actions are checked as declarative data and are never performed.
