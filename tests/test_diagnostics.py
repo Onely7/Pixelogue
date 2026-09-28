@@ -90,6 +90,9 @@ def test_diagnostics_join_image_calls_and_private_stop_without_loading_image(
     assert row["stage_calls"] == {"candidate_binding": 1}
     assert row["turn_stage_calls"] == {"1": {"candidate_binding": 1}}
     assert row["stop_category"] == "MALFORMED_MODEL_OUTPUT"
+    assert row["stop_stage"] == "candidate_binding"
+    assert row["stop_stage_evidence"] == "binding_stop_record"
+    assert row["stop_reason"] == "CANDIDATE_CHECKS_MISMATCH"
     assert row["recorded_stops"][0]["reason"] == "CANDIDATE_CHECKS_MISMATCH"
     assert row["input_tokens"] == 0
     assert row["token_usage_missing_calls"] == 1
@@ -100,3 +103,4 @@ def test_diagnostics_join_image_calls_and_private_stop_without_loading_image(
     assert json.loads(stem.with_suffix(".json").read_text())["model_calls"] == 1
     assert "CANDIDATE_CHECKS_MISMATCH" in stem.with_suffix(".csv").read_text()
     assert "ABSTAINED" in stem.with_suffix(".md").read_text()
+    assert "| source-1 | MALFORMED_MODEL_OUTPUT |" in stem.with_suffix(".md").read_text()

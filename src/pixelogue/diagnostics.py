@@ -33,6 +33,9 @@ class DiagnosticRow(TypedDict):
     source_id: str
     status: str
     stop_category: str
+    stop_stage: str | None
+    stop_stage_evidence: str
+    stop_reason: str | None
     committed_turns: int
     stage_calls: dict[str, int]
     turn_stage_calls: dict[str, dict[str, int]]
@@ -123,6 +126,11 @@ def _stop_category(status: str, stops: list[dict[str, Any]]) -> str:
     return "UNRESOLVED_ABSTENTION"
 
 
+def _markdown_cell(value: str | None) -> str:
+    """Keep private model text inside one report table cell."""
+    return (value or "unrecorded")[:120].replace("|", "\\|").replace("\n", " ")
+
+
 def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[str, Any]:
     """Join public outcomes with private stage and stop evidence for one run."""
     if (
@@ -142,6 +150,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
     metrics: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "stage_calls": Counter(),
+            "stage_sequence": [],
             "turn_stage_calls": defaultdict(Counter),
             "model_calls": 0,
             "invalid_calls": 0,
@@ -155,7 +164,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
     unattributed = 0
     for call in store.connection.execute(
         """SELECT stage, status, request_artifact_hash, input_tokens,
-                  output_tokens, duration_ms FROM model_call"""
+                  output_tokens, duration_ms FROM model_call ORDER BY rowid"""
     ):
         payload, retry = _request_input(store, call["request_artifact_hash"])
         views = payload.get("image_views")
@@ -166,6 +175,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
             continue
         item = metrics[conversation_id]
         item["stage_calls"][call["stage"]] += 1
+        item["stage_sequence"].append(call["stage"])
         history = payload.get("public_history")
         turn_index = (
             0
@@ -192,6 +202,28 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
             stops.get(conversation.conversation_id, []),
             key=lambda stop: (stop["turn_index"] or 0, stop["kind"], stop["artifact_hash"]),
         )
+        explicit_stop = next(
+            (
+                stop
+                for stop in reversed(recorded_stops)
+                if stop["kind"] == "conversation-stop-reasons" and stop["stage"]
+            ),
+            None,
+        )
+        if explicit_stop:
+            stop_stage, stop_stage_evidence = explicit_stop["stage"], "explicit_stop_record"
+        elif any(stop["kind"] == "binding-abstentions" for stop in recorded_stops):
+            stop_stage, stop_stage_evidence = "candidate_binding", "binding_stop_record"
+        elif any(stop["kind"] == "model-output-abstentions" for stop in recorded_stops):
+            stop_stage, stop_stage_evidence = (
+                item["stage_sequence"][-1] if item["stage_sequence"] else None,
+                "last_model_call",
+            )
+        else:
+            stop_stage, stop_stage_evidence = (
+                item["stage_sequence"][-1] if item["stage_sequence"] else None,
+                "last_model_call" if item["stage_sequence"] else "unrecorded",
+            )
         rows.append(
             {
                 "conversation_id": conversation.conversation_id,
@@ -199,6 +231,15 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
                 "source_id": conversation.image.source_id,
                 "status": conversation.status,
                 "stop_category": _stop_category(conversation.status, recorded_stops),
+                "stop_stage": stop_stage,
+                "stop_stage_evidence": stop_stage_evidence,
+                "stop_reason": (
+                    explicit_stop["reason"]
+                    if explicit_stop
+                    else recorded_stops[-1]["reason"]
+                    if recorded_stops
+                    else None
+                ),
                 "committed_turns": sum(turn.status == "COMMITTED" for turn in conversation.turns),
                 "stage_calls": dict(sorted(item["stage_calls"].items())),
                 "turn_stage_calls": {
@@ -260,6 +301,9 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
                 "source_id",
                 "status",
                 "stop_category",
+                "stop_stage",
+                "stop_stage_evidence",
+                "stop_reason",
                 "committed_turns",
                 "model_calls",
                 "invalid_calls",
@@ -293,6 +337,17 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
         "| Status | Count |",
         "|---|---:|",
         *(f"| {status} | {count} |" for status, count in report["status_counts"].items()),
+        "",
+        "| Source | Status | Turns | Stop stage | Reason | Stage evidence | Calls | Retries | Invalid | Duration ms |",
+        "|---|---|---:|---|---|---|---:|---:|---:|---:|",
+        *(
+            f"| {row['source_id']} | {row['stop_category']} | {row['committed_turns']} | "
+            f"{row['stop_stage'] or 'unknown'} | {_markdown_cell(row['stop_reason'])} | "
+            f"{row['stop_stage_evidence']} | "
+            f"{row['model_calls']} | {row['retry_calls']} | {row['invalid_calls']} | "
+            f"{row['duration_ms']} |"
+            for row in report["rows"]
+        ),
         "",
         "Cost is unknown without a recorded price schedule. Stop records are private run evidence; "
         "their absence does not imply that the conversation completed successfully.",
