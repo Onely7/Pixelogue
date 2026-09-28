@@ -37,6 +37,7 @@ uv run --locked pixelogue calibration-build --results-dir artifacts/specialist-e
 `calibration-build` は、重複しない確認用画像groupを使い、Clopper–Pearson法で片側95%の区間を計算します。誤受理率の上限5%以下、正例受理率の下限80%以上の両方が必要です。`UNKNOWN` は正例受理に数えません。通信失敗、不正出力、調整用画像、正例・負例が揃わないgroupは保留として報告します。証明書を手編集せず、適格なmanifestが得られたらコピーした設定の `tasks.calibration_manifest` に指定し、再度 `compile` してください。pilotモデルの校正を標準モデルへ流用できません。
 
 `evaluate-specialist`、`research-history`、`research-ablation` は完了済み試行を再利用して再開します。失敗記録は残し、再試行には `--retry-failed` を指定します。専門タスク評価はモデル呼び出しごとにも保存するため、同じ入力・設定識別を保持し、再試行を挟んで評価モデルのendpointを順次起動できます。
+共有GPUで専門構造の抽出が遅い場合は、評価用にコピーした設定の `runtime.request_timeout_seconds` を最大600秒まで指定できます。既定値は180秒のままです。コピーした設定をrunと共に記録し、時間切れを検証器の判定として扱わないでください。
 専門抽出が構造化出力の検証に失敗した場合は、具体的なSchema違反と領域・回路接続の条件を伝えてblind callを1回だけ追加します。不正な試行は記録に残し、再度失敗すれば `FAILED` のままで校正件数には入れません。
 専門抽出がトークン上限で完全なJSONになる前に止まった場合も、打ち切りを伝えてblind callを1回だけ追加します。Schema違反と長さ上限の再試行は別々に集計します。化学構造の抽出に限り、制約付きデコードで観測した空白反復を避けるため、この再試行ではJSONオブジェクト形式を使います。返答は従来の厳格な `ChemicalSource` Schemaと2評価者のグラフ照合をそのまま通す必要があります。元の不完全出力を残し、2回目も不正なら `FAILED` のままです。
 専門抽出のSchemaでは、公開済みの校正領域、scope ID、配信した画像view IDを固定し、楽譜では対象小節範囲も固定します。抽出には `tasks.evidence_max_tokens` を使い、途中で切れた分子グラフを完全な結果として扱いません。

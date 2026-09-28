@@ -226,7 +226,7 @@ class StorageConfig(StrictModel):
 class RuntimeConfig(StrictModel):
     """Inference request and retry boundaries."""
 
-    request_timeout_seconds: Annotated[int, Field(ge=1, le=180)] = 180
+    request_timeout_seconds: Annotated[int, Field(ge=1, le=600)] = 180
     transport_max_attempts: Literal[1, 2, 3] = 3
     structured_output_max_attempts: Literal[1, 2, 3] = 2
     max_concurrent_images: Annotated[int, Field(ge=1, le=64)] = 1
