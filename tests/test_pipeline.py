@@ -155,7 +155,10 @@ class ScriptedClient:
                             EligibilityObservation(check_id=key, verdict="MET", reason="Visible")
                             for key in candidate["eligibility_checks"]
                         ),
-                        evidence_refs=("entity",),
+                        evidence_refs=tuple(
+                            candidate["required_evidence_ids"]
+                            or candidate["local_evidence_ids"][:1]
+                        ),
                         estimated_answer_tokens=100,
                     )
                     for candidate in payload["candidates"]

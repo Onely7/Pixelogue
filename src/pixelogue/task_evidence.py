@@ -80,6 +80,22 @@ class ScopedEvidenceInventory(StrictModel):
         return self
 
 
+def alias_evidence_ids(
+    inventory: ScopedEvidenceInventory,
+) -> tuple[ScopedEvidenceInventory, dict[str, str]]:
+    """Assign compact controller IDs while preserving every scope and observation."""
+    aliases: dict[str, str] = {}
+    scopes: list[ScopeEvidence] = []
+    for scope in inventory.scopes:
+        observations: list[CapabilityObservation] = []
+        for observation in scope.observations:
+            alias = f"e{len(aliases) + 1}"
+            aliases[observation.evidence_id] = alias
+            observations.append(observation.model_copy(update={"evidence_id": alias}))
+        scopes.append(scope.model_copy(update={"observations": tuple(observations)}))
+    return inventory.model_copy(update={"scopes": tuple(scopes)}), aliases
+
+
 class CapabilityReport(StrictModel):
     """One model observation keyed by its capability in the wire response."""
 

@@ -27,6 +27,7 @@ from pixelogue.task_evidence import (
     PublicParameter,
     ScopedEvidenceInventory,
     ScopeEvidence,
+    alias_evidence_ids,
 )
 from pixelogue.task_runtime import (
     admission_report,
@@ -268,6 +269,30 @@ def test_candidate_input_separates_check_ids_from_parameter_names() -> None:
     assert "scope" not in exposed["bindable_parameter_names"]
     description = next(task for task in task_catalog().tasks if task.id == "grounded_description")
     assert "scope" in bindable_parameter_names(description)
+
+
+def test_compact_evidence_ids_preserve_scope_and_reject_old_references() -> None:
+    original = inventory(
+        scope("left", visible_entity="MET"),
+        scope("right", visible_attribute="MET"),
+    )
+    compact, mapping = alias_evidence_ids(original)
+    assert mapping == {"left:visible_entity": "e1", "right:visible_attribute": "e2"}
+    assert original.scopes[0].observations[0].evidence_id == "left:visible_entity"
+    assert compact.scopes[0].observations[0].detail == original.scopes[0].observations[0].detail
+    assert compact.scopes[1].observations[0].evidence_id == "e2"
+    ScopedEvidenceInventory.model_validate(compact.model_dump())
+    left = next(item for item in candidates(compact) if item.scope_id == "left")
+    assert binding_candidate(left, compact)["local_evidence_ids"] == ["e1"]
+    with pytest.raises(ExecutionError) as caught:
+        bind_candidates(
+            (left,),
+            CandidateBindings(bindings=(binding(left, evidence_refs=("left:visible_entity",)),)),
+            compact,
+            (),
+            TaskRuntimeConfig(),
+        )
+    assert caught.value.reason == "CANDIDATE_EVIDENCE_SCOPE"
 
 
 def test_met_binding_missing_required_public_choice_is_retryable_contract_error() -> None:

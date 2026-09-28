@@ -77,6 +77,7 @@ from pixelogue.task_evidence import (
     CandidateBindingsReport,
     ScopedEvidenceInventory,
     ScopedEvidenceReport,
+    alias_evidence_ids,
 )
 from pixelogue.task_runtime import (
     bind_candidates,
@@ -331,9 +332,13 @@ class SynthesisCoordinator:
                 result.to_inventory(), model_image.view_id, self.config.tasks
             ),
         )
-        inventory = evidence_report.to_inventory()
+        inventory, evidence_aliases = alias_evidence_ids(evidence_report.to_inventory())
         if inventory.image_id != image.image_id:
             raise ExecutionError("EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image")
+        self.store.write_json_artifact(
+            "evidence-id-aliases",
+            {"image_id": image.image_id, "original_to_local": evidence_aliases},
+        )
 
         terminal_status: Literal["QUALITY_CANDIDATE", "REJECTED", "ABSTAINED", "ERROR"] = (
             "QUALITY_CANDIDATE"
