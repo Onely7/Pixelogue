@@ -899,6 +899,8 @@ class SynthesisCoordinator:
                 "message": str(error),
             },
         )
+        if abstained:
+            return self._finish_conversation(conversation, persist=True)
         self.store.write_json_artifact("conversations", conversation.model_dump(mode="json"))
         return conversation
 

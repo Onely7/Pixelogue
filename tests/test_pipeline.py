@@ -364,7 +364,7 @@ def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_erro
     tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     image, root = image_artifact
-    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    coordinator, store, _, _, _ = _coordinator(tmp_path, evaluation_mode="holistic")
     original = coordinator._invoke
     reason = "MODEL_SCHEMA_MISMATCH"
 
@@ -377,8 +377,16 @@ def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_erro
     try:
         job = SynthesisJob(image=image, target_language="en", generator_role="generator_a")
         abstained = coordinator._synthesize_job(job, root)
+        resumed = coordinator.synthesize_image(image, root, generator_role="generator_a")
         reason = "MODEL_HTTP_STATUS"
-        failed = coordinator._synthesize_job(job, root)
+        failed = coordinator._synthesize_job(
+            SynthesisJob(
+                image=image.model_copy(update={"image_id": "f" * 64}),
+                target_language="en",
+                generator_role="generator_a",
+            ),
+            root,
+        )
         abstention_count = store.connection.execute(
             "SELECT COUNT(*) FROM artifact WHERE kind = 'model-output-abstentions'"
         ).fetchone()[0]
@@ -387,6 +395,7 @@ def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_erro
 
     assert abstained.status == "ABSTAINED"
     assert not abstained.turns
+    assert resumed == abstained
     assert failed.status == "ERROR"
     assert abstention_count == 1
 
