@@ -682,6 +682,35 @@ def test_identification_answer_echo_stops_before_answer_rating(
     )
 
 
+def test_rerating_rejects_saved_identification_answer_echo_without_model_calls(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, evaluation_mode="holistic"
+    )
+    try:
+        original = coordinator.synthesize_image(image, root)
+        assert original.status == "QUALITY_CANDIDATE"
+        first = original.turns[0]
+        assert first.instruction.task_id == "object_identification"
+        leaked = first.model_copy(
+            update={
+                "question": first.question.model_copy(update={"content": "What is this gibbon?"}),
+                "answer": first.answer.model_copy(update={"content": "gibbon"}),
+            }
+        )
+        saved = original.model_copy(update={"turns": (leaked,), "status": "REJECTED"})
+        calls_before = sum(len(client.calls) for client in (generator_a, generator_b))
+        rerated = coordinator.rate_existing(saved, root)
+        calls_after = sum(len(client.calls) for client in (generator_a, generator_b))
+    finally:
+        store.close()
+    assert rerated.status == "REJECTED"
+    assert rerated.turns[0].status == "REJECTED"
+    assert calls_after == calls_before
+
+
 def test_repeated_answered_request_catches_observed_sheep_paraphrase() -> None:
     first_question = "What are the colors and shapes of the sheep visible in the foreground?"
     second_question = "What colors and shapes are visible in the sheep located in the foreground?"
