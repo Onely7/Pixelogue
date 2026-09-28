@@ -227,6 +227,8 @@ def required_parameter_names(task: TaskDefinition, profile: str = "normal") -> t
     }
     if task.id == "scene_categorization":
         required.add("category_set")
+    if task.id == "attribute_lookup":
+        required.add("attribute")
     if task.id == "referring_expression_generation":
         required.add("target_binding")
     return tuple(sorted(required))
@@ -370,6 +372,14 @@ def bind_candidates(
                     "CANDIDATE_PARAMETER_MISSING",
                     f"Candidate {binding.candidate_id}: missing public parameter names "
                     f"{sorted(missing)}; required names {sorted(required_choices)}",
+                )
+            if task.id == "attribute_lookup" and (
+                parameters["attribute"].origin != "instruction"
+                or not isinstance(parameters["attribute"].value, str)
+            ):
+                raise ExecutionError(
+                    "CANDIDATE_PARAMETER_VALUE",
+                    "Attribute lookup needs a public property name, not an image-sourced answer",
                 )
             if task.id == "scene_categorization":
                 choices = parameters["category_set"]

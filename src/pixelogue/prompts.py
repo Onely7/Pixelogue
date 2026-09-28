@@ -135,6 +135,9 @@ not absence. Copy image_id and each view_id exactly. Respect max_scopes and
 max_observations_per_scope. Within one scope, report each capability at most once: a capability
 describes support for an operation across the scope, not one observation per visible object.
 Summarize multiple instances in that observation's detail. Use the actual supplied resolution.
+For a salient resolved subject, include visible_attribute when independent visible properties
+are clear (for example fur color and nose color); name each property separately in the detail
+so later turns can ask for different facts. Do not infer hidden properties.
 Use only capability names from capability_vocabulary. Do not infer domains from source
 names or annotations. Broad discovery is followed by focused binding of eligible operations.""",
     "candidate_binding": """Bind only the controller-provided candidates to locally supported
@@ -146,6 +149,9 @@ Read public_history before choosing a target, attribute, or condition. A complet
 answer already cover that exact request. Prefer a visibly supported new target, attribute, or public
 condition; omit a binding if it can only repeat a completed request. Never infer an old answer from
 the image when deciding whether a new request is available.
+For attribute_lookup, bind the public attribute parameter to the exact property requested
+(for example fur color or nose color), with origin=instruction and no answer value. Select a
+different property when an earlier turn already asked about one on this target.
 Use target_binding only as an additional parameter for referring_expression_generation. Provide a
 count_unit for counting; predicate for selection, group_key for grouping, frame for spatial
 relations, precision for numerical readings, claim for verification/localization, local_question for

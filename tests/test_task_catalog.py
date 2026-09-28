@@ -277,6 +277,45 @@ def test_met_binding_missing_required_public_choice_is_retryable_contract_error(
     assert "category_set" in str(caught.value)
 
 
+def test_attribute_binding_names_distinct_public_properties_across_turns() -> None:
+    data = inventory(scope("dog", visible_entity="MET", visible_attribute="MET"))
+    template = next(item for item in candidates(data) if item.task_id == "attribute_lookup")
+    assert selector_candidate(template)["required_parameter_names"] == ["attribute"]
+    with pytest.raises(ExecutionError) as missing:
+        bind_candidates(
+            (template,),
+            CandidateBindings(bindings=(binding(template),)),
+            data,
+            (),
+            TaskRuntimeConfig(),
+        )
+    assert missing.value.reason == "CANDIDATE_PARAMETER_MISSING"
+
+    target = PublicParameter(name="target", value="the dog", origin="instruction")
+
+    def bind_property(property_name: str, used: frozenset[str] = frozenset()):
+        proposal = binding(
+            template,
+            public_parameters=(
+                target,
+                PublicParameter(name="attribute", value=property_name, origin="instruction"),
+            ),
+        )
+        return bind_candidates(
+            (template,),
+            CandidateBindings(bindings=(proposal,)),
+            data,
+            (),
+            TaskRuntimeConfig(),
+            used,
+        )
+
+    fur = bind_property("fur color")[0]
+    assert not bind_property("fur color", frozenset({fur.candidate_id}))
+    nose = bind_property("nose color", frozenset({fur.candidate_id}))[0]
+    assert nose.candidate_id != fur.candidate_id
+
+
 def test_scene_categories_require_distinct_public_choices() -> None:
     data = inventory(scope("left", scene_context="MET"))
     template = next(item for item in candidates(data) if item.task_id == "scene_categorization")

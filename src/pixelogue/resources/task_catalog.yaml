@@ -603,7 +603,8 @@ tasks:
     state.
   verification_contracts:
   - dual_visual_review
-  parameters: {}
+  parameters:
+    attribute: Name the requested visible property or object part publicly, without its value.
   inspiration_subset_numbers:
   - 1
   - 43
