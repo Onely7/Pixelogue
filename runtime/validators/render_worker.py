@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import html
 import json
+import os
 import re
 import resource
 import sys
@@ -278,9 +279,11 @@ def validate_markup(
 def main() -> None:
     """Render one bounded request without network, script or persistent browser state."""
     resource.setrlimit(resource.RLIMIT_CPU, (15, 15))
-    resource.setrlimit(resource.RLIMIT_AS, (3_000_000_000, 3_000_000_000))
+    if os.environ.get("PIXELOGUE_RENDER_CGROUP") != "1":
+        resource.setrlimit(resource.RLIMIT_AS, (3_000_000_000, 3_000_000_000))
     resource.setrlimit(resource.RLIMIT_FSIZE, (1_000_000, 1_000_000))
-    resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
+    if os.environ.get("PIXELOGUE_RENDER_CGROUP") != "1":
+        resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
     try:
         request = json.loads(sys.stdin.read(100_001))
         width, height = request["width"], request["height"]
@@ -296,7 +299,9 @@ def main() -> None:
 
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
-                headless=True, executable_path="/usr/bin/google-chrome"
+                headless=True,
+                executable_path="/usr/bin/google-chrome",
+                args=["--disable-gpu"],
             )
             context = browser.new_context(
                 viewport={"width": width, "height": height},

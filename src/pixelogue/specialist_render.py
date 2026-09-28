@@ -137,5 +137,6 @@ def verify_render(
     return verdict, {
         "mean_rgb_error": mean_error,
         "foreground_overlap": foreground_overlap,
+        "isolation_attempts": result.get("isolation_attempts", 1),
         "thresholds": {"max_mean_rgb_error": 0.12, "min_foreground_overlap": 0.80},
     }

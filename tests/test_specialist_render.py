@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 import runpy
 import subprocess
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 from pixelogue.contracts import GateVerdict
-from pixelogue.specialist_env import worker_root
+from pixelogue.specialist_env import call_renderer, environment_error, worker_root
 from pixelogue.specialist_render import RenderSource, _pixel_metrics, verify_render
 from pixelogue.task_evidence import ImageRegion
 
@@ -77,6 +80,25 @@ def test_allowed_static_grammars_parse_without_running_tex_or_browser() -> None:
     assert labels == ("Go",) and "<button" in html
 
 
+def test_isolated_renderer_draws_static_svg_when_host_supports_it() -> None:
+    """Exercise the real OS isolation and screenshot path on a capable host."""
+    if error := environment_error("renderer", "playwright"):
+        pytest.skip(f"isolated renderer unavailable: {error}")
+    result = call_renderer(
+        {
+            "format": "svg",
+            "code": '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60">'
+            '<rect x="10" y="10" width="40" height="30" fill="black"/></svg>',
+            "width": 80,
+            "height": 60,
+        }
+    )
+    assert result["verdict"] == "MET"
+    assert result["isolation_attempts"] in {1, 2}
+    with Image.open(io.BytesIO(base64.b64decode(result["png_base64"], validate=True))) as image:
+        assert image.size == (80, 60)
+
+
 def test_sparse_blank_render_does_not_pass_foreground_comparison(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -96,9 +118,6 @@ def test_sparse_blank_render_does_not_pass_foreground_comparison(
     )
     mean, overlap = _pixel_metrics(reference, blank, source.scope_region)
     assert mean < 0.12 and overlap < 0.80
-
-    import base64
-    import io
 
     buffer = io.BytesIO()
     reference.save(buffer, format="PNG")
