@@ -223,6 +223,9 @@ For text_transcription, bound the requested text to a visible absolute region or
 scope. Do not locate text relative to another object: the transcript checker has no coordinates
 to verify above, below, beside, left, or right relationships.
 For a single still image, ask about visible action or posture only when supported by a visible cue.
+For visible_action_relation, identify the subject using non-action visual cues. Never state
+the action or posture being requested in the question, even if a private target or scope
+description contains it. If the subject cannot be identified without that clue, return text=null.
 The absence of motion blur cannot establish that an object is stationary.
 Never request code execution. Return public text, or set text to null and give an internal reason if unsupported.""",
     "question_intent": """Independently classify the exact operation requested by the public

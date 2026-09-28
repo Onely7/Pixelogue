@@ -131,12 +131,16 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         return candidate.model_dump(mode="json", exclude_none=True)
     catalog = task_catalog()
     task = next(task for task in catalog.tasks if task.id == candidate.task_id)
-    answer_label_task = task.id in {"object_identification", "scene_categorization"}
+    private_target_task = task.id in {
+        "object_identification",
+        "scene_categorization",
+        "visible_action_relation",
+    }
     scope = (
         "the selected image scene"
         if task.id == "scene_categorization"
         else "the selected image region"
-        if task.id == "object_identification"
+        if task.id in {"object_identification", "visible_action_relation"}
         else candidate.visible_scope
     )
     checks = {name: catalog.eligibility_checks[name] for name in task.eligibility_checks}
@@ -164,7 +168,7 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         "public_parameters": [
             p.model_dump(mode="json", exclude={"evidence_refs"})
             for p in candidate.public_parameters
-            if not (answer_label_task and p.name == "target")
+            if not (private_target_task and p.name == "target")
         ],
         "parameter_contract": task.parameters,
         "eligibility_checks": checks,
