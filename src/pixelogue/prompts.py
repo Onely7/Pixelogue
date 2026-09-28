@@ -159,6 +159,8 @@ Bind enumerated input operation choices (except optional derived_forms and outpu
 to one permitted value. Choose concrete public predicates, targets, precision and hypotheses;
 never put the answer or a hidden factual operand into a parameter. Each parameter names its origin:
 instruction for a public choice/hypothesis, image for observed facts, history for committed messages.
+For scene_categorization, category_set is an instruction-origin tuple of at least two distinct
+ordinary category choices, including the image-supported target. A single answer label is not a set.
 Factual origins need references to this scope's evidence IDs or exact public message IDs.
 An instruction choice has no evidence_refs. An image or history fact must include at least one
 matching evidence_id or public message ID. If origin is image, use only local evidence_ids;
@@ -204,10 +206,12 @@ listed candidate lacks a supported new request.""",
 the target language and grounded in the visible scope and public history. Realize the selected
 task_id and operation exactly; do not replace it with an easier nearby task or repeat an answered
 request. Every public parameter must be realized in the question, including scope, counting unit,
-precision, predicates and hypothetical assumptions. Ask exactly one final semantic operation;
+precision, predicates and hypothetical assumptions. For scene_categorization, category_set
+must contain at least two distinct ordinary alternatives, including the supported target category;
+present all alternatives in the public question. Ask exactly one final semantic operation;
 independent compound requests are unsupported and must not be mislabeled as their first operation.
-For object_identification, the target value can itself be the category to name. Do not put that
-category or a synonym of the answer in the question. Refer by location or visible non-category
+For object_identification, the target can itself be the category to name and is withheld from this
+public operation view. Do not put that category or a synonym of the answer in the question. Refer by location or visible non-category
 traits; if that does not uniquely identify the target, return text=null with a reason.
 For a single still image, ask about visible action or posture only when supported by a visible cue.
 The absence of motion blur cannot establish that an object is stationary.

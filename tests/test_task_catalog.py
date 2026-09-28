@@ -276,6 +276,72 @@ def test_met_binding_missing_required_public_choice_is_retryable_contract_error(
     assert "category_set" in str(caught.value)
 
 
+def test_scene_categories_require_distinct_public_choices() -> None:
+    data = inventory(scope("left", scene_context="MET"))
+    template = next(item for item in candidates(data) if item.task_id == "scene_categorization")
+    target = PublicParameter(
+        name="target",
+        value="residential street",
+        origin="image",
+        evidence_refs=("left:scene_context",),
+    )
+    singleton = PublicParameter(
+        name="category_set",
+        value="residential street",
+        origin="image",
+        evidence_refs=("left:scene_context",),
+    )
+    with pytest.raises(ExecutionError) as caught:
+        bind_candidates(
+            (template,),
+            CandidateBindings(bindings=(binding(template, public_parameters=(target, singleton)),)),
+            data,
+            (),
+            TaskRuntimeConfig(),
+        )
+    assert caught.value.reason == "CANDIDATE_PARAMETER_VALUE"
+
+    alternatives = PublicParameter(
+        name="category_set",
+        value=("residential street", "rural road"),
+        origin="instruction",
+    )
+    admitted = bind_candidates(
+        (template,),
+        CandidateBindings(bindings=(binding(template, public_parameters=(target, alternatives)),)),
+        data,
+        (),
+        TaskRuntimeConfig(),
+    )
+    assert len(admitted) == 1
+
+
+def test_answer_labels_are_hidden_from_model_operation_contract() -> None:
+    data = inventory(scope("left", visible_entity="MET", scene_context="MET"))
+    for task_id, label, visible_scope in (
+        ("object_identification", "gibbon", "A gibbon sitting on a metal railing."),
+        ("scene_categorization", "collapsed bridge", "A collapsed bridge scene."),
+    ):
+        template = next(item for item in candidates(data) if item.task_id == task_id)
+        candidate = template.model_copy(
+            update={
+                "visible_scope": visible_scope,
+                "public_parameters": (
+                    PublicParameter(
+                        name="target",
+                        value=label,
+                        origin="image",
+                        evidence_refs=(f"left:{template.required_capabilities[0]}",),
+                    ),
+                ),
+            }
+        )
+        contract = operation_contract(candidate)
+        assert label not in json.dumps(contract).lower()
+        assert all(parameter["name"] != "target" for parameter in contract["public_parameters"])
+        assert label not in json.dumps(selector_candidate(candidate)).lower()
+
+
 def test_missing_required_evidence_rejects_only_that_candidate() -> None:
     data = inventory(scope("left", visible_entity="MET", visible_attribute="MET"))
     available = candidates(data)

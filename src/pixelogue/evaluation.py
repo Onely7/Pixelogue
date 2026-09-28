@@ -113,6 +113,77 @@ def identification_answer_in_question(question: str, answer: str) -> bool:
     return bool(0 < len(words) <= 6 and _contains_public_phrase(question, words))
 
 
+def identification_answer_in_history(answer: str, history: Sequence[PublicMessage]) -> bool:
+    """Reject a short identification label already present in public dialogue."""
+    words = _public_words(answer)
+    if words and words[0] in {"a", "an", "the"}:
+        words = words[1:]
+    return bool(
+        0 < len(words) <= 6
+        and len("".join(words)) >= 3
+        and any(_contains_public_phrase(message.content, words) for message in history)
+    )
+
+
+def transcription_answer_in_question(question: str, answer: str) -> bool:
+    """Reject a transcription already quoted in its own question."""
+    words = _public_words(answer)
+    return bool(words and len("".join(words)) >= 4 and _contains_public_phrase(question, words))
+
+
+def scene_options_in_question(question: str, options: tuple[str, ...]) -> bool:
+    """Require every declared scene choice to be visible in the public request."""
+    return bool(
+        len(options) >= 2
+        and all(
+            (words := _public_words(option)) and _contains_public_phrase(question, words)
+            for option in options
+        )
+    )
+
+
+_ACTION_FORMS = {
+    form: action
+    for action, forms in {
+        "sit": ("sit", "sits", "sitting", "seated"),
+        "stand": ("stand", "stands", "standing"),
+        "lie": ("lie", "lies", "lying"),
+        "walk": ("walk", "walks", "walking"),
+        "run": ("run", "runs", "running"),
+        "drink": ("drink", "drinks", "drinking"),
+        "eat": ("eat", "eats", "eating"),
+        "draw": ("draw", "draws", "drawing"),
+        "paint": ("paint", "paints", "painting"),
+        "write": ("write", "writes", "writing"),
+        "read": ("read", "reads", "reading"),
+        "drive": ("drive", "drives", "driving"),
+        "ride": ("ride", "rides", "riding"),
+        "hold": ("hold", "holds", "holding"),
+        "grip": ("grip", "grips", "gripping"),
+        "look": ("look", "looks", "looking"),
+        "jump": ("jump", "jumps", "jumping"),
+    }.items()
+    for form in forms
+}
+
+
+def action_answer_already_public(
+    question: str, answer: str, prior_scope_texts: Sequence[str]
+) -> bool:
+    """Catch a leading action supplied by the question or same-scope history."""
+    action = next(
+        (_ACTION_FORMS[word] for word in _public_words(answer) if word in _ACTION_FORMS),
+        None,
+    )
+    return bool(
+        action is not None
+        and any(
+            action in {_ACTION_FORMS[word] for word in _public_words(text) if word in _ACTION_FORMS}
+            for text in (question, *prior_scope_texts)
+        )
+    )
+
+
 def _contains_public_phrase(question: str, phrase_words: list[str]) -> bool:
     question_words = _public_words(question)
     for start, word in enumerate(question_words):

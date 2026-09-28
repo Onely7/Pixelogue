@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -130,6 +131,26 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         return candidate.model_dump(mode="json", exclude_none=True)
     catalog = task_catalog()
     task = next(task for task in catalog.tasks if task.id == candidate.task_id)
+    answer_label_task = task.id in {"object_identification", "scene_categorization"}
+    target = next(
+        (
+            parameter.value
+            for parameter in candidate.public_parameters
+            if parameter.name == "target"
+        ),
+        None,
+    )
+    scope = candidate.visible_scope
+    if answer_label_task and isinstance(target, str):
+        if task.id == "scene_categorization":
+            scope = "the selected image scene"
+        else:
+            scope = re.sub(
+                rf"(?<!\w){re.escape(target)}(?!\w)",
+                "the selected subject",
+                scope,
+                flags=re.IGNORECASE,
+            )
     checks = {name: catalog.eligibility_checks[name] for name in task.eligibility_checks}
     if candidate.calibrated_domain is not None:
         checks["calibrated_domain_supported"] = (
@@ -146,7 +167,7 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         "task_id": task.id,
         "family": task.family,
         "definition": task.definition_en,
-        "scope": candidate.visible_scope,
+        "scope": scope,
         "scope_id": candidate.scope_id,
         "profile": candidate.profile,
         "profile_contract": catalog.profile_contracts[candidate.profile].model_dump(
@@ -155,6 +176,7 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         "public_parameters": [
             p.model_dump(mode="json", exclude={"evidence_refs"})
             for p in candidate.public_parameters
+            if not (answer_label_task and p.name == "target")
         ],
         "parameter_contract": task.parameters,
         "eligibility_checks": checks,
@@ -351,6 +373,20 @@ def bind_candidates(
                     f"Candidate {binding.candidate_id}: missing public parameter names "
                     f"{sorted(missing)}; required names {sorted(required_choices)}",
                 )
+            if task.id == "scene_categorization":
+                choices = parameters["category_set"]
+                if (
+                    choices.origin != "instruction"
+                    or not isinstance(choices.value, tuple)
+                    or len(choices.value) < 2
+                    or len({value.casefold() for value in choices.value}) != len(choices.value)
+                    or parameters["target"].value not in choices.value
+                ):
+                    raise ExecutionError(
+                        "CANDIDATE_PARAMETER_VALUE",
+                        "Scene categories require at least two distinct public alternatives "
+                        "including the bound target",
+                    )
             if task.id == "ui_action_specification":
                 if parameters["action"].value == "input" and "input_text" not in parameters:
                     continue

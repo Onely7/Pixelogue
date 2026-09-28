@@ -28,11 +28,15 @@ from pixelogue.contracts import (
 )
 from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import (
+    action_answer_already_public,
     applicable_rubric_items,
     has_natural_language_content,
+    identification_answer_in_history,
     identification_answer_in_question,
     identification_label_in_question,
     repeated_answered_request,
+    scene_options_in_question,
+    transcription_answer_in_question,
 )
 from pixelogue.export import training_record
 from pixelogue.ledger import RequirementInventory, RequirementSpec
@@ -184,6 +188,8 @@ class ScriptedClient:
                 text = f"What color is visible region {payload['turn_index']}?"
             elif stage == "answer_generation" and self.echo_answer_prompt:
                 text = STAGE_INSTRUCTIONS["answer_generation"]
+            elif stage == "answer_generation":
+                text = f"Blue aspect {len(payload['public_history'])}."
             else:
                 text = "Blue."
             value = TextPayload(
@@ -588,6 +594,48 @@ def test_identification_question_must_not_contain_its_target_or_answer():
     assert not identification_label_in_question("What insect is visible?", "in")
 
 
+def test_public_text_checks_catch_observed_multiturn_leaks() -> None:
+    history = (
+        PublicMessage(
+            message_id="q1",
+            turn_index=1,
+            role="user",
+            content="What action is the man performing with the striped knit hat?",
+        ),
+        PublicMessage(
+            message_id="a1",
+            turn_index=1,
+            role="assistant",
+            content="The man is looking left.",
+        ),
+    )
+    assert identification_answer_in_history("knit hat", history)
+    assert not identification_answer_in_history("sedan", history)
+    assert transcription_answer_in_question(
+        'What does the text "PSEUDO COLOR 0243_2" read?', "PSEUDO COLOR\n0243_2"
+    )
+    assert not transcription_answer_in_question("What does the label read?", "PSEUDO COLOR")
+    assert action_answer_already_public(
+        "What action is the gibbon displaying while seated?",
+        "The gibbon is sitting upright on the railing.",
+        (),
+    )
+    assert action_answer_already_public(
+        "What action is the hand performing?",
+        "The hand is drawing a sketch.",
+        ("What object is being used to draw the sketch?",),
+    )
+    assert not action_answer_already_public(
+        "What is the man doing near the wall?", "The man is painting.", ("The man is standing.",)
+    )
+    assert scene_options_in_question(
+        "Is this a residential street or a rural road?", ("residential street", "rural road")
+    )
+    assert not scene_options_in_question(
+        "What type of scene is this?", ("residential street", "rural road")
+    )
+
+
 def test_identification_target_leak_retries_before_answer(
     tmp_path: Path, image_artifact, monkeypatch
 ) -> None:
@@ -602,11 +650,11 @@ def test_identification_target_leak_retries_before_answer(
                 stage == "question_generation"
                 and payload["selected_instruction"]["task_id"] == "object_identification"
             ):
-                target = next(
-                    parameter["value"]
+                assert all(
+                    parameter["name"] != "target"
                     for parameter in payload["selected_instruction"]["public_parameters"]
-                    if parameter["name"] == "target"
                 )
+                target = f"the blue region, aspect {len(payload['public_history'])}"
                 return ModelResponse(
                     value=TextPayload(text=f"What is {target}?"),
                     request_hash=response.request_hash,

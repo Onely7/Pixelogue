@@ -38,16 +38,20 @@ from pixelogue.contracts import (
 )
 from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import (
+    action_answer_already_public,
     aggregate_rating,
     applicable_rubric_items,
     consensus,
     has_natural_language_content,
+    identification_answer_in_history,
     identification_answer_in_question,
     identification_label_in_question,
     item_id,
     question_fit_consensus,
     repeated_answered_request,
     repeated_public_question,
+    scene_options_in_question,
+    transcription_answer_in_question,
 )
 from pixelogue.ledger import (
     Requirement,
@@ -82,6 +86,17 @@ from pixelogue.task_runtime import (
 from pixelogue.task_verification import verify_operation
 
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
+type PublicTextRejectionReason = Literal[
+    "PRIVATE_PROMPT_ECHO",
+    "REPEATED_PUBLIC_QUESTION",
+    "REPEATED_ANSWERED_REQUEST",
+    "IDENTIFICATION_TARGET_IN_QUESTION",
+    "IDENTIFICATION_ANSWER_IN_QUESTION",
+    "IDENTIFICATION_ANSWER_ALREADY_PUBLIC",
+    "TRANSCRIPTION_ANSWER_IN_QUESTION",
+    "ACTION_ALREADY_PUBLIC",
+    "CATEGORY_OPTIONS_NOT_PUBLIC",
+]
 MODEL_OUTPUT_ABSTENTIONS = frozenset(
     {
         "MODEL_CONTENT_EMPTY",
@@ -439,6 +454,21 @@ class SynthesisCoordinator:
                     and identification_label_in_question(result.text, target)
                 ):
                     reason = "IDENTIFICATION_TARGET_IN_QUESTION"
+                elif selected_instruction.task_id == "scene_categorization" and not (
+                    isinstance(
+                        options := next(
+                            (
+                                parameter.value
+                                for parameter in selected_instruction.public_parameters
+                                if parameter.name == "category_set"
+                            ),
+                            None,
+                        ),
+                        tuple,
+                    )
+                    and scene_options_in_question(result.text, options)
+                ):
+                    reason = "CATEGORY_OPTIONS_NOT_PUBLIC"
                 else:
                     return
                 self._record_public_text_rejection(
@@ -474,6 +504,7 @@ class SynthesisCoordinator:
                 if error.reason not in {
                     "REPEATED_PUBLIC_QUESTION",
                     "IDENTIFICATION_TARGET_IN_QUESTION",
+                    "CATEGORY_OPTIONS_NOT_PUBLIC",
                 }:
                     raise
                 terminal_status = "REJECTED"
@@ -611,19 +642,20 @@ class SynthesisCoordinator:
                 terminal_stage = "answer_generation"
                 terminal_reason = "REPEATED_ANSWERED_REQUEST"
                 break
-            if selected.task_id == "object_identification" and identification_answer_in_question(
-                question.content, answer.content
-            ):
+            disclosure = self._answer_disclosure_reason(
+                selected, question.content, answer.content, snapshot.public_history, turns
+            )
+            if disclosure is not None:
                 self._record_public_text_rejection(
                     conversation_id,
                     turn_index,
                     field="answer",
-                    reason="IDENTIFICATION_ANSWER_IN_QUESTION",
+                    reason=disclosure,
                     content=answer.content,
                 )
                 terminal_status = "REJECTED"
                 terminal_stage = "answer_generation"
-                terminal_reason = "IDENTIFICATION_ANSWER_IN_QUESTION"
+                terminal_reason = disclosure
                 break
             rating = self._rate_turn(
                 conversation_id,
@@ -767,19 +799,46 @@ class SynthesisCoordinator:
                     reason="REPEATED_ANSWERED_REQUEST",
                     content=turn.answer.content,
                 )
-            answer_in_question = (
-                turn.instruction.task_id == "object_identification"
-                and identification_answer_in_question(turn.question.content, turn.answer.content)
+            disclosure = self._answer_disclosure_reason(
+                turn.instruction,
+                turn.question.content,
+                turn.answer.content,
+                snapshot.public_history,
+                rated_turns,
             )
-            if answer_in_question:
+            if disclosure is not None:
                 self._record_public_text_rejection(
                     conversation.conversation_id,
                     turn.turn_index,
                     field="answer",
-                    reason="IDENTIFICATION_ANSWER_IN_QUESTION",
+                    reason=disclosure,
                     content=turn.answer.content,
                 )
-            fit = GateVerdict.NOT_MET if repeated or answer_in_question else GateVerdict.MET
+            options = next(
+                (
+                    parameter.value
+                    for parameter in turn.instruction.public_parameters
+                    if parameter.name == "category_set"
+                ),
+                None,
+            )
+            missing_scene_options = turn.instruction.task_id == "scene_categorization" and not (
+                isinstance(options, tuple)
+                and scene_options_in_question(turn.question.content, options)
+            )
+            if missing_scene_options:
+                self._record_public_text_rejection(
+                    conversation.conversation_id,
+                    turn.turn_index,
+                    field="question",
+                    reason="CATEGORY_OPTIONS_NOT_PUBLIC",
+                    content=turn.question.content,
+                )
+            fit = (
+                GateVerdict.NOT_MET
+                if repeated or disclosure or missing_scene_options
+                else GateVerdict.MET
+            )
             if fit is GateVerdict.MET and (
                 self.config.evaluation.mode == "detailed"
                 or turn.instruction.catalog_version is not None
@@ -1555,19 +1614,42 @@ class SynthesisCoordinator:
                 )
         return conversation
 
+    @staticmethod
+    def _answer_disclosure_reason(
+        instruction: InstructionCandidate,
+        question: str,
+        answer: str,
+        history: Sequence[PublicMessage],
+        prior_turns: Sequence[TurnArtifact],
+    ) -> PublicTextRejectionReason | None:
+        """Find answer text or a leading action already disclosed to the reader."""
+        if instruction.task_id == "object_identification":
+            if identification_answer_in_question(question, answer):
+                return "IDENTIFICATION_ANSWER_IN_QUESTION"
+            if identification_answer_in_history(answer, history):
+                return "IDENTIFICATION_ANSWER_ALREADY_PUBLIC"
+        if instruction.task_id == "text_transcription" and transcription_answer_in_question(
+            question, answer
+        ):
+            return "TRANSCRIPTION_ANSWER_IN_QUESTION"
+        if instruction.task_id == "visible_action_relation":
+            same_scope_texts = tuple(
+                message.content
+                for turn in prior_turns
+                if turn.instruction.scope_id == instruction.scope_id
+                for message in (turn.question, turn.answer)
+            )
+            if action_answer_already_public(question, answer, same_scope_texts):
+                return "ACTION_ALREADY_PUBLIC"
+        return None
+
     def _record_public_text_rejection(
         self,
         conversation_id: str,
         turn_index: int,
         *,
         field: Literal["question", "answer"],
-        reason: Literal[
-            "PRIVATE_PROMPT_ECHO",
-            "REPEATED_PUBLIC_QUESTION",
-            "REPEATED_ANSWERED_REQUEST",
-            "IDENTIFICATION_TARGET_IN_QUESTION",
-            "IDENTIFICATION_ANSWER_IN_QUESTION",
-        ],
+        reason: PublicTextRejectionReason,
         content: str,
     ) -> None:
         """Store a deterministic public-text rejection for replay and diagnosis."""
