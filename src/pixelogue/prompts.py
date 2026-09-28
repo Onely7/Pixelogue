@@ -205,6 +205,8 @@ independent compound requests are unsupported and must not be mislabeled as thei
 For object_identification, the target value can itself be the category to name. Do not put that
 category or a synonym of the answer in the question. Refer by location or visible non-category
 traits; if that does not uniquely identify the target, return text=null with a reason.
+For a single still image, ask about visible action or posture only when supported by a visible cue.
+The absence of motion blur cannot establish that an object is stationary.
 Never request code execution. Return public text, or set text to null and give an internal reason if unsupported.""",
     "question_intent": """Independently classify the exact operation requested by the public
 question. Read the image, public history and all supplied task definitions. Choose the single
@@ -224,7 +226,9 @@ operation_coherent also require every eligibility check and public parameter to 
 alternative profile guard for limitations or false premises; do not require normal answerability
 for a limitation. Both the target and the stated limitation/contradiction must be locally grounded.
 Reject compound independent operations and any extra machine-readable output request not supported
-by the selected operation. Explicit regrouping is useful without requiring a new visual fact.""",
+by the selected operation. A still image alone cannot establish that an object is stationary from
+the absence of blur; mark such an unsupported motion question NOT_MET or UNKNOWN as appropriate.
+Explicit regrouping is useful without requiring a new visual fact.""",
     "requirement_extraction": """Extract explicit requirements from public USER text, not answers.
 This is a text extraction step BEFORE answer generation. No candidate answer or image is supplied:
 that is intentional, NOT evidence of failure. NEVER judge whether an answer exists, is correct,
