@@ -60,6 +60,7 @@ from pixelogue.research_audit import (
     AuditCase,
     AuditPack,
     QuestionBallot,
+    audit_cases_from_conversations,
     build_audit_pack,
     resolve_audit,
     write_audit_pack,
@@ -141,6 +142,20 @@ def research_exposure_report_command(
     """Rebuild the research report from saved trial records without model calls."""
     plan = read_json(output_dir / "plan.json", ExposurePlan)
     typer.echo(json.dumps(write_exposure_reports(plan, output_dir)))
+
+
+@app.command("audit-cases")
+def audit_cases_command(
+    conversations: Annotated[Path, typer.Option("--conversations", exists=True, dir_okay=False)],
+    artifact_root: Annotated[Path, typer.Option("--artifact-root", exists=True, file_okay=False)],
+    output: Annotated[Path, typer.Option("--output", dir_okay=False)],
+) -> None:
+    """Build a complete turn-and-stop frame from one local synthesis output."""
+    cases, skipped_errors = audit_cases_from_conversations(
+        tuple(read_jsonl(conversations, ConversationArtifact)), artifact_root
+    )
+    write_jsonl(output, cases)
+    typer.echo(json.dumps({"cases": len(cases), "execution_errors_skipped": skipped_errors}))
 
 
 @app.command("audit-pack")

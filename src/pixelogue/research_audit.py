@@ -13,22 +13,35 @@ from typing import Annotated, Any, Literal
 from pydantic import Field, model_validator
 
 from pixelogue.config import StrictModel
+from pixelogue.contracts import ConversationArtifact
 from pixelogue.errors import ExternalInputError
 from pixelogue.io import read_json, write_json, write_jsonl
 from pixelogue.serialization import canonical_hash
 
 Verdict = Literal["MET", "NOT_MET", "UNKNOWN"]
+AuditStatus = Literal["accepted", "rejected", "abstained"]
 
 
 class AuditCase(StrictModel):
     """Public material and sampling stratum, without model or automatic verdicts."""
 
     case_id: str = Field(min_length=1)
-    source_status: Literal["accepted", "rejected", "abstained"]
+    source_status: AuditStatus
     image_path: Path
     public_history: tuple[str, ...]
-    question: str = Field(min_length=1)
-    answer: str = Field(min_length=1)
+    question: str | None = None
+    answer: str | None = None
+
+    @model_validator(mode="after")
+    def validate_available_text(self) -> AuditCase:
+        """Keep unanswered and pre-question stops explicit in the sampling frame."""
+        if self.question == "" or self.answer == "":
+            raise ValueError("Audit text must be non-empty when present")
+        if self.answer is not None and self.question is None:
+            raise ValueError("An audit answer requires a public question")
+        if self.source_status == "accepted" and self.answer is None:
+            raise ValueError("An accepted turn requires a public answer")
+        return self
 
 
 class AuditItem(StrictModel):
@@ -91,6 +104,61 @@ class Adjudication(StrictModel):
     reason: str = Field(min_length=1)
 
 
+def audit_cases_from_conversations(
+    conversations: tuple[ConversationArtifact, ...], artifact_root: Path
+) -> tuple[tuple[AuditCase, ...], int]:
+    """Build a turn-level audit frame, retaining stops without a public question."""
+    cases: list[AuditCase] = []
+    skipped_errors = 0
+    root = artifact_root.resolve()
+    turn_status: dict[str, AuditStatus] = {
+        "COMMITTED": "accepted",
+        "REJECTED": "rejected",
+        "ABSTAINED": "abstained",
+    }
+    conversation_status: dict[str, AuditStatus] = {
+        "REJECTED": "rejected",
+        "ABSTAINED": "abstained",
+    }
+    for conversation in conversations:
+        if conversation.status == "ERROR":
+            skipped_errors += 1
+            continue
+        image_path = (root / conversation.image.full_view.relative_path).resolve()
+        if not image_path.is_relative_to(root) or not image_path.is_file():
+            raise ExternalInputError("AUDIT_IMAGE_MISSING", "Audit image view is unavailable")
+        history: list[str] = []
+        for turn in conversation.turns:
+            if turn.status == "ERROR":
+                skipped_errors += 1
+                break
+            cases.append(
+                AuditCase(
+                    case_id=f"{conversation.conversation_id}:turn:{turn.turn_index}",
+                    source_status=turn_status[turn.status],
+                    image_path=image_path,
+                    public_history=tuple(history),
+                    question=turn.question.content,
+                    answer=turn.answer.content,
+                )
+            )
+            if turn.status == "COMMITTED":
+                history.extend((turn.question.content, turn.answer.content))
+        else:
+            if conversation.status in conversation_status and (
+                not conversation.turns or conversation.turns[-1].status == "COMMITTED"
+            ):
+                cases.append(
+                    AuditCase(
+                        case_id=f"{conversation.conversation_id}:stop:{len(conversation.turns) + 1}",
+                        source_status=conversation_status[conversation.status],
+                        image_path=image_path,
+                        public_history=tuple(history),
+                    )
+                )
+    return tuple(cases), skipped_errors
+
+
 def build_audit_pack(cases: tuple[AuditCase, ...], *, rate: float, seed: int) -> AuditPack:
     """Sample each acceptance stratum deterministically and record its full denominator."""
     if not 0 < rate <= 1 or len({case.case_id for case in cases}) != len(cases):
@@ -137,12 +205,23 @@ def build_audit_pack(cases: tuple[AuditCase, ...], *, rate: float, seed: int) ->
 def _card(item: AuditItem, output_dir: Path, *, show_answer: bool) -> str:
     image = os.path.relpath(item.case.image_path.resolve(), output_dir.resolve())
     history = "".join(f"<li>{html.escape(message)}</li>" for message in item.case.public_history)
-    answer = f"<h3>Answer</h3><p>{html.escape(item.case.answer)}</p>" if show_answer else ""
+    question = (
+        html.escape(item.case.question)
+        if item.case.question is not None
+        else "No public question was recorded."
+    )
+    answer = (
+        f"<h3>Answer</h3><p>{html.escape(item.case.answer)}</p>"
+        if show_answer and item.case.answer is not None
+        else "<h3>Answer</h3><p>No public answer was recorded.</p>"
+        if show_answer
+        else ""
+    )
     return (
         f"<article><h2>{html.escape(item.audit_id)}</h2>"
         f'<img src="{html.escape(image, quote=True)}" alt="Audit image" />'
         f"<h3>Public history</h3><ol>{history}</ol>"
-        f"<h3>Question</h3><p>{html.escape(item.case.question)}</p>{answer}</article>"
+        f"<h3>Question</h3><p>{question}</p>{answer}</article>"
     )
 
 
@@ -178,6 +257,7 @@ def write_audit_pack(pack: AuditPack, output_dir: Path) -> None:
                 "note": "",
             }
             for item in pack.items
+            if item.case.question is not None
         ),
     )
     write_jsonl(
@@ -191,6 +271,7 @@ def write_audit_pack(pack: AuditPack, output_dir: Path) -> None:
                 "note": "",
             }
             for item in pack.items
+            if item.case.answer is not None
         ),
     )
 
@@ -217,12 +298,24 @@ def resolve_audit(
     }
     for votes, name in ((question_votes, "question"), (answer_votes, "answer")):
         keys = [(vote.audit_id, vote.rater_id) for vote in votes]
-        if len(keys) != len(set(keys)) or any(vote.audit_id not in ids for vote in votes):
+        applicable = {
+            item.audit_id
+            for item in pack.items
+            if (item.case.question if name == "question" else item.case.answer) is not None
+        }
+        if len(keys) != len(set(keys)) or any(vote.audit_id not in applicable for vote in votes):
             raise ValueError(f"Duplicate or unknown {name} vote")
     if len({(item.audit_id, item.ballot) for item in adjudications}) != len(adjudications):
         raise ValueError("Duplicate adjudications")
     if any(item.audit_id not in ids for item in adjudications):
         raise ValueError("Adjudication references unknown item")
+    if any(
+        (item.case.question if decision.ballot == "question" else item.case.answer) is None
+        for decision in adjudications
+        for item in pack.items
+        if item.audit_id == decision.audit_id
+    ):
+        raise ValueError("Adjudication references an unavailable ballot")
     rows: list[dict[str, Any]] = []
     for item in pack.items:
         output: dict[str, object] = {
@@ -230,6 +323,14 @@ def resolve_audit(
             "source_status": item.case.source_status,
         }
         for kind, ballots in (("question", question_votes), ("answer", answer_votes)):
+            if (item.case.question if kind == "question" else item.case.answer) is None:
+                output[kind] = {
+                    "state": "not_applicable",
+                    "label": None,
+                    "votes": [],
+                    "adjudication": None,
+                }
+                continue
             current = [vote for vote in ballots if vote.audit_id == item.audit_id]
             # Question consensus requires all five dimensions; answer consensus requires both.
             labels = [
@@ -283,7 +384,7 @@ def resolve_audit(
     result["summary"] = {}
     for ballot in ("question", "answer"):
         states = Counter(row[ballot]["state"] for row in rows)
-        rated = len(rows) - states["unreviewed"]
+        rated = len(rows) - states["unreviewed"] - states["not_applicable"]
         result["summary"][ballot] = {
             "states": dict(states),
             "original_agreement_rate": states["agreed"] / rated if rated else None,

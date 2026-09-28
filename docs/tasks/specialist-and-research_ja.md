@@ -48,7 +48,10 @@ uv run --locked pixelogue research-exposure-report --output-dir artifacts/resear
 
 `audit-pack` は accepted・rejected・abstained をそれぞれ抽出し、抽出母集団と実際の抽出率を保存します。`questions.html` に回答を含めず、回答品質は `answers.html` で別に見ます。手法名、モデル名、自動判定、誤り注入種別は閲覧資料に出しません。JSONLテンプレートを独立評価者が記入し、`audit-resolve` が既定3名の元評価を保持して一致・不一致・不明・未評価・裁定を区別します。自動判定を人手の正解ラベルへ置き換えません。
 
+`audit-cases` は保存済みの生成結果から母集団を作ります。確定済み往復は accepted のターン例とし、次の公開質問・回答がないまま会話が止まった場合は別の停止例を残します。停止例も抽出母集団に含め、存在しない質問票・回答票は対象外とします。実行エラーは別件数で報告します。個別ターンの合格と品質候補の完成を混同しません。
+
 ```bash
+uv run --locked pixelogue audit-cases --conversations artifacts/pilot/conversations.jsonl --artifact-root artifacts/prepared --output artifacts/audit-cases.jsonl
 uv run --locked pixelogue audit-pack --cases validation/local-audit-cases.jsonl --output-dir artifacts/audit --rate 0.1
 uv run --locked pixelogue audit-resolve --pack artifacts/audit/pack.json --question-votes artifacts/audit/question-votes.jsonl --answer-votes artifacts/audit/answer-votes.jsonl --output artifacts/audit/resolution.json
 ```
