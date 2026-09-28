@@ -245,7 +245,9 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
             ),
             None,
         )
-        if explicit_stop:
+        if conversation.status == "QUALITY_CANDIDATE":
+            stop_stage, stop_stage_evidence = None, "completed"
+        elif explicit_stop:
             stop_stage, stop_stage_evidence = explicit_stop["stage"], "explicit_stop_record"
         elif any(stop["kind"] == "binding-abstentions" for stop in recorded_stops):
             stop_stage, stop_stage_evidence = "candidate_binding", "binding_stop_record"
@@ -269,7 +271,9 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
                 "stop_stage": stop_stage,
                 "stop_stage_evidence": stop_stage_evidence,
                 "stop_reason": (
-                    explicit_stop["reason"]
+                    None
+                    if conversation.status == "QUALITY_CANDIDATE"
+                    else explicit_stop["reason"]
                     if explicit_stop
                     else recorded_stops[-1]["reason"]
                     if recorded_stops
