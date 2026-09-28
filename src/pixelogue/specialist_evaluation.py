@@ -169,7 +169,7 @@ def run_specialist_evaluation(
         model_calibration_lock(config.models.generator_a),
         model_calibration_lock(config.models.generator_b),
     )
-    stats = {"completed": 0, "failed": 0, "reused": 0, "stage_reused": 0}
+    stats = {"completed": 0, "failed": 0, "reused": 0, "stage_reused": 0, "schema_retries": 0}
     with RunStore(
         config.storage.run_root, run_id, require_local_wal=config.storage.require_local_wal
     ) as store:
@@ -242,16 +242,41 @@ def run_specialist_evaluation(
                             )
                         stats["stage_reused"] += 1
                         return model.model_validate(saved.value)
-                    response = clients[judge].invoke(
-                        stage,
-                        body,
-                        () if stage in ANSWER_ONLY_STAGES else (image,),
-                        model,
-                        max_tokens=2048,
-                        temperature=0.0,
-                        seed=config.seed,
-                        bypass_cache=judge > 0,
-                    )
+                    request_images = () if stage in ANSWER_ONLY_STAGES else (image,)
+                    try:
+                        response = clients[judge].invoke(
+                            stage,
+                            body,
+                            request_images,
+                            model,
+                            max_tokens=2048,
+                            temperature=0.0,
+                            seed=config.seed,
+                            bypass_cache=judge > 0,
+                        )
+                    except ExecutionError as error:
+                        if error.reason != "MODEL_SCHEMA_MISMATCH":
+                            raise
+                        stats["schema_retries"] += 1
+                        response = clients[judge].invoke(
+                            stage,
+                            body,
+                            request_images,
+                            model,
+                            max_tokens=2048,
+                            temperature=0.0,
+                            seed=config.seed,
+                            bypass_cache=True,
+                            retry_feedback=(
+                                f"The previous {stage} output violated its schema: "
+                                f"{str(error)[:900]}. Return one complete object with the "
+                                "required fields. Every normalized region must satisfy "
+                                "0 <= left < right <= 1 and 0 <= top < bottom <= 1. "
+                                "For a complete circuit netlist, include each component's "
+                                ":a and :b terminal exactly once. Do not invent unsupported "
+                                "image details to satisfy the schema."
+                            ),
+                        )
                     value = model.model_validate(response.value)
                     write_json(
                         stage_path,

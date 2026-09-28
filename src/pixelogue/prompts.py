@@ -23,15 +23,17 @@ STAGE_INSTRUCTIONS = {
     "research_question_exposure": """Research-only assessment of a proposed visual question. Judge five independent properties: grounded in the visible image and public history, aligned with the stated operation, answerable from those public inputs, nonredundant with prior questions, and natural in the target language. A proposed answer may be present; do not treat its plausibility as proof of any question property. Return MET, NOT_MET or UNKNOWN for every item with a short reason. Do not judge answer correctness or reveal private model metadata.""",
     "specialist_render_source": """Read only the original scoped image and public code reconstruction request, without candidate code. Record all visible labels exactly and the exact scoped region and image view. Missing labels, unreadable content, unsupported assets, animation or dynamic state are UNKNOWN. Do not infer original source code.""",
     "specialist_ui_source": """Read only the visible scoped screenshot and the public action goal, without a proposed answer. Identify uniquely named controls, enabled state, kind and normalized clickable region in the exact delivered view. An occluded, duplicate or ambiguous target is UNKNOWN. Do not execute any action or infer an unseen screen.""",
-    "specialist_circuit_source": """Read only the scoped circuit drawing and public operation, without the candidate answer. Resolve registered two-terminal symbols, labeled components, each terminal-to-net connection, explicit junction dots and wire crossovers. Record regions for components and nets. An ambiguous crossing, unregistered symbol, dangling terminal or incomplete visible circuit is UNKNOWN. Do not infer electrical performance.""",
+    "specialist_circuit_source": """Read only the scoped circuit drawing and public operation, without the candidate answer. Resolve registered two-terminal symbols, labeled components, each terminal-to-net connection, explicit junction dots and wire crossovers. Record normalized regions with positive width and height. For coverage MET, list every component's :a and :b terminal exactly once across all nets. An ambiguous crossing, unregistered symbol, dangling terminal or incomplete visible circuit is UNKNOWN. Do not infer electrical performance.""",
     "specialist_chemistry_source": """Read the scoped chemical drawing without seeing any candidate answer. Extract every atom, charge, bond and explicitly drawn aromatic ring in the supported nonstereo convention. Mark each source region and preserve atom IDs across bond endpoints. Unknown stereochemistry, ambiguous crossings, unresolved abbreviations or missing bonds require UNKNOWN. Do not infer unseen atoms or chemical intent.""",
-    "specialist_music_source": """Transcribe only the public contiguous complete measures from the visible single-voice staff. Record clef, key, meter, every note or rest, staff step from the bottom staff line, written duration, accidental and tie. Bind each event to its visible region. Never see or infer the candidate answer. Unknown context, incomplete bars, chords, multiple voices and unsupported symbols are UNKNOWN.""",
+    "specialist_music_source": """Transcribe only the public contiguous complete measures from the visible single-voice staff. Record clef, key, meter, every note or rest, staff step from the bottom staff line, written duration, accidental and tie. Bind each event to its visible normalized region. Every region, including scope_region, must have left < right and top < bottom within [0,1]; use {left:0,top:0,right:1,bottom:1} for the full view. Never see or infer the candidate answer. Unknown context, incomplete bars, chords, multiple voices and unsupported symbols are UNKNOWN.""",
     "specialist_geometry_source": """Read the visible geometric premises and the public question
 without seeing a proposed answer. Emit only registered facts: printed givens, right-angle marks,
 triangle angle sums, marked parallel equal angles, stated similarity ratios and explicitly marked
 right triangles. Bind each premise to an image region and copied evidence text. Identify the target
 and its length/angle domain. Approximate visual proportions do not establish exact facts. Unsupported
-theorems, ambiguous symbols, missing conditions or nonunique geometry are UNKNOWN.""",
+theorems, ambiguous symbols, missing conditions or nonunique geometry are UNKNOWN. Every normalized
+region must have left < right and top < bottom within [0,1]; use {left:0,top:0,right:1,bottom:1}
+for the full view.""",
     "specialist_geometry_answer": """Parse only the candidate answer and public geometry question.
 Quote one exact rational or finite decimal value as written. No image or proof facts are supplied.
 Missing units, contradictory numbers or an expression outside the declared result form are UNKNOWN.""",
@@ -138,6 +140,9 @@ Summarize multiple instances in that observation's detail. Use the actual suppli
 For EACH scope with a salient visible animal, person or object, explicitly check for a
 visible_attribute such as color, shape or a visible part. Include a MET visible_attribute
 when clearly supported, even if visible_interaction or scene_context is also present.
+Record this observation in the SAME scope as that subject's visible_entity observation;
+do not create a second scope solely for the subject's attributes. If no such property
+can be read reliably, include visible_attribute with UNKNOWN in that subject scope.
 Do not describe only the background's attributes when the main subject is clearly visible.
 Name independent properties separately in the detail (for example fur color and nose color)
 so later turns can ask for different facts. If a property is unclear, mark it UNKNOWN;
@@ -169,6 +174,9 @@ Bind enumerated input operation choices (except optional derived_forms and outpu
 to one permitted value. Choose concrete public predicates, targets, precision and hypotheses;
 never put the answer or a hidden factual operand into public_parameters. The separate target is a
 controller-private image binding: for object_identification it may be the object category to name;
+choose only a category whose distinguishing visible features are clear. If closely related
+categories remain visually confusable, bind their reliably supported broader category or omit
+the candidate. A plausible familiar label is not sufficient evidence for a fine-grained target.
 for scene_categorization it MUST be exactly one image-supported category_set choice with origin=image
 and local evidence_refs. Do not replace that target with a generic phrase such as "the scene".
 Each parameter names its origin:
@@ -240,6 +248,8 @@ For a single still image, ask about visible action or posture only when supporte
 For visible_action_relation, identify the subject using non-action visual cues. Never state
 the action or posture being requested in the question, even if a private target or scope
 description contains it. If the subject cannot be identified without that clue, return text=null.
+Ask what the subject is doing or how it interacts with a visible target. A question phrased
+as "What is its body posture?" requests an attribute and does not realize this operation.
 The absence of motion blur cannot establish that an object is stationary.
 Never request code execution. Return public text, or set text to null and give an internal reason if unsupported.""",
     "question_intent": """Independently classify the exact operation requested by the public
@@ -247,6 +257,8 @@ question. Read the image, public history and all supplied task definitions. Choo
 task_id whose definition best describes what the question asks the assistant to do. Use null when
 the request is ambiguous, compound, or none of the definitions applies. Distinguish naming an
 object from reporting its attributes, comparing positions, counting, or explaining a claim.
+Classify a question about a subject's body posture as attribute_lookup; classify a question
+about what it is doing or its interaction with another visible object as visible_action_relation.
 Do not infer the task from a likely answer or from a prior turn's task. No selected task or
 candidate answer is supplied; return only your independent classification and brief reason.""",
     "question_fit": """Judge whether the current question has a visible or historically grounded local
@@ -383,6 +395,8 @@ present, verify that the actual public question realizes that exact semantic ope
 profile and public parameters, and that the answer fulfills them. Neighboring tasks are not
 interchangeable. Do not certify an independent compound request as a single operation. A planned
 operation ID is not evidence of realization. UNKNOWN is required for unresolved classification.
+For object identification, compare a named category with distinguishing visible features; a
+related but different category is NOT_MET, and unresolved fine-grained identity is UNKNOWN.
 For limitation/false_premise independently verify the local condition and appropriate response;
 normal answerability is not required, but an unsupported negative assertion is never accepted.
 Return the schema only.""",

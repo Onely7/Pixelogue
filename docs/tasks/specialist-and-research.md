@@ -35,6 +35,7 @@ Use the above model command only after confirming an idle device and explicitly 
 `calibration-build` computes one-sided 95% Clopper–Pearson bounds from independent confirmation image groups. Eligibility requires a false-accept upper bound at most 5% and a positive-accept lower bound at least 80%. `UNKNOWN` is not positive acceptance. Failed calls, invalid output, development cases and groups lacking a positive or negative label remain pending in the report. Keep development and confirmation images separate. After a certificate is eligible, set `tasks.calibration_manifest` in a copied config to its path and re-run `compile`; never edit a certificate by hand. A pilot certificate cannot authorize the standard model pair.
 
 `evaluate-specialist`, `research-history`, and `research-ablation` reuse completed trial records on resume. Failed records remain visible; use `--retry-failed` to attempt them again. Specialist evaluation also saves each model stage independently, so evaluator endpoints can be brought up sequentially across retries with the same input and configuration identity.
+For a specialist source that fails structured-output validation, evaluation makes one additional blind call with the exact schema error and region/netlist constraints. The invalid attempt remains recorded; a second failure stays `FAILED` and never counts as a calibration result.
 
 ## Research-only commands
 

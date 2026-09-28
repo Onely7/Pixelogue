@@ -138,3 +138,74 @@ def test_failed_second_evaluator_resumes_from_first_saved_stage(
     second = run_specialist_evaluation((case,), config, root, output, "study", retry_failed=True)
     assert second["completed"] == 1 and second["stage_reused"] == 1
     assert calls == [1, 2]
+
+
+def test_schema_invalid_specialist_reading_gets_one_bounded_retry(
+    tmp_path: Path, image_artifact, monkeypatch
+) -> None:
+    from pixelogue import specialist_evaluation
+
+    image, root = image_artifact
+    image = image.model_copy(update={"purpose": SourcePurpose.EVALUATION})
+    case = SpecialistEvaluationCase(
+        case_id="retry-case",
+        image=image,
+        task_id="music_notation_reading",
+        domain="single-voice",
+        scope_id="score",
+        view_id=image.full_view.view_id,
+        visible_scope="whole score",
+        public_parameters=(),
+        target_language="en",
+        public_history=(),
+        question="Read this bar",
+        candidate_answer="C4",
+        split="development",
+    )
+    config = load_config(Path("configs/pilot.yaml"))
+    config = config.model_copy(
+        update={
+            "storage": config.storage.model_copy(
+                update={"run_root": tmp_path / "runs", "require_local_wal": False}
+            )
+        }
+    )
+    feedback: list[str | None] = []
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.client = self
+
+        def close(self):
+            pass
+
+        def invoke(self, stage, body, images, model, **kwargs):
+            feedback.append(kwargs.get("retry_feedback"))
+            if len(feedback) == 1:
+                raise ExecutionError("MODEL_SCHEMA_MISMATCH", "scope_region needs positive extent")
+            return SimpleNamespace(
+                value=TextPayload(text="source"),
+                request_hash="a" * 64,
+                response_hash="b" * 64,
+                prompt_tokens=1,
+                completion_tokens=1,
+            )
+
+    def fake_verify(instruction, payload, invoke, image_path):
+        invoke("specialist_music_source", {"question": payload["question"]}, TextPayload, 0)
+        invoke("specialist_music_source", {"question": payload["question"]}, TextPayload, 1)
+        return (
+            SimpleNamespace(
+                name="music_notation_validator",
+                verdict=GateVerdict.MET,
+                evidence=({"judge": 0}, {"judge": 1}),
+            ),
+        )
+
+    monkeypatch.setattr(specialist_evaluation, "VllmClient", FakeClient)
+    monkeypatch.setattr(specialist_evaluation, "verify_operation", fake_verify)
+    stats = run_specialist_evaluation((case,), config, root, tmp_path / "evaluation", "retry")
+    assert stats["completed"] == 1 and stats["schema_retries"] == 1
+    assert feedback[0] is None
+    assert "positive extent" in (feedback[1] or "")
+    assert len(feedback) == 3
