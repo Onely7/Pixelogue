@@ -9,8 +9,6 @@ import json
 from collections import Counter
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-MANIFEST = ROOT / "validation/diverse_web_eval_manifest.jsonl"
 FIELDS = (
     "category_number",
     "category",
@@ -100,10 +98,11 @@ def main() -> None:
     """Write JSON, CSV, and Markdown reports without exposing labels to models."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--diagnostics", required=True, type=Path)
+    parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--output-stem", required=True, type=Path)
     args = parser.parse_args()
     diagnostics = json.loads(args.diagnostics.read_text(encoding="utf-8"))
-    manifest = [json.loads(line) for line in MANIFEST.read_text(encoding="utf-8").splitlines()]
+    manifest = [json.loads(line) for line in args.manifest.read_text(encoding="utf-8").splitlines()]
     summary, rows = build_report(diagnostics, manifest)
     args.output_stem.parent.mkdir(parents=True, exist_ok=True)
     args.output_stem.with_suffix(".json").write_text(
