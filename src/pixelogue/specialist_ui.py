@@ -104,7 +104,8 @@ def verify_ui_action(
         return GateVerdict.UNKNOWN, {"reason": "Public action or unique target is unresolved"}
     first, second = matched[0][0], matched[1][0]
     agreement = _region_iou(first.region, second.region)
-    if first.kind != second.kind or first.enabled != second.enabled or agreement < 0.7:
+    kinds_support_action = action == "click" or first.kind == second.kind == "field"
+    if not kinds_support_action or first.enabled != second.enabled or agreement < 0.7:
         return GateVerdict.UNKNOWN, {
             "reason": "Independent target controls disagree",
             "target_region_iou": agreement,

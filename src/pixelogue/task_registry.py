@@ -146,7 +146,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "ui_action_validator",
-            "2",
+            "3",
             supported_tasks=frozenset({"ui_action_specification"}),
         ),
         ValidatorRegistration(

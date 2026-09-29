@@ -133,3 +133,31 @@ def test_target_consensus_tolerates_irrelevant_controls_but_requires_overlapping
     assert verify_ui_action((first, wrong_kind), *args)[0] is GateVerdict.UNKNOWN
     missing = second.model_copy(update={"controls": ()})
     assert verify_ui_action((first, missing), *args)[0] is GateVerdict.UNKNOWN
+
+
+def test_click_uses_target_region_even_when_widget_kind_labels_differ() -> None:
+    first = _source()
+    second = first.model_copy(
+        update={"controls": (first.controls[0].model_copy(update={"kind": "button"}),)}
+    )
+    answer = (
+        '{"action":"click","target_id":"search","view_id":"view-1",'
+        '"x":0.3,"y":0.15,"pixel_x":300,"pixel_y":75,"text":null}'
+    )
+    args = (
+        "static-screen",
+        {"target": "search", "action": "click"},
+        "s",
+        "view-1",
+        [{"view_id": "view-1", "width": "1000", "height": "500"}],
+        answer,
+    )
+    assert verify_ui_action((first, second), *args)[0] is GateVerdict.MET
+    disabled = second.model_copy(
+        update={"controls": (second.controls[0].model_copy(update={"enabled": False}),)}
+    )
+    assert verify_ui_action((first, disabled), *args)[0] is GateVerdict.UNKNOWN
+    assert (
+        verify_ui_action((first, second), *args[:-1], answer.replace('"x":0.3', '"x":0.7'))[0]
+        is GateVerdict.NOT_MET
+    )
