@@ -14,7 +14,7 @@ from pixelogue.contracts import ClaimExtraction, EvidenceInventory, RubricVerdic
 from pixelogue.errors import ExecutionError
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.profiling import profile_database
-from pixelogue.prompts import validate_stage_payload
+from pixelogue.prompts import STAGE_INSTRUCTIONS, validate_stage_payload
 from pixelogue.serialization import canonical_hash
 from pixelogue.serving import (
     ModelAdapter,
@@ -228,6 +228,86 @@ def test_identical_complete_model_call_replays_saved_response(tmp_path: Path) ->
     assert first == second
     assert calls == 1
     assert tuple(budget) == (1, 3)
+
+
+def test_history_model_and_prompt_changes_do_not_reuse_saved_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": '{"verdict":"MET","reason":"Supported."}'},
+                    }
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 3},
+            },
+            request=request,
+        )
+
+    http_client = httpx.Client(
+        base_url="http://127.0.0.1:8000/v1/", transport=httpx.MockTransport(handler)
+    )
+    with RunStore(tmp_path, "changed", require_local_wal=False) as store:
+        store.initialize_run("changed", "a" * 64, "pilot")
+        first_model = VllmClient(
+            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B", revision="a" * 40),
+            RuntimeConfig(),
+            run_id="changed",
+            store=store,
+            client=http_client,
+        )
+        history = _rubric_payload()
+        changed_history = {
+            **history,
+            "public_history": [{"message_id": "m1", "role": "user", "content": "Earlier?"}],
+        }
+        for payload in (history, history, changed_history):
+            first_model.invoke(
+                "rubric_item",
+                payload,
+                (),
+                RubricVerdict,
+                max_tokens=32,
+                temperature=0.0,
+                seed=1,
+            )
+        second_model = VllmClient(
+            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B", revision="b" * 40),
+            RuntimeConfig(),
+            run_id="changed",
+            store=store,
+            client=http_client,
+        )
+        second_model.invoke(
+            "rubric_item",
+            history,
+            (),
+            RubricVerdict,
+            max_tokens=32,
+            temperature=0.0,
+            seed=1,
+        )
+        monkeypatch.setitem(
+            STAGE_INSTRUCTIONS, "rubric_item", STAGE_INSTRUCTIONS["rubric_item"] + " Updated."
+        )
+        first_model.invoke(
+            "rubric_item",
+            history,
+            (),
+            RubricVerdict,
+            max_tokens=32,
+            temperature=0.0,
+            seed=1,
+        )
+    assert calls == 4
 
 
 @pytest.mark.parametrize(
