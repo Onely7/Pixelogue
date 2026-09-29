@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import html
 import io
@@ -19,8 +20,10 @@ else:
 
 ROOT = Path(__file__).resolve().parents[1]
 PINNED = ROOT / "validation/holdout_web_eval_manifest.jsonl"
+PINNED_V2 = ROOT / "validation/holdout_web_eval_v2_manifest.jsonl"
 DEVELOPMENT = ROOT / "validation/diverse_web_eval_manifest.jsonl"
 OUTPUT = ROOT / "data/holdout-web-eval"
+OUTPUT_V2 = ROOT / "data/holdout-web-eval-v2"
 FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
 
 
@@ -62,27 +65,45 @@ def _verified_bytes(row: dict[str, object]) -> tuple[bytes, str]:
 
 def main() -> None:
     """Verify identities, restore raster bytes and write ingest-only manifests."""
-    pinned = [json.loads(line) for line in PINNED.read_text().splitlines()]
-    development = {
-        json.loads(line)["commons_page_id"] for line in DEVELOPMENT.read_text().splitlines()
-    }
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cohort", choices=("initial", "v2"), default="initial")
+    args = parser.parse_args()
+    manifest = PINNED_V2 if args.cohort == "v2" else PINNED
+    output = OUTPUT_V2 if args.cohort == "v2" else OUTPUT
+    pinned = [json.loads(line) for line in manifest.read_text().splitlines()]
+    previous = [
+        json.loads(line)
+        for path in (DEVELOPMENT, PINNED)
+        if path != manifest
+        for line in path.read_text().splitlines()
+    ]
+    previous_ids = {row["commons_page_id"] for row in previous}
+    previous_hashes = {row["raw_sha256"] for row in previous}
     ids = [row["commons_page_id"] for row in pinned]
-    if len(pinned) != 6 or len(ids) != len(set(ids)) or development.intersection(ids):
+    hashes = [row["raw_sha256"] for row in pinned]
+    if (
+        len(pinned) != 6
+        or len(ids) != len(set(ids))
+        or len(hashes) != len(set(hashes))
+        or previous_ids.intersection(ids)
+        or previous_hashes.intersection(hashes)
+    ):
         raise RuntimeError("Holdout groups overlap the development set or are incomplete")
+    source_prefix = "commons-holdout-v2" if args.cohort == "v2" else "commons-holdout"
     sources: list[dict[str, object]] = []
     rights: list[dict[str, object]] = []
     for row in pinned:
         content, extension = _verified_bytes(row)
         number = row["category_number"]
         path = Path("images") / f"{number:02d}.{extension}"
-        destination = OUTPUT / path
+        destination = output / path
         destination.parent.mkdir(parents=True, exist_ok=True)
         if (
             not destination.is_file()
             or hashlib.sha256(destination.read_bytes()).hexdigest() != (row["raw_sha256"])
         ):
             destination.write_bytes(content)
-        source_id = f"commons-holdout:{row['commons_page_id']}"
+        source_id = f"{source_prefix}:{row['commons_page_id']}"
         sources.append(
             {
                 "source_id": source_id,
@@ -91,7 +112,9 @@ def main() -> None:
                 "rights_record_id": source_id,
                 "purpose": "evaluation",
                 "dataset": "Wikimedia Commons holdout evaluation",
-                "dataset_split": "web-holdout-2026-09",
+                "dataset_split": "web-holdout-v2-2026-09"
+                if args.cohort == "v2"
+                else "web-holdout-2026-09",
                 "dataset_image_id": str(row["commons_page_id"]),
                 "rotation_degrees": 0,
             }
@@ -110,9 +133,9 @@ def main() -> None:
             }
         )
         print(f"{number}: {row['category']} {source_id}", flush=True)
-    OUTPUT.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
     for name, records in (("sources.jsonl", sources), ("rights.jsonl", rights)):
-        (OUTPUT / name).write_text(
+        (output / name).write_text(
             "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records)
         )
 

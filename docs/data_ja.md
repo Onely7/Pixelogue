@@ -85,7 +85,21 @@ uv run --locked pixelogue ingest \
   --artifact-root artifacts/prepared-holdout-web-eval
 ```
 
-合成前に6枚すべての受理を確認します。少数の画像で形式別の動作を点検するためのセットであり、一般的な成功率や人手の回答正解ラベルは示しません。後で質問・回答を監査する際も、調整用画像とは分けて扱います。
+合成前に6枚すべての受理を確認します。少数の画像で形式別の動作を点検するためのセットであり、一般的な成功率や人手の回答正解ラベルは示しません。最初の6枚の失敗例は実装の診断に使ったため、その後の変更では開発例として扱います。
+
+[第2保留評価manifest](../validation/holdout_web_eval_v2_manifest.jsonl)には、同じ6分類から別のCommonsページ6件を固定しました。ページIDとサムネイルのハッシュが、先の2セットと重ならないことを取得時にも検査します。実装方針を固定するまではモデル出力を見ず、このセットの出力を同じ比較の調整に使わないでください。
+
+```sh
+uv run --locked python validation/fetch_holdout_eval.py --cohort v2
+uv run --locked pixelogue ingest \
+  --config configs/gpu-watch-diverse.yaml \
+  --sources data/holdout-web-eval-v2/sources.jsonl \
+  --rights data/holdout-web-eval-v2/rights.jsonl \
+  --image-root data/holdout-web-eval-v2 \
+  --artifact-root artifacts/prepared-holdout-web-eval-v2
+```
+
+画像は検証専用とし、画像本体と生成記録はGit管理外に置きます。この6枚で分かるのは形式別の動作であり、母集団の成功率や独立した人手正解ラベルではありません。
 
 楽譜・幾何・回路の追加画像3枚は[専門評価用manifest](../validation/specialist_web_eval_manifest.jsonl)に固定しています。`uv run --locked python validation/fetch_specialist_eval.py` で画像と出典・権利記録を復元し、`data/specialist-web-eval` と `data/specialist-extra-eval` をそれぞれ検証専用として取り込めます。取得時にバイトハッシュと寸法を照合します。同じ画像に別の候補回答を与えても、独立した校正標本には数えません。
 

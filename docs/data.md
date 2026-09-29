@@ -89,7 +89,21 @@ uv run --locked pixelogue ingest \
   --artifact-root artifacts/prepared-holdout-web-eval
 ```
 
-All six images must be accepted before synthesis. These few images check behavior across formats; they do not estimate a general success rate or provide human answer labels. Keep their later question and answer audit separate from the images used to tune the pipeline.
+All six images must be accepted before synthesis. These few images check behavior across formats; they do not estimate a general success rate or provide human answer labels. The initial six were inspected to diagnose pipeline failures, so subsequent changes treat them as development examples.
+
+The [second holdout manifest](../validation/holdout_web_eval_v2_manifest.jsonl) fixes six different Commons pages in the same six categories. Its page IDs and thumbnail hashes are checked against both earlier Commons sets. Keep this cohort untouched until implementation choices are frozen; do not use its model outputs to tune the same comparison.
+
+```sh
+uv run --locked python validation/fetch_holdout_eval.py --cohort v2
+uv run --locked pixelogue ingest \
+  --config configs/gpu-watch-diverse.yaml \
+  --sources data/holdout-web-eval-v2/sources.jsonl \
+  --rights data/holdout-web-eval-v2/rights.jsonl \
+  --image-root data/holdout-web-eval-v2 \
+  --artifact-root artifacts/prepared-holdout-web-eval-v2
+```
+
+These images are evaluation-only; image bytes and generated records remain outside Git. This six-image smoke set gives format-specific observations, not a population success rate or independent human labels.
 
 Three additional score, geometry, and circuit diagrams are pinned in the [specialist evaluation manifest](../validation/specialist_web_eval_manifest.jsonl). Restore their source and rights records with `uv run --locked python validation/fetch_specialist_eval.py`, then ingest `data/specialist-web-eval` and `data/specialist-extra-eval` as separate evaluation-only roots. The fetcher verifies each byte hash and image size. These development images and alternate candidate answers do not constitute independent calibration samples.
 
