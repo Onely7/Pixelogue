@@ -76,10 +76,25 @@ def test_status_records_actual_gpu_turn_without_claiming_all_boundaries(
         turns=(turn,),
         status="REJECTED",
     )
+    rejected = ConversationArtifact(
+        conversation_id="conversation-2",
+        image=image,
+        target_language="en",
+        generation_model="pilot-model",
+        turns=(
+            turn.model_copy(
+                update={"status": "REJECTED", "rating": TurnRating(items=(), aggregate="FAIL")}
+            ),
+        ),
+        status="REJECTED",
+    )
     path = tmp_path / "conversations.jsonl"
-    write_jsonl(path, [conversation])
+    write_jsonl(path, [conversation, rejected])
     report = task_status_report(load_config(Path("configs/specialist-pilot.yaml")), None, path)
     task = next(item for item in report["tasks"] if item["task_id"] == "entity_count")
-    assert task["gpu_turn_case_count"] == 1
+    assert task["gpu_turn_case_count"] == 2
+    assert task["gpu_committed_turn_case_count"] == 1
+    assert report["summary"]["gpu_turn_cases"] == 2
+    assert report["summary"]["gpu_committed_turn_cases"] == 1
     assert task["gpu_turn_cases"][0]["generator_model"] == "pilot-model"
     assert task["cpu_task_specific_boundaries"] == "not_recorded"

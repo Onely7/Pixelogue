@@ -208,6 +208,9 @@ def task_status_report(
                 "cpu_task_specific_boundaries": boundary_status,
                 "gpu_turn_cases": gpu_cases.get(task.id, []),
                 "gpu_turn_case_count": len(gpu_cases.get(task.id, [])),
+                "gpu_committed_turn_case_count": sum(
+                    case["status"] == "COMMITTED" for case in gpu_cases.get(task.id, [])
+                ),
             }
         )
     return {
@@ -226,6 +229,7 @@ def task_status_report(
                 row["cpu_task_specific_boundaries"] != "not_recorded" for row in rows
             ),
             "gpu_turn_cases": sum(row["gpu_turn_case_count"] for row in rows),
+            "gpu_committed_turn_cases": sum(row["gpu_committed_turn_case_count"] for row in rows),
         },
         "tasks": rows,
         "cpu_evidence_limit": "Passing shared fixtures does not establish natural-image accuracy or all three verdict branches per task.",
@@ -246,6 +250,7 @@ def write_task_status_reports(report: dict[str, Any], output_stem: Path) -> None
                 "cpu_contract_status",
                 "cpu_task_specific_boundaries",
                 "gpu_turn_case_count",
+                "gpu_committed_turn_case_count",
                 "gpu_turn_cases",
                 "environment_ready",
                 "calibration",
@@ -262,6 +267,7 @@ def write_task_status_reports(report: dict[str, Any], output_stem: Path) -> None
                     item["cpu_contract_status"],
                     item["cpu_task_specific_boundaries"],
                     item["gpu_turn_case_count"],
+                    item["gpu_committed_turn_case_count"],
                     json.dumps(item["gpu_turn_cases"], ensure_ascii=False),
                     item["environment_ready"],
                     item["calibration"],
@@ -274,13 +280,14 @@ def write_task_status_reports(report: dict[str, Any], output_stem: Path) -> None
         "",
         f"Tasks: {report['summary']['tasks']}; normal selectable: {report['summary']['normal_selectable']}.",
         "",
-        "| # | Task | Implemented | CPU contract | GPU turns | Environment | Calibration | Selectable |",
+        "| # | Task | Implemented | CPU contract | GPU committed / attempted turns | Environment | Calibration | Selectable |",
         "|---:|---|---|---|---:|---|---|---|",
     ]
     for item in report["tasks"]:
         lines.append(
             f"| {item['number']} | {item['task_id']} | {item['implemented']} | "
-            f"{item['cpu_contract_status']} | {item['gpu_turn_case_count']} | "
+            f"{item['cpu_contract_status']} | {item['gpu_committed_turn_case_count']} / "
+            f"{item['gpu_turn_case_count']} | "
             f"{item['environment_ready']} | "
             f"{item['calibration']} | {item['normal_selectable']} |"
         )

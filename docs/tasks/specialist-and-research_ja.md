@@ -13,7 +13,7 @@ uv run --locked pixelogue compile --config configs/specialist-pilot.yaml --outpu
 uv run --locked pixelogue task-status --config configs/specialist-pilot.yaml --output-stem artifacts/task-status
 ```
 
-CPUの全テスト後は `--junit artifacts/junit.xml`、特定のGPU runには `--conversations artifacts/<run>/conversations.jsonl` を指定します。タスク別レポートに、記録された回答ターンと生成モデルが入ります。共有CPU fixtureの合格だけでは、各タスクの正例・誤答・根拠不足の境界を網羅したことになりません。タスク固有の境界は実測まで `not_recorded` とします。候補まで到達して回答生成しなかったGPU試行は回答ターンに数えません。
+CPUの全テスト後は `--junit artifacts/junit.xml`、特定のGPU runには `--conversations artifacts/<run>/conversations.jsonl` を指定します。タスク別レポートでは、試行した回答ターンと確定ターンを分け、各ターンの状態と生成モデルを記録します。共有CPU fixtureの合格だけでは、各タスクの正例・誤答・根拠不足の境界を網羅したことになりません。タスク固有の境界は実測まで `not_recorded` とします。候補まで到達して回答生成しなかったGPU試行は回答ターンに数えません。
 
 専門環境はSymPy、music21、RDKit、Playwrightを本体や `runtime/vllm/` と別に固定します。初版は、明示された有理数の幾何条件、単声部の完全小節、立体表記を含まない原子・結合グラフ、接続が確定した二端子回路、画面上の単一UI操作、静的SVG・限定TikZ、静的HTML/CSSを扱います。未対応記法、根拠不足、2つの独立抽出の不一致は `UNKNOWN` です。構文が正しいだけでは合格しません。
 通常選択では、専門検証器ごとに登録した版と校正証明の版を照合します。抽出指示や検証契約を変えたときは登録版を上げ、以前の証明で改訂後のタスクを有効化しないようにします。
