@@ -76,6 +76,14 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
             raise ValueError(f"Turn counts disagree in {name}")
         if report["completed_conversations"] != len(accepted[name]):
             raise ValueError(f"Completed conversation count disagrees in {name}")
+        committed_tasks = Counter(
+            turn["instruction"]["task_id"]
+            for conversation in conversations
+            for turn in conversation.get("turns", [])
+            if turn["status"] == "COMMITTED"
+        )
+        if sum(committed_tasks.values()) != committed:
+            raise ValueError(f"Public committed turns disagree in {name}")
         image_durations = [row["duration_ms"] / 1000 for row in rows if "duration_ms" in row]
         if len(image_durations) != len(rows):
             raise ValueError(f"Image duration missing in {name}")
@@ -84,6 +92,7 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
             "status_counts": dict(Counter(row["status"] for row in rows)),
             "attempted_turns": attempted,
             "committed_turns": committed,
+            "committed_task_counts": dict(sorted(committed_tasks.items())),
             "completed_conversations": len(accepted[name]),
             "zero_committed_images": sum(row["committed_turns"] == 0 for row in rows),
             "two_or_more_committed_images": sum(row["committed_turns"] >= 2 for row in rows),
@@ -218,6 +227,13 @@ def main() -> None:
         "",
         *(
             f"- {name}: {', '.join(f'{stage}={count}' for stage, count in sorted(phase['zero_committed_stop_stage_counts'].items())) or 'none'}"
+            for name, phase in result["phases"].items()
+        ),
+        "",
+        "Committed task counts by phase (automatic decisions):",
+        "",
+        *(
+            f"- {name}: {', '.join(f'{task}={count}' for task, count in phase['committed_task_counts'].items()) or 'none'}"
             for name, phase in result["phases"].items()
         ),
         "",

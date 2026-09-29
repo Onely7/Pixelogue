@@ -65,10 +65,24 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
                         "image": {"source_id": source},
                         "generation_model": "generator-a" if source == "a" else "generator-b",
                         "target_language": "en",
+                        "turns": (
+                            [
+                                {
+                                    "instruction": {"task_id": "object_identification"},
+                                    "status": "COMMITTED",
+                                },
+                                {
+                                    "instruction": {"task_id": "color_attribute"},
+                                    "status": "COMMITTED",
+                                },
+                            ]
+                            if status == "QUALITY_CANDIDATE"
+                            else []
+                        ),
                     }
                 )
                 + "\n"
-                for source in ("a", "b")
+                for source, status in zip(("a", "b"), statuses, strict=True)
             )
         )
         _write(
@@ -109,6 +123,10 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
     assert report["paired_overlap"]["first"]["left_only"] == 1
     assert report["phases"]["baseline-1"]["human_approved_per_gpu_hour"] is None
     assert report["phases"]["baseline-1"]["two_or_more_committed_images"] == 1
+    assert report["phases"]["baseline-1"]["committed_task_counts"] == {
+        "color_attribute": 1,
+        "object_identification": 1,
+    }
     assert report["phases"]["baseline-1"]["median_image_duration_seconds"] == 2.0
     assert report["phases"]["baseline-1"]["max_image_duration_seconds"] == 2.5
     assert report["phases"]["baseline-1"]["stop_stage_counts"] == {
