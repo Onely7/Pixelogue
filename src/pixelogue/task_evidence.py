@@ -173,6 +173,27 @@ class AttributeRecheckReport(StrictModel):
     detail: Nonempty
 
 
+def unsupported_object_label_feedback(report: ScopedEvidenceReport) -> str:
+    """Identify invalid labeled scopes without copying model-generated scope text."""
+    invalid = [
+        index
+        for index, scope in enumerate(report.scopes, start=1)
+        if scope.object_label is not None
+        and not any(
+            capability == "visible_entity" and observation.verdict == "MET"
+            for capability, observation in scope.observations.items()
+        )
+    ]
+    if not invalid:
+        return ""
+    listed = ", ".join(str(index) for index in invalid[:3])
+    return (
+        f" Scope number(s) {listed} set object_label without a MET visible_entity in the"
+        " same scope. Add that observation only if the entity is directly visible; otherwise"
+        " set object_label=null. Keep a subject's visible attributes in its entity scope."
+    )
+
+
 def out_of_scope_region_feedback(report: ScopedEvidenceReport) -> str:
     """Describe invalid nested boxes without echoing model-generated text."""
     mismatches: list[str] = []

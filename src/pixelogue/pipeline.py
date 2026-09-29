@@ -83,6 +83,7 @@ from pixelogue.task_evidence import (
     ScopeEvidence,
     alias_evidence_ids,
     out_of_scope_region_feedback,
+    unsupported_object_label_feedback,
 )
 from pixelogue.task_runtime import (
     attribute_fact_key,
@@ -2151,6 +2152,7 @@ class SynthesisCoordinator:
                                 response.value, ScopedEvidenceReport
                             ):
                                 retry_feedback += out_of_scope_region_feedback(response.value)
+                                retry_feedback += unsupported_object_label_feedback(response.value)
                         elif stage == "candidate_binding":
                             retry_feedback += (
                                 " Every binding needs the separate target object; do not repeat"
