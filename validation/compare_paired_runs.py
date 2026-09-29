@@ -32,6 +32,7 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
 
     phases: dict[str, Any] = {}
     accepted: dict[str, set[str]] = {}
+    first_assignments: list[tuple[str, str]] | None = None
     for name in PHASES:
         timing = progress["phases"].get(name)
         if timing is None or timing.get("status") != "COMPLETED":
@@ -40,6 +41,26 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
         rows = report["rows"]
         if len(rows) != len(planned_ids) or [row["source_id"] for row in rows] != planned_ids:
             raise ValueError(f"Image order or count changed in {name}")
+        conversations = [
+            json.loads(line)
+            for line in (experiment_dir / name / "conversations.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        if [item["image"]["source_id"] for item in conversations] != planned_ids:
+            raise ValueError(f"Public conversation order changed in {name}")
+        assignments = [
+            (item["generation_model"], item["target_language"]) for item in conversations
+        ]
+        if first_assignments is None:
+            first_assignments = assignments
+        elif assignments != first_assignments:
+            raise ValueError(f"Generator or language allocation changed in {name}")
+        if any(
+            planned.get("language", actual[1]) != actual[1]
+            for planned, actual in zip(plan["images"], assignments, strict=True)
+        ):
+            raise ValueError(f"Planned language allocation changed in {name}")
         if report["conversations"] != len(rows):
             raise ValueError(f"Diagnostic conversation count changed in {name}")
         accepted[name] = {row["source_id"] for row in rows if row["status"] == "QUALITY_CANDIDATE"}
@@ -90,6 +111,7 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
             )
         },
         "images": len(planned_ids),
+        "generator_and_language_assignments_identical": True,
         "total_allocated_gpu_hours": (progress["ended_at"] - progress["started_at"]) / 3600,
         "phases": phases,
         "repeat_overlap": {

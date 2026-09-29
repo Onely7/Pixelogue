@@ -51,6 +51,20 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
         "baseline-2": ("QUALITY_CANDIDATE", "REJECTED"),
     }
     for name, statuses in outcomes.items():
+        (tmp_path / name).mkdir(parents=True, exist_ok=True)
+        (tmp_path / name / "conversations.jsonl").write_text(
+            "".join(
+                json.dumps(
+                    {
+                        "image": {"source_id": source},
+                        "generation_model": "generator-a" if source == "a" else "generator-b",
+                        "target_language": "en",
+                    }
+                )
+                + "\n"
+                for source in ("a", "b")
+            )
+        )
         _write(
             tmp_path / name / "diagnostics.json",
             {
@@ -87,6 +101,14 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
     assert report["paired_overlap"]["first"]["left_only"] == 1
     assert report["phases"]["baseline-1"]["human_approved_per_gpu_hour"] is None
     assert report["human_error_rates"] is None
+    assert report["generator_and_language_assignments_identical"]
+
+    changed = tmp_path / "variant-2" / "conversations.jsonl"
+    original = changed.read_text()
+    changed.write_text(original.replace("generator-b", "generator-a"))
+    with pytest.raises(ValueError, match="allocation changed"):
+        summarize(tmp_path)
+    changed.write_text(original)
 
     progress = json.loads((tmp_path / "progress.json").read_text())
     progress["success"] = False
