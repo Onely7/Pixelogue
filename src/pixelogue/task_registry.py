@@ -151,7 +151,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "sandbox_render_validator",
-            "1",
+            "2",
             "renderer",
             "playwright",
             frozenset({"diagram_to_code", "screen_to_code"}),
