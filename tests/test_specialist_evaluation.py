@@ -23,11 +23,13 @@ def test_specialist_retry_uses_stage_specific_feedback() -> None:
     error = ExecutionError("MODEL_SCHEMA_MISMATCH", "Circuit netlist terminals differ")
     circuit = _schema_retry_feedback("specialist_circuit_source", error)
     music = _schema_retry_feedback("specialist_music_source", error)
+    chemistry = _schema_retry_feedback("specialist_chemistry_source", error)
     geometry = _schema_retry_feedback("specialist_geometry_answer", error)
     assert "junction names" in circuit
     assert "scope_region must contain every event" in music
     assert "measures=[]" in music
     assert "For a rest event, set staff_step, accidental, and tie to null" in music
+    assert "never a coordinate array" in chemistry
     assert "answer_quote and reported" in geometry
 
 

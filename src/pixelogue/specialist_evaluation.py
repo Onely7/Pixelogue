@@ -68,6 +68,8 @@ def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
             "domain, scope ID, view ID, and notation. Each atom needs atom_id as a string "
             "such as C1 or H1, element, charge, aromatic, region. Each bond needs a and b "
             "as those exact string IDs, order as single/double/triple/aromatic, and region. "
+            "Every scope_region and atom or bond region must be a JSON object with left, "
+            "top, right, bottom keys, never a coordinate array. "
             "Use a small positive-extent box around each visible atom and bond; widen "
             "horizontal and vertical line regions slightly so top < bottom and left < right. "
             "Include H atoms only if H is explicitly drawn. Unlabeled skeletal endpoints "
