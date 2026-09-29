@@ -147,6 +147,9 @@ not absence. Copy image_id and each view_id exactly. Respect max_scopes and
 max_observations_per_scope. Within one scope, report each capability at most once: a capability
 describes support for an operation across the scope, not one observation per visible object.
 Summarize multiple instances in that observation's detail. Use the actual supplied resolution.
+For a scope centered on one clearly recognizable object, put one conservative category name in
+object_label and support it with a MET visible_entity observation in that scope. Use null for a
+mixed or ambiguous scope; the label is a visual observation, not a desired answer.
 For EACH scope with a salient visible animal, person or object, explicitly check for a
 visible_attribute such as color, shape or a visible part. Include a MET visible_attribute
 when clearly supported, even if visible_interaction or scene_context is also present.
@@ -190,8 +193,12 @@ choose only a category whose distinguishing visible features are clear. If close
 categories remain visually confusable, bind their reliably supported broader category or omit
 the candidate. A plausible familiar label is not sufficient evidence for a fine-grained target.
 For object_identification with origin=image, target.evidence_refs must cite a local observation
-whose detail explicitly names the target object's category. Citing a broad observation about other
-objects in the same scope is insufficient; use UNKNOWN if no such observation exists.
+whose detail explicitly names the target object's category, or use the typed object reference:
+when the scope has object_label, set target.value to "ref:" followed by the ID of that scope's
+MET visible_entity observation and set target.evidence_refs to that one ID. The controller resolves
+the label from the earlier image observation. Never invent or cite an ID from another scope.
+Citing a broad observation about other objects in the same scope is insufficient; use UNKNOWN if
+neither a typed reference nor a named observation exists.
 for scene_categorization it MUST be exactly one image-supported category_set choice with origin=image
 and local evidence_refs. Do not replace that target with a generic phrase such as "the scene".
 Each parameter names its origin:

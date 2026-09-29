@@ -387,7 +387,7 @@ class SynthesisCoordinator:
                             "candidates": [
                                 binding_candidate(candidate, inventory) for candidate in candidates
                             ],
-                            "scope_evidence": inventory.model_dump(mode="json"),
+                            "scope_evidence": inventory.model_dump(mode="json", exclude_none=True),
                             "answer_max_tokens": self.config.tasks.answer_max_tokens,
                             "image_views": image_views,
                         },

@@ -21,12 +21,15 @@ from pixelogue.task_evidence import (
     CandidateBinding,
     CandidateBindings,
     CapabilityObservation,
+    CapabilityReport,
     EligibilityObservation,
     ImageRegion,
     ObservationVerdict,
     PublicParameter,
     ScopedEvidenceInventory,
+    ScopedEvidenceReport,
     ScopeEvidence,
+    ScopeEvidenceReport,
     alias_evidence_ids,
 )
 from pixelogue.task_runtime import (
@@ -583,6 +586,104 @@ def test_bound_target_region_uses_only_target_evidence_without_disclosing_answer
         )
     assert caught.value.reason == "CANDIDATE_PARAMETER_SOURCE"
     assert "mallet" in str(caught.value)
+
+
+def test_identification_reference_resolves_only_a_labeled_local_entity() -> None:
+    data = inventory(
+        ScopeEvidence(
+            scope_id="headwear",
+            view_id="view",
+            public_description="A wrapped head covering",
+            object_label="turban",
+            region=REGION,
+            observations=(
+                CapabilityObservation(
+                    evidence_id="headwear:entity",
+                    capability="visible_entity",
+                    verdict="MET",
+                    region=REGION,
+                    detail="A wrapped head covering is visible.",
+                ),
+            ),
+        )
+    )
+    template = next(item for item in candidates(data) if item.task_id == "object_identification")
+    proposal = binding(
+        template,
+        public_parameters=(
+            PublicParameter(
+                name="target",
+                value="ref:headwear:entity",
+                origin="image",
+                evidence_refs=("headwear:entity",),
+            ),
+        ),
+    )
+    (bound,) = bind_candidates(
+        (template,), CandidateBindings(bindings=(proposal,)), data, (), TaskRuntimeConfig()
+    )
+    assert bound.public_parameters[0].value == "turban"
+    assert "turban" not in json.dumps(selector_candidate(bound)).lower()
+
+    for changed in (
+        proposal.model_copy(
+            update={
+                "public_parameters": (
+                    proposal.public_parameters[0].model_copy(update={"value": "ref:unknown"}),
+                )
+            }
+        ),
+        proposal.model_copy(
+            update={
+                "public_parameters": (
+                    proposal.public_parameters[0].model_copy(
+                        update={"evidence_refs": ("unknown",)}
+                    ),
+                )
+            }
+        ),
+    ):
+        with pytest.raises(ExecutionError) as caught:
+            bind_candidates(
+                (template,), CandidateBindings(bindings=(changed,)), data, (), TaskRuntimeConfig()
+            )
+        assert caught.value.reason == "CANDIDATE_PARAMETER_SOURCE"
+
+    unlabeled = data.model_copy(
+        update={"scopes": (data.scopes[0].model_copy(update={"object_label": None}),)}
+    )
+    with pytest.raises(ExecutionError) as caught:
+        bind_candidates(
+            (template,), CandidateBindings(bindings=(proposal,)), unlabeled, (), TaskRuntimeConfig()
+        )
+    assert caught.value.reason == "CANDIDATE_PARAMETER_SOURCE"
+
+
+def test_object_label_requires_a_visible_met_entity() -> None:
+    report = ScopedEvidenceReport(
+        image_id="image",
+        reason="A plausible label without a visible entity is insufficient.",
+        scopes=(
+            ScopeEvidenceReport(
+                scope_id="scope",
+                view_id="view",
+                public_description="unknown image content",
+                object_label="turban",
+                region=REGION,
+                observations={
+                    "visible_entity": CapabilityReport(
+                        evidence_id="entity",
+                        verdict="UNKNOWN",
+                        region=REGION,
+                        detail="The shape is not readable.",
+                    )
+                },
+            ),
+        ),
+    )
+    with pytest.raises(ExecutionError) as caught:
+        report.to_inventory()
+    assert caught.value.reason == "MODEL_SCHEMA_MISMATCH"
 
 
 def test_identification_fingerprint_collapses_label_format_and_plural() -> None:

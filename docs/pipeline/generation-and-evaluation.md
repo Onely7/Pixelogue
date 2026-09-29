@@ -109,7 +109,7 @@ The controller matches reported capabilities to the checked-in task catalog. Eac
 A candidate is an operation, not a finished question. Each model binding has a required `target` object. `visible_count` might later become “How many red squares are there?”, while `attribute_lookup` might become “What colour is the left square?”
 
 For image-sourced targets, the controller carries the target evidence region into selection, question writing, and question review. This location cue helps keep a later question on its bound object when several objects share one scope. It does not reveal an answer label or permit a question about a nearby object.
-For object identification, the cited observation must also name the target category; a citation to a broad region containing other objects is rejected during binding.
+For object identification, a single-object scope may carry a conservative `object_label` backed by a MET `visible_entity` observation. The binding can cite that observation as `target.value: "ref:<evidence_id>"`; the controller resolves the private label without asking the model to repeat its wording. A missing label, unknown ID, nonlocal observation, or observation without MET is rejected. Older free-text targets still require the cited observation to name the category. A broad region containing other objects is insufficient.
 The controller validates every binding independently after checking all candidate IDs for unknown or duplicate values. A malformed binding is recorded privately and excluded; another fully valid binding in the same response remains selectable. If every proposed binding is malformed, the bounded model retry still applies and exhaustion abstains. Missing or UNKNOWN checks never become MET.
 
 ### Step 3: select one instruction

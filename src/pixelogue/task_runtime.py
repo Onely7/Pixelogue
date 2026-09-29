@@ -444,20 +444,40 @@ def bind_candidates(
                 continue
         target = parameters["target"]
         if target.origin == "image" and task.id == "object_identification":
-            cited_details = [
-                item.detail
-                for item in scope.observations
-                if item.evidence_id in target.evidence_refs
-            ]
-            if not isinstance(target.value, str) or not identification_target_named_in_evidence(
-                target.value, cited_details
-            ):
-                raise ExecutionError(
-                    "CANDIDATE_PARAMETER_SOURCE",
-                    f"Candidate {binding.candidate_id}: identification target {target.value!r} "
-                    "is not named in its cited local evidence; cite the observation naming "
-                    "that object or mark the eligibility check UNKNOWN",
+            if isinstance(target.value, str) and target.value.startswith("ref:"):
+                evidence_id = target.value.removeprefix("ref:")
+                cited_entity = any(
+                    item.evidence_id == evidence_id
+                    and item.capability == "visible_entity"
+                    and item.verdict == "MET"
+                    for item in scope.observations
                 )
+                if (
+                    not cited_entity
+                    or target.evidence_refs != (evidence_id,)
+                    or scope.object_label is None
+                ):
+                    raise ExecutionError(
+                        "CANDIDATE_PARAMETER_SOURCE",
+                        f"Candidate {binding.candidate_id}: object reference must cite one "
+                        "locally MET visible_entity observation with an object_label",
+                    )
+                target = target.model_copy(update={"value": scope.object_label})
+            else:
+                cited_details = [
+                    item.detail
+                    for item in scope.observations
+                    if item.evidence_id in target.evidence_refs
+                ]
+                if not isinstance(target.value, str) or not identification_target_named_in_evidence(
+                    target.value, cited_details
+                ):
+                    raise ExecutionError(
+                        "CANDIDATE_PARAMETER_SOURCE",
+                        f"Candidate {binding.candidate_id}: identification target {target.value!r} "
+                        "is not named in its cited local evidence; cite the observation naming "
+                        "that object or mark the eligibility check UNKNOWN",
+                    )
         target_regions = (
             [item.region for item in scope.observations if item.evidence_id in target.evidence_refs]
             if target.origin == "image"
@@ -475,7 +495,10 @@ def bind_candidates(
         )
         candidate = template.model_copy(
             update={
-                "public_parameters": binding.public_parameters,
+                "public_parameters": tuple(
+                    target if parameter.name == "target" else parameter
+                    for parameter in binding.public_parameters
+                ),
                 "evidence_refs": binding.evidence_refs,
                 "target_region": target_region,
             }

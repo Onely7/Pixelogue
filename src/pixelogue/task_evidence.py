@@ -10,6 +10,7 @@ from pixelogue.config import StrictModel
 from pixelogue.errors import ExecutionError
 
 Nonempty = Annotated[str, Field(min_length=1, max_length=512)]
+ObjectLabel = Annotated[str, Field(min_length=1, max_length=80)]
 ObservationVerdict = Literal["MET", "NOT_MET", "UNKNOWN"]
 
 
@@ -45,6 +46,7 @@ class ScopeEvidence(StrictModel):
     scope_id: Nonempty
     view_id: Nonempty
     public_description: Nonempty
+    object_label: ObjectLabel | None = None
     region: ImageRegion
     observations: Annotated[tuple[CapabilityObservation, ...], Field(max_length=50)]
 
@@ -54,6 +56,11 @@ class ScopeEvidence(StrictModel):
         capabilities = [item.capability for item in self.observations]
         if len(capabilities) != len(set(capabilities)):
             raise ValueError("Capabilities must be unique within a scope")
+        if self.object_label is not None and not any(
+            item.capability == "visible_entity" and item.verdict == "MET"
+            for item in self.observations
+        ):
+            raise ValueError("An object label requires a visible entity observation")
         for item in self.observations:
             if not (
                 self.region.left <= item.region.left < item.region.right <= self.region.right
@@ -111,6 +118,7 @@ class ScopeEvidenceReport(StrictModel):
     scope_id: Nonempty
     view_id: Nonempty
     public_description: Nonempty
+    object_label: ObjectLabel | None = None
     region: ImageRegion
     observations: Annotated[dict[str, CapabilityReport], Field(max_length=50)]
 
@@ -133,6 +141,7 @@ class ScopedEvidenceReport(StrictModel):
                         scope_id=scope.scope_id,
                         view_id=scope.view_id,
                         public_description=scope.public_description,
+                        object_label=scope.object_label,
                         region=scope.region,
                         observations=tuple(
                             CapabilityObservation(
