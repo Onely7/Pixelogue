@@ -217,6 +217,35 @@ def idle_indices(rows: list[dict[str, int | str]]) -> set[int]:
     }
 
 
+def handoff_released(gpu: int) -> bool:
+    """Require device idleness, a cleared reservation, and an unlocked ledger."""
+    if gpu not in idle_indices(_metrics()) or not STATE.is_file():
+        return False
+    if json.loads(STATE.read_text(encoding="utf-8")).get("active") is not None:
+        return False
+    with (STATE.parent / "watch.lock").open("a+") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+    return True
+
+
+def wait_for_handoff(gpu: int, timeout_seconds: int) -> bool:
+    """Observe a complete reservation release twice before handing off a GPU."""
+    deadline = time.monotonic() + timeout_seconds
+    consecutive = 0
+    while time.monotonic() < deadline:
+        try:
+            consecutive = consecutive + 1 if handoff_released(gpu) else 0
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+            consecutive = 0
+        if consecutive >= 2:
+            return True
+        time.sleep(1)
+    return False
+
+
 def _post_job_candidates(current: set[int], last: set[int], state: dict[str, Any]) -> list[int]:
     """Attempt the queued post-job reservation on the first idle scan."""
     request = state.get("post_job_reservation")
@@ -529,10 +558,12 @@ def _watch(
 def main() -> None:
     """Select the bounded local watcher or its single-device holder mode."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("watch", "hold"))
+    parser.add_argument("mode", choices=("watch", "hold", "wait-release"))
     parser.add_argument("--poll-seconds", type=int, default=15)
     parser.add_argument("--memory-fraction", type=float, default=0.90)
     parser.add_argument("--parent-pid", type=int)
+    parser.add_argument("--gpu-index", type=int)
+    parser.add_argument("--timeout-seconds", type=int, default=180)
     parser.add_argument("--campaign-id")
     parser.add_argument("--additional-gpu-hours", type=float, default=0.0)
     parser.add_argument("--reserve-only", action="store_true")
@@ -549,6 +580,13 @@ def main() -> None:
         args.reserve_only or args.mode != "watch" or args.retry_failed_pilot
     ):
         parser.error("Completed pilot rerun requires watch mode without other pilot flags")
+    if args.mode == "wait-release":
+        if args.gpu_index is None or args.gpu_index < 0 or not 1 <= args.timeout_seconds <= 600:
+            parser.error("GPU handoff requires an index and a timeout of 1–600 seconds")
+        if not wait_for_handoff(args.gpu_index, args.timeout_seconds):
+            raise SystemExit("GPU reservation did not release before timeout")
+        print(f"GPU {args.gpu_index} reservation, ledger lock, and device are released")
+        return
     signal.signal(signal.SIGTERM, _signal_stop)
     signal.signal(signal.SIGINT, _signal_stop)
     if args.mode == "hold":

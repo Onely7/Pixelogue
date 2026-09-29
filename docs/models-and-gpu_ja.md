@@ -122,6 +122,8 @@ tail -f artifacts/gpu-watch/monitor.log
 
 pilotが成功・失敗のどちらで終了しても、直後に次のGPU予約要求を `state.json` に記録し、最初の空きGPUスキャンから確保を試みます。直前に使ったGPUを優先し、空きがなければ5秒間隔で再確認します。予約状態とpilotの終了コードは `state.json` に保存します。累積GPU時間の上限は守り、残り予算内に予約を開始できない場合は `budget_exhausted` と記録します。
 
+別のtmux jobへ確保済みGPUを引き継ぐ前に、予約を停止して `uv run --locked python src/pixelogue/gpu_watch.py wait-release --gpu-index 4 --timeout-seconds 180` を実行します。GPUが2回続けて空きと判定され、台帳の使用中予約が消え、台帳ロックが解放されるまで待ちます。GPUメモリだけが先に解放されることがあるため、このコマンドの成功前に次のモデルjobを起動しません。
+
 現在のpilotは、固定Open Images比較の後に[60分類の検証用画像](data_ja.md#多様なweb画像による検証用サンプル)も処理します。結果、診断、replay、分類別のJSON/CSV/Markdown集計を、run内の `diverse/` と `diverse-*` に分けて保存します。このpilotは一時的な1GPUモデル設定を使い、独立した正解ラベルを持ちません。受理件数だけでは検証器の精度は確認できません。
 
 固定したABBA比較が完了したら、`python3 validation/compare_paired_runs.py artifacts/plan-followup/EXPERIMENT_DIR` で集計します。計画した画像順、生成モデルと対象言語の割当が全実行で同一であること、各段階の完了を確認し、試行・確定ターン数、完成会話数、反復時の重なり、モデル呼び出し、再試行、画像ごとの所要時間の中央値・最大値、段階別GPU時間をJSON・CSV・Markdownに保存します。2ターン以上確定した画像数と、確定ターンがない画像の停止段階も記録します。独立した人手評価票が確定するまでは、人手確認済み会話数/GPU時間と人手基準の誤り率をnullにします。自動判定の品質候補を正解ラベルとして扱いません。

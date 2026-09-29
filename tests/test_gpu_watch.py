@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import subprocess
 from pathlib import Path
@@ -21,6 +22,35 @@ def test_idle_device_needs_low_memory_zero_utilization_and_no_compute_process() 
         {"index": 3, "used_mib": 500, "utilization": 0, "compute_process": 1},
     ]
     assert gpu_watch.idle_indices(rows) == {0}
+
+
+def test_handoff_waits_for_reservation_lock_and_idle_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state.json"
+    monkeypatch.setattr(gpu_watch, "STATE", state)
+    rows: list[dict[str, int | str]] = [
+        {"index": 4, "used_mib": 15, "utilization": 0, "compute_process": 0}
+    ]
+    monkeypatch.setattr(gpu_watch, "_metrics", lambda: rows)
+    state.write_text(json.dumps({"active": {"gpu": 4}}))
+    assert not gpu_watch.handoff_released(4)
+    state.write_text(json.dumps({"active": None}))
+    with (tmp_path / "watch.lock").open("w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert not gpu_watch.handoff_released(4)
+    assert gpu_watch.handoff_released(4)
+    rows[0]["utilization"] = 100
+    assert not gpu_watch.handoff_released(4)
+
+
+def test_handoff_requires_two_consecutive_released_observations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observations = iter((True, False, True, True))
+    monkeypatch.setattr(gpu_watch, "handoff_released", lambda _gpu: next(observations))
+    monkeypatch.setattr(gpu_watch.time, "sleep", lambda _seconds: None)
+    assert gpu_watch.wait_for_handoff(4, 2)
 
 
 def test_active_reservation_consumes_budget_and_stale_pid_is_counted(
