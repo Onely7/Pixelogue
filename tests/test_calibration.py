@@ -18,10 +18,13 @@ from pixelogue.calibration import (
 from pixelogue.catalog import task_catalog
 from pixelogue.config import load_config
 from pixelogue.io import write_json
+from pixelogue.task_registry import registration
 from pixelogue.task_runtime import certified_domains, unavailable_reasons
 
 
 def _observation(index: int, *, positive: bool, verdict: str = "MET") -> CalibrationObservation:
+    validator = registration("music_notation_validator")
+    assert validator is not None
     return CalibrationObservation.model_validate(
         {
             "case_id": f"case-{index}",
@@ -32,7 +35,7 @@ def _observation(index: int, *, positive: bool, verdict: str = "MET") -> Calibra
             "gold_accept": positive,
             "verdict": verdict,
             "model_locks": ("a" * 64, "b" * 64),
-            "validator_version": "1",
+            "validator_version": validator.version,
             "response_artifact_hashes": ("c" * 64, "d" * 64),
         }
     )
@@ -132,3 +135,52 @@ def test_certificate_is_bound_to_active_models_and_manifest_content(tmp_path) ->
         ),
     )
     assert config.model_copy(update={"tasks": settings}).config_hash != original_hash
+
+
+def test_specialist_selection_uses_its_registered_validator_version(tmp_path) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    locks = (
+        model_calibration_lock(config.models.generator_a),
+        model_calibration_lock(config.models.generator_b),
+    )
+    current = registration("ui_action_validator")
+    assert current is not None
+    records = tuple(
+        _observation(
+            index, positive=index < 20, verdict="MET" if index < 20 else "NOT_MET"
+        ).model_copy(
+            update={
+                "task_id": "ui_action_specification",
+                "domain": "static-text-click",
+                "model_locks": locks,
+                "validator_version": current.version,
+            }
+        )
+        for index in range(80)
+    )
+    path = tmp_path / "ui-calibration.json"
+    write_json(
+        path,
+        CalibrationManifest(
+            observations=records,
+            certificates=(calibrate_observations(records),),
+        ),
+    )
+    settings = config.tasks.model_copy(
+        update={"enabled_extensions": ("ui_action_specification",), "calibration_manifest": path}
+    )
+    task = next(task for task in task_catalog().tasks if task.id == "ui_action_specification")
+    assert certified_domains(task, settings, config.models) == ("static-text-click",)
+    assert unavailable_reasons(task, settings, config.models) == ()
+    outdated = tuple(item.model_copy(update={"validator_version": "4"}) for item in records)
+    write_json(
+        path,
+        CalibrationManifest(
+            observations=outdated,
+            certificates=(calibrate_observations(outdated),),
+        ),
+    )
+    assert certified_domains(task, settings, config.models) == ()
+    assert "no calibration for the active models and validator" in unavailable_reasons(
+        task, settings, config.models
+    )

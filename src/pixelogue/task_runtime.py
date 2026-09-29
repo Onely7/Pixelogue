@@ -102,7 +102,12 @@ def certified_domains(
         model_calibration_lock(models.generator_a),
         model_calibration_lock(models.generator_b),
     )
-    return eligible_domains(settings.calibration_manifest, task.id, locks, "1")
+    specialists = [
+        registration(name) for name in task.verification_contracts if name != "dual_visual_review"
+    ]
+    if len(specialists) != 1 or specialists[0] is None:
+        return ()
+    return eligible_domains(settings.calibration_manifest, task.id, locks, specialists[0].version)
 
 
 def unavailable_reasons(

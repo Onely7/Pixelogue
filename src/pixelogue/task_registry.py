@@ -120,14 +120,14 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "formal_geometry_validator",
-            "1",
+            "2",
             "symbolic",
             "sympy",
             frozenset({"geometric_constraint_solving"}),
         ),
         ValidatorRegistration(
             "music_notation_validator",
-            "1",
+            "2",
             "notation",
             "music21",
             frozenset({"music_notation_reading"}),
@@ -146,7 +146,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "ui_action_validator",
-            "4",
+            "5",
             supported_tasks=frozenset({"ui_action_specification"}),
         ),
         ValidatorRegistration(
