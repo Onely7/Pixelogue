@@ -110,6 +110,19 @@ uv run --locked python validation/build_screenspot_ui_cases.py
 
 The fetcher checks image and annotation hashes against the committed manifest. Selection also excluded screenshots with a 64-bit difference-hash distance at most five; this screen is not a complete near-copy audit. The case builder freezes 20 annotated-center clicks and 59 off-target clicks on separate confirmation screenshots. ScreenSpot images remain evaluation-only and outside Git. Model extraction and verifier outcomes must still satisfy the stated calibration bounds before normal selection.
 
+The separate [ScreenSpot holdout manifest](../validation/screenspot_ui_holdout_manifest.jsonl) pins 150 additional confirmation screenshots after the first confirmation sample was inspected during development. It excludes matching pixels and difference hashes within distance five across the two sets. Freeze it only once with `--freeze --holdout`; subsequent restores use `--holdout` alone. Its private case builder fixes 50 annotated-center clicks and 100 off-target clicks before evaluation.
+
+```sh
+uv run --locked python validation/fetch_screenspot_ui_eval.py --holdout
+uv run --locked pixelogue ingest \
+  --config configs/paired-one-gpu-pilot.yaml \
+  --sources data/screenspot-ui-holdout/sources.jsonl \
+  --rights data/screenspot-ui-holdout/rights.jsonl \
+  --image-root data/screenspot-ui-holdout \
+  --artifact-root artifacts/prepared-screenspot-ui-holdout
+uv run --locked python validation/build_screenspot_ui_cases.py --holdout
+```
+
 ## PrIMuS music notation evaluation sample
 
 The [pinned PrIMuS manifest](../validation/primus_music_eval_manifest.jsonl) identifies 89 incipits from different work IDs in the [official PrIMuS archive](https://grfia.dlsi.ua.es/primus/). Each has a printed score and an independently generated MEI label. This first calibration domain covers only a complete first measure, one voice, treble or bass clef, no key signature, and supported note/rest durations without accidentals, ties or tuplets. The score strip is enlarged exactly twofold before ingestion. The original archive, images and MEI labels remain outside Git and never enter model requests.

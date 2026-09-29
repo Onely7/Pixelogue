@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -14,6 +15,9 @@ SOURCE = ROOT / "data/screenspot-ui-eval"
 PREPARED = ROOT / "artifacts/prepared-screenspot-ui-eval"
 OUTPUT = ROOT / "artifacts/plan-followup/screenspot-ui-cases.jsonl"
 DOMAIN = "screenspot-text-click-v1"
+HOLDOUT_SOURCE = ROOT / "data/screenspot-ui-holdout"
+HOLDOUT_PREPARED = ROOT / "artifacts/prepared-screenspot-ui-holdout"
+HOLDOUT_OUTPUT = ROOT / "artifacts/plan-followup/screenspot-ui-holdout-cases.jsonl"
 
 
 def _point(box: list[float], positive: bool) -> tuple[float, float]:
@@ -34,22 +38,31 @@ def _point(box: list[float], positive: bool) -> tuple[float, float]:
 
 def main() -> None:
     """Build disjoint development and confirmation cases without model-visible labels."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--holdout", action="store_true")
+    args = parser.parse_args()
+    source = HOLDOUT_SOURCE if args.holdout else SOURCE
+    prepared = HOLDOUT_PREPARED if args.holdout else PREPARED
+    output = HOLDOUT_OUTPUT if args.holdout else OUTPUT
+    expected_count = 150 if args.holdout else 89
+    positive_count = 50 if args.holdout else 20
+    negative_count = expected_count - positive_count if args.holdout else 59
     images = {
         item["source_id"]: item
-        for item in map(json.loads, (PREPARED / "images.jsonl").read_text().splitlines())
+        for item in map(json.loads, (prepared / "images.jsonl").read_text().splitlines())
     }
     labels = [
-        json.loads(line) for line in (SOURCE / "private_labels.jsonl").read_text().splitlines()
+        json.loads(line) for line in (source / "private_labels.jsonl").read_text().splitlines()
     ]
-    if len(labels) != 89 or len(images) != 89:
+    if len(labels) != expected_count or len(images) != expected_count:
         raise ValueError("ScreenSpot preparation is incomplete")
-    if len({images[item["source_id"]]["visual_group_id"] for item in labels}) != 89:
+    if len({images[item["source_id"]]["visual_group_id"] for item in labels}) != expected_count:
         raise ValueError("ScreenSpot confirmation images share a visual group")
     cases = []
     for index, label in enumerate(labels):
         image = images[label["source_id"]]
         split = label["split"]
-        positive = split == "development" or index < 30
+        positive = index < positive_count if args.holdout else split == "development" or index < 30
         x, y = _point(label["bbox"], positive)
         view = image["full_view"]
         answer = {
@@ -131,19 +144,28 @@ def main() -> None:
             raise ValueError(f"ScreenSpot case has an inconsistent gold label: {case['case_id']}")
         cases.append(case)
     if (
-        sum(case["gold_accept"] is True for case in cases) != 20
-        or sum(case["gold_accept"] is False for case in cases) != 59
+        sum(case["gold_accept"] is True for case in cases) != positive_count
+        or sum(case["gold_accept"] is False for case in cases) != negative_count
     ):
         raise ValueError("ScreenSpot confirmation class balance changed")
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text("".join(json.dumps(case, sort_keys=True) + "\n" for case in cases))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("".join(json.dumps(case, sort_keys=True) + "\n" for case in cases))
     for split in ("development", "confirmation"):
-        OUTPUT.with_name(f"screenspot-ui-{split}.jsonl").write_text(
+        prefix = "screenspot-ui-holdout" if args.holdout else "screenspot-ui"
+        output.with_name(f"{prefix}-{split}.jsonl").write_text(
             "".join(
                 json.dumps(case, sort_keys=True) + "\n" for case in cases if case["split"] == split
             )
         )
-    print(json.dumps({"cases": len(cases), "development": 10, "confirmation": 79}))
+    print(
+        json.dumps(
+            {
+                "cases": len(cases),
+                "development": 0 if args.holdout else 10,
+                "confirmation": expected_count if args.holdout else 79,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

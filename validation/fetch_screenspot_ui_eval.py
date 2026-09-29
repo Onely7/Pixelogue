@@ -18,6 +18,9 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "validation/screenspot_ui_eval_manifest.jsonl"
 DESTINATION = ROOT / "data/screenspot-ui-eval"
+HOLDOUT_MANIFEST = ROOT / "validation/screenspot_ui_holdout_manifest.jsonl"
+HOLDOUT_DESTINATION = ROOT / "data/screenspot-ui-holdout"
+HOLDOUT_SIZE = 150
 API = "https://datasets-server.huggingface.co/rows?dataset=bevaya/ScreenSpot&config=default&split=test"
 HEADERS = {"User-Agent": "Pixelogue evaluation-only research test/0.1"}
 
@@ -133,17 +136,25 @@ def main() -> None:
     """Freeze a disjoint sample once, or restore and verify its committed identities."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--freeze", action="store_true")
-    parser.add_argument("--destination", type=Path, default=DESTINATION)
+    parser.add_argument("--holdout", action="store_true")
+    parser.add_argument("--destination", type=Path)
     args = parser.parse_args()
+    manifest_path = HOLDOUT_MANIFEST if args.holdout else MANIFEST
+    sample_size = HOLDOUT_SIZE if args.holdout else 89
+    development_size = 0 if args.holdout else 10
     rows = _rows()
     if args.freeze:
-        if MANIFEST.exists():
+        if manifest_path.exists():
             raise ValueError("Refusing to replace a pinned ScreenSpot manifest")
         eligible = [index for index, row in rows.items() if row["data_type"] == "text"]
-        eligible.sort(key=lambda index: _hash(f"screenspot-ui-v1:{index}".encode()))
+        salt = "screenspot-ui-holdout-v2" if args.holdout else "screenspot-ui-v1"
+        eligible.sort(key=lambda index: _hash(f"{salt}:{index}".encode()))
         selected: list[tuple[dict[str, Any], bytes]] = []
-        pixels: set[str] = set()
-        hashes: list[int] = []
+        excluded = (
+            [json.loads(line) for line in MANIFEST.read_text().splitlines()] if args.holdout else []
+        )
+        pixels = {item["pixel_sha256"] for item in excluded}
+        hashes = [int(item["dhash64"], 16) for item in excluded]
         for start in range(0, len(eligible), 16):
             with ThreadPoolExecutor(max_workers=8) as pool:
                 downloaded = pool.map(
@@ -159,27 +170,36 @@ def main() -> None:
                     hashes.append(candidate_hash)
                     selected.append((record, raw))
             print(f"verified {len(selected)} distinct ScreenSpot screenshots", flush=True)
-            if len(selected) >= 89:
-                selected = selected[:89]
+            if len(selected) >= sample_size:
+                selected = selected[:sample_size]
                 break
-        if len(selected) != 89:
-            raise ValueError("ScreenSpot has fewer than 89 distinct supported screenshots")
+        if len(selected) != sample_size:
+            raise ValueError("ScreenSpot has fewer than the required distinct screenshots")
         manifest = []
         for position, (record, _) in enumerate(selected):
-            record["split"] = "development" if position < 10 else "confirmation"
+            record["split"] = "development" if position < development_size else "confirmation"
             manifest.append(record)
-        MANIFEST.write_text("".join(json.dumps(item, sort_keys=True) + "\n" for item in manifest))
+        manifest_path.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in manifest)
+        )
         downloaded_by_index = {item["row_idx"]: raw for item, raw in selected}
     else:
-        manifest = [json.loads(line) for line in MANIFEST.read_text().splitlines()]
-        if (
-            len(manifest) != 89
-            or [item["split"] for item in manifest] != ["development"] * 10 + ["confirmation"] * 79
-        ):
+        manifest = [json.loads(line) for line in manifest_path.read_text().splitlines()]
+        if len(manifest) != sample_size or [item["split"] for item in manifest] != [
+            "development"
+        ] * development_size + ["confirmation"] * (sample_size - development_size):
             raise ValueError("ScreenSpot split or sample size changed")
-        if len({item["pixel_sha256"] for item in manifest}) != 89:
+        if len({item["pixel_sha256"] for item in manifest}) != sample_size:
             raise ValueError("ScreenSpot image groups are not independent")
         hashes = [int(item["dhash64"], 16) for item in manifest]
+        if args.holdout:
+            original = [json.loads(line) for line in MANIFEST.read_text().splitlines()]
+            old_pixels = {item["pixel_sha256"] for item in original}
+            old_hashes = [int(item["dhash64"], 16) for item in original]
+            if any(item["pixel_sha256"] in old_pixels for item in manifest) or any(
+                (value ^ other).bit_count() <= 5 for value in hashes for other in old_hashes
+            ):
+                raise ValueError("ScreenSpot holdout overlaps the prior evaluation images")
         if any(
             (value ^ other).bit_count() <= 5
             for position, value in enumerate(hashes)
@@ -193,7 +213,7 @@ def main() -> None:
             if current != item:
                 raise ValueError(f"Pinned ScreenSpot row changed: {item['row_idx']}")
             downloaded_by_index[item["row_idx"]] = raw
-    output = args.destination
+    output = args.destination or (HOLDOUT_DESTINATION if args.holdout else DESTINATION)
     (output / "images").mkdir(parents=True, exist_ok=True)
     sources, rights, private_labels = [], [], []
     for item in manifest:
@@ -250,7 +270,15 @@ def main() -> None:
         (output / name).write_text(
             "".join(json.dumps(item, sort_keys=True) + "\n" for item in records)
         )
-    print(json.dumps({"restored": len(manifest), "development": 10, "confirmation": 79}))
+    print(
+        json.dumps(
+            {
+                "restored": len(manifest),
+                "development": development_size,
+                "confirmation": sample_size - development_size,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

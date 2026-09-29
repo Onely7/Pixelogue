@@ -106,6 +106,19 @@ uv run --locked python validation/build_screenspot_ui_cases.py
 
 取得時に画像と注釈のハッシュを固定manifestと照合します。抽出時には64ビットのdifference hashで距離5以下の近似画面も除きますが、近似コピーの完全な監査ではありません。確認用の異なる画面について、対象領域の中心を示す正例20件と領域外を示す誤答59件を固定します。画像は検証専用でGit管理外です。通常選択には、実際の抽出と判定が校正基準を満たす必要があります。
 
+最初の確認結果を開発時に調べたため、別の[ScreenSpot保留セットmanifest](../validation/screenspot_ui_holdout_manifest.jsonl)に追加の確認用画面150件を固定します。両セットで画素ハッシュが一致するものとdifference hashの距離5以下を除きます。最初の固定時だけ `--freeze --holdout` を指定し、その後の復元は `--holdout` だけを指定します。非公開のケース作成処理は、評価前に正例50件と領域外クリックの誤答100件を固定します。
+
+```sh
+uv run --locked python validation/fetch_screenspot_ui_eval.py --holdout
+uv run --locked pixelogue ingest \
+  --config configs/paired-one-gpu-pilot.yaml \
+  --sources data/screenspot-ui-holdout/sources.jsonl \
+  --rights data/screenspot-ui-holdout/rights.jsonl \
+  --image-root data/screenspot-ui-holdout \
+  --artifact-root artifacts/prepared-screenspot-ui-holdout
+uv run --locked python validation/build_screenspot_ui_cases.py --holdout
+```
+
 ## PrIMuSの楽譜検証用サンプル
 
 [固定したPrIMuS manifest](../validation/primus_music_eval_manifest.jsonl)には、[公式PrIMuSアーカイブ](https://grfia.dlsi.ua.es/primus/)から異なる楽曲IDの譜例89件を記録します。印刷楽譜と独立したMEIラベルが対応します。初版の校正領域は完成した第1小節、単声部、ト音・ヘ音記号、調号なし、対応する音符・休符の音価に限り、臨時記号・タイ・連符は含めません。細長い楽譜画像を取り込み前に正確に2倍へ拡大します。元アーカイブ、画像、MEIラベルはGit管理外で、モデル入力へラベルを渡しません。
