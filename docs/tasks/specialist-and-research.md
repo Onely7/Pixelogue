@@ -61,6 +61,8 @@ uv run --locked pixelogue research-exposure-report --output-dir artifacts/resear
 
 `audit-pack` samples accepted, rejected and abstained outputs separately, recording the source population and actual sampling rate. `questions.html` omits candidate answers; `answers.html` shows them on a separate sheet. Both hide methods, model names, automatic verdicts and error-injection types. The JSONL templates must be completed by independent raters. `audit-resolve` defaults to three raters, keeps every original vote and preserves unreviewed, unknown and disagreement states until adjudication. Automatic verdicts never become human gold labels.
 
+Use `--accepted-rate 1 --rejected-rate 0.25 --abstained-rate 0.25` when every automatically committed turn needs review but stopped and rejected outputs are sampled. `--rate` remains the fallback for any status without an override. The pack preserves the requested and actual rate for every status, so the review burden does not hide its sampling denominator.
+
 `audit-cases` builds a frame from saved synthesis output. Committed turns become accepted turn cases; a conversation that ends before its next public question or answer contributes a separate stop case. Stops remain in the sampling denominator, while unavailable question and answer ballots are marked not applicable. Execution errors are counted separately. A committed turn does not imply a completed quality candidate.
 
 ```bash

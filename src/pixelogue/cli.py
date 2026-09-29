@@ -59,6 +59,7 @@ from pixelogue.research_audit import (
     AnswerBallot,
     AuditCase,
     AuditPack,
+    AuditStatus,
     QuestionBallot,
     audit_cases_from_conversations,
     build_audit_pack,
@@ -164,10 +165,20 @@ def audit_pack_command(
     cases: Annotated[Path, typer.Option("--cases", exists=True, dir_okay=False)],
     output_dir: Annotated[Path, typer.Option("--output-dir", file_okay=False)],
     rate: Annotated[float, typer.Option(min=0.001, max=1.0)] = 0.1,
+    accepted_rate: Annotated[float | None, typer.Option(min=0.001, max=1.0)] = None,
+    rejected_rate: Annotated[float | None, typer.Option(min=0.001, max=1.0)] = None,
+    abstained_rate: Annotated[float | None, typer.Option(min=0.001, max=1.0)] = None,
     seed: int = 20260915,
 ) -> None:
     """Sample accepted, rejected and abstained outputs into blind local audit views."""
-    pack = build_audit_pack(tuple(read_jsonl(cases, AuditCase)), rate=rate, seed=seed)
+    rates: dict[AuditStatus, float] | None = None
+    if any(value is not None for value in (accepted_rate, rejected_rate, abstained_rate)):
+        rates = {
+            "accepted": accepted_rate if accepted_rate is not None else rate,
+            "rejected": rejected_rate if rejected_rate is not None else rate,
+            "abstained": abstained_rate if abstained_rate is not None else rate,
+        }
+    pack = build_audit_pack(tuple(read_jsonl(cases, AuditCase)), rate=rate, seed=seed, rates=rates)
     write_audit_pack(pack, output_dir)
     typer.echo(
         json.dumps(

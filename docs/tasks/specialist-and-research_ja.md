@@ -61,6 +61,8 @@ uv run --locked pixelogue research-exposure-report --output-dir artifacts/resear
 
 `audit-pack` は accepted・rejected・abstained をそれぞれ抽出し、抽出母集団と実際の抽出率を保存します。`questions.html` に回答を含めず、回答品質は `answers.html` で別に見ます。手法名、モデル名、自動判定、誤り注入種別は閲覧資料に出しません。JSONLテンプレートを独立評価者が記入し、`audit-resolve` が既定3名の元評価を保持して一致・不一致・不明・未評価・裁定を区別します。自動判定を人手の正解ラベルへ置き換えません。
 
+自動確定ターンを全件確認し、停止・棄却例を標本監査するときは `--accepted-rate 1 --rejected-rate 0.25 --abstained-rate 0.25` を指定します。指定しない区分には `--rate` を適用します。区分ごとの指定率と実際の抽出率、母集団を保存するため、監査件数と抽出母数を区別できます。
+
 `audit-cases` は保存済みの生成結果から母集団を作ります。確定済み往復は accepted のターン例とし、次の公開質問・回答がないまま会話が止まった場合は別の停止例を残します。停止例も抽出母集団に含め、存在しない質問票・回答票は対象外とします。実行エラーは別件数で報告します。個別ターンの合格と品質候補の完成を混同しません。
 
 ```bash

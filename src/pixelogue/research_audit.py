@@ -57,6 +57,7 @@ class AuditPack(StrictModel):
     input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     seed: int
     requested_rate: Annotated[float, Field(gt=0, le=1)]
+    requested_rates: dict[AuditStatus, Annotated[float, Field(gt=0, le=1)]] | None = None
     frame_counts: dict[str, int]
     selected_counts: dict[str, int]
     actual_rates: dict[str, float | None]
@@ -66,7 +67,10 @@ class AuditPack(StrictModel):
     @model_validator(mode="after")
     def verify_hash(self) -> AuditPack:
         """Reject changed sampling details when a pack is resumed."""
-        if self.pack_hash != canonical_hash(self.model_dump(mode="json", exclude={"pack_hash"})):
+        excluded = {"pack_hash"}
+        if self.requested_rates is None:
+            excluded.add("requested_rates")
+        if self.pack_hash != canonical_hash(self.model_dump(mode="json", exclude=excluded)):
             raise ValueError("Audit pack identity changed")
         return self
 
@@ -159,28 +163,40 @@ def audit_cases_from_conversations(
     return tuple(cases), skipped_errors
 
 
-def build_audit_pack(cases: tuple[AuditCase, ...], *, rate: float, seed: int) -> AuditPack:
+def build_audit_pack(
+    cases: tuple[AuditCase, ...],
+    *,
+    rate: float,
+    seed: int,
+    rates: dict[AuditStatus, float] | None = None,
+) -> AuditPack:
     """Sample each acceptance stratum deterministically and record its full denominator."""
     if not 0 < rate <= 1 or len({case.case_id for case in cases}) != len(cases):
         raise ValueError("Audit needs a valid rate and distinct case IDs")
+    statuses: tuple[AuditStatus, ...] = ("accepted", "rejected", "abstained")
+    if rates is not None and (
+        set(rates) != set(statuses) or any(not 0 < value <= 1 for value in rates.values())
+    ):
+        raise ValueError("Audit rates must cover all three statuses and lie in (0, 1]")
     input_hash = canonical_hash([case.model_dump(mode="json") for case in cases])
     frame = Counter(case.source_status for case in cases)
     chosen: list[AuditCase] = []
-    for status in ("accepted", "rejected", "abstained"):
+    for status in statuses:
         candidates = sorted(
             (case for case in cases if case.source_status == status),
             key=lambda case: canonical_hash({"seed": seed, "case": case.case_id}),
         )
-        chosen.extend(candidates[: math.ceil(rate * len(candidates))])
+        chosen.extend(candidates[: math.ceil((rates or {}).get(status, rate) * len(candidates))])
     items = tuple(
         AuditItem(audit_id=canonical_hash({"input": input_hash, "case": case.case_id}), case=case)
         for case in sorted(chosen, key=lambda case: case.case_id)
     )
     selected = Counter(item.case.source_status for item in items)
-    body = {
+    body: dict[str, Any] = {
         "input_hash": input_hash,
         "seed": seed,
         "requested_rate": rate,
+        **({"requested_rates": rates} if rates is not None else {}),
         "frame_counts": {status: frame[status] for status in ("accepted", "rejected", "abstained")},
         "selected_counts": {
             status: selected[status] for status in ("accepted", "rejected", "abstained")

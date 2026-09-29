@@ -16,6 +16,7 @@ from pixelogue.research_audit import (
     Adjudication,
     AnswerBallot,
     AuditCase,
+    AuditPack,
     QuestionBallot,
     audit_cases_from_conversations,
     build_audit_pack,
@@ -52,6 +53,26 @@ def test_question_pack_hides_answers_and_sampling_frame_is_explicit(tmp_path: Pa
     assert pack.frame_counts == {"accepted": 2, "rejected": 2, "abstained": 2}
     assert pack.selected_counts == {"accepted": 1, "rejected": 1, "abstained": 1}
     assert pack.actual_rates["rejected"] == 0.5
+
+
+def test_audit_samples_statuses_separately_and_reads_legacy_pack(tmp_path: Path) -> None:
+    image = tmp_path / "image.png"
+    image.write_bytes(b"placeholder")
+    cases = _cases(image)
+    pack = build_audit_pack(
+        cases,
+        rate=0.5,
+        seed=13,
+        rates={"accepted": 1.0, "rejected": 0.5, "abstained": 0.5},
+    )
+    assert pack.selected_counts == {"accepted": 2, "rejected": 1, "abstained": 1}
+    assert pack.actual_rates == {"accepted": 1.0, "rejected": 0.5, "abstained": 0.5}
+    assert AuditPack.model_validate_json(pack.model_dump_json()) == pack
+
+    legacy = build_audit_pack(cases, rate=0.5, seed=13)
+    assert (
+        AuditPack.model_validate_json(legacy.model_dump_json(exclude={"requested_rates"})) == legacy
+    )
 
 
 def test_three_independent_votes_and_adjudication_keep_originals(tmp_path: Path) -> None:
