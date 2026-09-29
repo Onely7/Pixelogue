@@ -123,6 +123,23 @@ def identification_answer_in_history(answer: str, history: Sequence[PublicMessag
     )
 
 
+def reciprocal_identification_disclosure(
+    question: str,
+    target: str,
+    prior_pairs: Sequence[tuple[PublicMessage, PublicMessage]],
+) -> bool:
+    """Catch a reciprocal naming question whose answer was already public.
+
+    Both directions must be literal short labels. This keeps distinct targets with the
+    same category eligible when the prior question did not disclose the new answer.
+    """
+    return any(
+        identification_answer_in_question(prior_question.content, target)
+        and identification_answer_in_question(question, prior_answer.content)
+        for prior_question, prior_answer in prior_pairs
+    )
+
+
 _QUANTITY_PREFIXES = frozenset(
     {
         "a",

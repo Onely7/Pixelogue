@@ -25,6 +25,7 @@ from pixelogue.contracts import (
     RubricContext,
     RubricVerdict,
     TextPayload,
+    TurnRating,
 )
 from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import (
@@ -34,6 +35,7 @@ from pixelogue.evaluation import (
     identification_answer_in_history,
     identification_answer_in_question,
     identification_label_in_question,
+    reciprocal_identification_disclosure,
     repeated_answered_request,
     scene_options_in_question,
     transcription_answer_in_question,
@@ -1477,6 +1479,94 @@ def test_public_text_checks_catch_observed_multiturn_leaks() -> None:
     assert not scene_options_in_question(
         "What type of scene is this?", ("residential street", "rural road")
     )
+
+
+def test_reciprocal_identification_disclosure_requires_both_public_directions() -> None:
+    prior = (
+        PublicMessage(
+            message_id="q1",
+            turn_index=1,
+            role="user",
+            content="What is the object mounted on the side of the aircraft?",
+        ),
+        PublicMessage(message_id="a1", turn_index=1, role="assistant", content="missile"),
+    )
+    assert reciprocal_identification_disclosure(
+        "What is the object that the missile is attached to?", "aircraft", (prior,)
+    )
+    assert not reciprocal_identification_disclosure(
+        "What is the object to the left of the tree?", "aircraft", (prior,)
+    )
+    assert not reciprocal_identification_disclosure(
+        "What is the object that the missile is attached to?", "helicopter", (prior,)
+    )
+
+
+def test_rerating_rejects_reciprocal_identification_without_second_judge_call(
+    tmp_path: Path, image_artifact, monkeypatch
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path, evaluation_mode="holistic")
+    try:
+        original = coordinator.synthesize_image(image, root)
+        first = original.turns[0]
+        first = first.model_copy(
+            update={
+                "instruction": first.instruction.model_copy(
+                    update={"task_id": "object_identification", "scope_id": "scope-missile"}
+                ),
+                "question": first.question.model_copy(
+                    update={"content": "What is mounted on the side of the aircraft?"}
+                ),
+                "answer": first.answer.model_copy(update={"content": "missile"}),
+            }
+        )
+        second = first.model_copy(
+            update={
+                "turn_index": 2,
+                "instruction": first.instruction.model_copy(
+                    update={
+                        "scope_id": "scope-aircraft",
+                        "public_parameters": (
+                            PublicParameter(
+                                name="target",
+                                value="aircraft",
+                                origin="image",
+                                evidence_refs=("e1",),
+                            ),
+                        ),
+                    }
+                ),
+                "question": first.question.model_copy(
+                    update={
+                        "turn_index": 2,
+                        "content": "What is the object that the missile is attached to?",
+                    }
+                ),
+                "answer": first.answer.model_copy(update={"turn_index": 2, "content": "aircraft"}),
+            }
+        )
+        saved = original.model_copy(update={"turns": (first, second), "status": "REJECTED"})
+        monkeypatch.setattr(coordinator, "_question_intent", lambda *args: GateVerdict.MET)
+        monkeypatch.setattr(coordinator, "_question_fit", lambda *args: GateVerdict.MET)
+        rated_calls = []
+
+        def rate(*args):
+            rated_calls.append(args)
+            return TurnRating(items=(), aggregate="PASS")
+
+        monkeypatch.setattr(coordinator, "_rate_turn", rate)
+        rerated = coordinator.rate_existing(saved, root)
+        rejection_hash = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = 'public-text-rejections' "
+            "ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()[0]
+        rejection = json.loads(store.read_artifact(rejection_hash))
+    finally:
+        store.close()
+    assert [turn.status for turn in rerated.turns] == ["COMMITTED", "REJECTED"]
+    assert len(rated_calls) == 1
+    assert rejection["reason"] == "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC"
 
 
 def test_identification_target_leak_retries_before_answer(

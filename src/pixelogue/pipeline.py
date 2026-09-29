@@ -48,6 +48,7 @@ from pixelogue.evaluation import (
     identification_label_in_question,
     item_id,
     question_fit_consensus,
+    reciprocal_identification_disclosure,
     repeated_answered_request,
     repeated_public_question,
     scene_options_in_question,
@@ -104,6 +105,7 @@ type PublicTextRejectionReason = Literal[
     "IDENTIFICATION_TARGET_IN_QUESTION",
     "IDENTIFICATION_ANSWER_IN_QUESTION",
     "IDENTIFICATION_ANSWER_ALREADY_PUBLIC",
+    "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC",
     "TRANSCRIPTION_ANSWER_IN_QUESTION",
     "TEXT_RELATION_UNVERIFIED",
     "ACTION_ALREADY_PUBLIC",
@@ -514,6 +516,7 @@ class SynthesisCoordinator:
                 history: tuple[PublicMessage, ...] = snapshot.public_history,
                 selected_instruction: InstructionCandidate = selected,
                 target: str | int | bool | tuple[str, ...] | None = target_value,
+                previous_turns: tuple[TurnArtifact, ...] = tuple(turns),
                 current_turn: int = turn_index,
             ) -> None:
                 if result.text is None:
@@ -528,6 +531,21 @@ class SynthesisCoordinator:
                     and identification_label_in_question(result.text, target)
                 ):
                     reason = "IDENTIFICATION_TARGET_IN_QUESTION"
+                elif (
+                    selected_instruction.task_id == "object_identification"
+                    and isinstance(target, str)
+                    and reciprocal_identification_disclosure(
+                        result.text,
+                        target,
+                        tuple(
+                            (turn.question, turn.answer)
+                            for turn in previous_turns
+                            if turn.status == "COMMITTED"
+                            and turn.instruction.task_id == "object_identification"
+                        ),
+                    )
+                ):
+                    reason = "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC"
                 elif selected_instruction.task_id == "text_transcription" and (
                     unverified_transcription_relation(result.text)
                 ):
@@ -583,6 +601,7 @@ class SynthesisCoordinator:
                     "INTERNAL_REFERENCE_IN_QUESTION",
                     "REPEATED_PUBLIC_QUESTION",
                     "IDENTIFICATION_TARGET_IN_QUESTION",
+                    "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC",
                     "TEXT_RELATION_UNVERIFIED",
                     "CATEGORY_OPTIONS_NOT_PUBLIC",
                 }:
@@ -946,12 +965,43 @@ class SynthesisCoordinator:
                     reason="TEXT_RELATION_UNVERIFIED",
                     content=turn.question.content,
                 )
+            target = next(
+                (
+                    parameter.value
+                    for parameter in turn.instruction.public_parameters
+                    if parameter.name == "target"
+                ),
+                None,
+            )
+            reciprocal_identification = (
+                turn.instruction.task_id == "object_identification"
+                and isinstance(target, str)
+                and reciprocal_identification_disclosure(
+                    turn.question.content,
+                    target,
+                    tuple(
+                        (prior.question, prior.answer)
+                        for prior in rated_turns
+                        if prior.status == "COMMITTED"
+                        and prior.instruction.task_id == "object_identification"
+                    ),
+                )
+            )
+            if reciprocal_identification:
+                self._record_public_text_rejection(
+                    conversation.conversation_id,
+                    turn.turn_index,
+                    field="question",
+                    reason="RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC",
+                    content=turn.question.content,
+                )
             fit = (
                 GateVerdict.NOT_MET
                 if repeated
                 or disclosure
                 or missing_scene_options
                 or unverified_text_relation
+                or reciprocal_identification
                 or internal_reference
                 else GateVerdict.MET
             )
