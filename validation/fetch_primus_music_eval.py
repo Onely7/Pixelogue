@@ -66,14 +66,29 @@ def _first_bar(raw: bytes) -> dict[str, Any] | None:
             return None
         clef = "treble" if clef_mark == ("G", "2") else "bass"
         base_index = 30 if clef == "treble" else 18
-        if score.get("key.sig") not in {None, "0"}:
+        if score.get("key.sig") not in {None, "0"} or staff.get("key.sig") not in {None, "0"}:
             return None
         top, bottom = int(score.get("meter.count", "0")), int(score.get("meter.unit", "0"))
         if not 1 <= top <= 12 or bottom not in {2, 4, 8}:
             return None
+        if (
+            len(measure.findall("./m:staff", NS)) != 1
+            or len(measure.findall(".//m:layer", NS)) != 1
+        ):
+            return None
         if any(
             measure.find(f".//m:{tag}", NS) is not None
-            for tag in ("chord", "tuplet", "mRest", "clef", "keySig", "meterSig", "tie")
+            for tag in (
+                "chord",
+                "tuplet",
+                "mRest",
+                "clef",
+                "keySig",
+                "meterSig",
+                "tie",
+                "accid",
+                "graceGrp",
+            )
         ):
             return None
         symbols = [item for item in measure.iter() if item.tag.rsplit("}", 1)[-1] in SUPPORTED]
