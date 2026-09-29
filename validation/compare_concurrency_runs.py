@@ -119,6 +119,11 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
         "source_commit": plan["source_commit"],
         "images_per_phase": len(planned_ids),
         "total_allocated_gpu_hours": (progress["ended_at"] - progress["started_at"]) / 3600,
+        "gpu_memory_interpretation": (
+            "NVML device-resident memory is a high-water observation. The same vLLM servers "
+            "stay loaded across phases and may retain allocations, so a later phase peak "
+            "cannot be attributed solely to that worker count."
+        ),
         "phases": phases,
         "by_workers": by_workers,
         "human_quality_and_error_rates": None,
@@ -169,6 +174,7 @@ def main() -> None:
         "",
         "Human-approved conversations per allocated GPU hour and error rates remain unmeasured.",
         "Each condition has two repeats; automatic candidate counts are descriptive only.",
+        report["gpu_memory_interpretation"],
         "",
     ]
     stem.with_suffix(".md").write_text("\n".join(lines))
