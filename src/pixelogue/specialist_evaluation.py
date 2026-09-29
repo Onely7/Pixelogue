@@ -90,11 +90,15 @@ def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
             "Keep reason to one sentence and do not emit repeated whitespace. "
         ),
     }.get(stage, "")
-    failure = (
-        f"The previous {stage} output reached its token limit before completing JSON. "
-        if error.reason == "MODEL_FINISH_REASON"
-        else f"The previous {stage} output violated its schema: {str(error)[:900]}. "
-    )
+    if error.reason == "MODEL_WHITESPACE_RUNAWAY":
+        failure = (
+            f"The previous {stage} output exhausted its token limit in blank lines. "
+            "Finish the JSON object and stop without trailing whitespace. "
+        )
+    elif error.reason == "MODEL_FINISH_REASON":
+        failure = f"The previous {stage} output reached its token limit before completing JSON. "
+    else:
+        failure = f"The previous {stage} output violated its schema: {str(error)[:900]}. "
     return (
         f"{failure}Return one complete object with the required fields. Every normalized "
         "region must satisfy 0 <= left < right <= 1 and 0 <= top < bottom <= 1. "
@@ -330,7 +334,7 @@ def run_specialist_evaluation(
                         if error.reason == "MODEL_SCHEMA_MISMATCH":
                             stats["schema_retries"] += 1
                         elif (
-                            error.reason == "MODEL_FINISH_REASON"
+                            error.reason in {"MODEL_FINISH_REASON", "MODEL_WHITESPACE_RUNAWAY"}
                             and stage.startswith("specialist_")
                             and stage.endswith("_source")
                         ):
@@ -348,7 +352,7 @@ def run_specialist_evaluation(
                             bypass_cache=True,
                             retry_feedback=_schema_retry_feedback(stage, error),
                             json_object_fallback=(
-                                error.reason == "MODEL_FINISH_REASON"
+                                error.reason in {"MODEL_FINISH_REASON", "MODEL_WHITESPACE_RUNAWAY"}
                                 and stage == "specialist_chemistry_source"
                             ),
                         )

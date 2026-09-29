@@ -247,6 +247,20 @@ def test_failed_second_evaluator_resumes_from_first_saved_stage(
             "specialist_chemistry_source",
             True,
         ),
+        (
+            "MODEL_WHITESPACE_RUNAWAY",
+            "finish_retries",
+            "music_notation_reading",
+            "specialist_music_source",
+            False,
+        ),
+        (
+            "MODEL_WHITESPACE_RUNAWAY",
+            "finish_retries",
+            "chemical_structure_reading",
+            "specialist_chemistry_source",
+            True,
+        ),
     ],
 )
 def test_invalid_specialist_reading_gets_one_bounded_retry(
@@ -333,6 +347,8 @@ def test_invalid_specialist_reading_gets_one_bounded_retry(
     assert feedback[0] is None
     if failure_reason == "MODEL_FINISH_REASON":
         assert "token limit" in (feedback[1] or "")
+    elif failure_reason == "MODEL_WHITESPACE_RUNAWAY":
+        assert "blank lines" in (feedback[1] or "")
     else:
         assert "positive extent" in (feedback[1] or "")
     assert len(feedback) == 3
