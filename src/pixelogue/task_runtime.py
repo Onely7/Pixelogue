@@ -219,9 +219,25 @@ def binding_candidate(
 ) -> dict[str, Any]:
     """Expose only this candidate's evidence IDs for blind local binding."""
     scope = next(scope for scope in inventory.scopes if scope.scope_id == candidate.scope_id)
+    object_refs = (
+        [
+            f"ref:{item.evidence_id}"
+            for item in scope.observations
+            if scope.object_label is not None
+            and item.capability == "visible_entity"
+            and item.verdict == "MET"
+        ]
+        if candidate.task_id == "object_identification"
+        else []
+    )
     return {
         **selector_candidate(candidate),
         "local_evidence_ids": sorted(item.evidence_id for item in scope.observations),
+        **(
+            {"typed_object_refs": object_refs}
+            if candidate.task_id == "object_identification"
+            else {}
+        ),
         "required_evidence_ids": sorted(
             item.evidence_id
             for item in scope.observations

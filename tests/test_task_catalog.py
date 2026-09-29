@@ -651,6 +651,8 @@ def test_identification_reference_resolves_only_a_labeled_local_entity() -> None
         )
     )
     template = next(item for item in candidates(data) if item.task_id == "object_identification")
+    assert binding_candidate(template, data)["typed_object_refs"] == ["ref:headwear:entity"]
+    assert "typed_object_refs" not in selector_candidate(template)
     proposal = binding(
         template,
         public_parameters=(
@@ -695,6 +697,7 @@ def test_identification_reference_resolves_only_a_labeled_local_entity() -> None
     unlabeled = data.model_copy(
         update={"scopes": (data.scopes[0].model_copy(update={"object_label": None}),)}
     )
+    assert binding_candidate(template, unlabeled)["typed_object_refs"] == []
     with pytest.raises(ExecutionError) as caught:
         bind_candidates(
             (template,), CandidateBindings(bindings=(proposal,)), unlabeled, (), TaskRuntimeConfig()
