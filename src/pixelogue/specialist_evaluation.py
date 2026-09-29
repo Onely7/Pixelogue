@@ -459,16 +459,21 @@ def build_calibration_manifest(
     groups: dict[tuple[str, str, tuple[str, str], str], list[CalibrationObservation]] = defaultdict(
         list
     )
+    incomplete_groups: set[tuple[str, str, tuple[str, str], str]] = set()
     pending: list[dict[str, str]] = []
     for result in results:
+        confirmation = result.split == "confirmation" and result.gold_accept is not None
+        key = (result.task_id, result.domain, result.model_locks, result.validator_version)
         if (
             result.status != "COMPLETE"
             or result.verdict is None
             or result.response_artifact_hashes is None
         ):
             pending.append({"case_id": result.case_id, "reason": result.error or "unprocessed"})
+            if confirmation:
+                incomplete_groups.add(key)
             continue
-        if result.split != "confirmation" or result.gold_accept is None:
+        if not confirmation:
             pending.append({"case_id": result.case_id, "reason": "development_or_unlabeled"})
             continue
         observation = CalibrationObservation(
@@ -483,11 +488,16 @@ def build_calibration_manifest(
             validator_version=result.validator_version,
             response_artifact_hashes=result.response_artifact_hashes,
         )
-        key = (result.task_id, result.domain, result.model_locks, result.validator_version)
         groups[key].append(observation)
     certified: list[CalibrationObservation] = []
     certificates: list[CalibrationCertificate] = []
-    for _key, observations in sorted(groups.items()):
+    for key, observations in sorted(groups.items()):
+        if key in incomplete_groups:
+            pending.extend(
+                {"case_id": item.case_id, "reason": "incomplete_confirmation_group"}
+                for item in observations
+            )
+            continue
         if not any(item.gold_accept for item in observations) or not any(
             not item.gold_accept for item in observations
         ):
@@ -504,6 +514,7 @@ def build_calibration_manifest(
         "input_results": len(results),
         "certificates": len(certificates),
         "eligible": sum(item.eligible for item in certificates),
+        "incomplete_confirmation_groups": len(incomplete_groups),
         "pending": pending,
         "pending_by_reason": dict(Counter(item["reason"] for item in pending)),
     }

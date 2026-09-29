@@ -72,7 +72,7 @@ def test_complete_confirmation_group_computes_model_bound_certificate() -> None:
     assert manifest.certificates[0].negative_images == 60
 
 
-def test_failed_calls_are_pending_and_never_counted_as_zero_cost_or_success() -> None:
+def test_failed_calls_hold_the_whole_confirmation_group_pending() -> None:
     manifest, report = build_calibration_manifest(
         (
             _result(0, positive=True),
@@ -83,8 +83,22 @@ def test_failed_calls_are_pending_and_never_counted_as_zero_cost_or_success() ->
     assert report["certificates"] == 0
     assert {item["reason"] for item in report["pending"]} == {
         "transport failed",
-        "missing_positive_or_negative",
+        "incomplete_confirmation_group",
     }
+    assert report["incomplete_confirmation_groups"] == 1
+
+
+def test_failed_confirmation_cannot_inflate_eligible_certificate() -> None:
+    results = (
+        *(_result(index, positive=True) for index in range(20)),
+        *(_result(index + 20, positive=False, verdict="NOT_MET") for index in range(60)),
+        _result(80, positive=True, status="FAILED"),
+    )
+    manifest, report = build_calibration_manifest(results)
+    assert not manifest.certificates
+    assert report["eligible"] == 0
+    assert report["incomplete_confirmation_groups"] == 1
+    assert len(report["pending"]) == len(results)
 
 
 def test_failed_second_evaluator_resumes_from_first_saved_stage(
