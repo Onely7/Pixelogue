@@ -435,6 +435,41 @@ def test_source_schema_retry_names_nested_contracts(
     assert all(fragment in (client.retry_feedback[1] or "") for fragment in expected)
 
 
+def test_incomplete_table_source_gets_a_larger_retry_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "table-length-retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a)
+    original_invoke = client.invoke
+    budgets: list[int] = []
+
+    def truncate_first(*args: Any, **kwargs: Any) -> ModelResponse:
+        budgets.append(kwargs["max_tokens"])
+        if len(budgets) == 1:
+            raise ExecutionError("MODEL_FINISH_REASON", "Completion reached its token limit")
+        return original_invoke(*args, **kwargs)
+
+    monkeypatch.setattr(client, "invoke", truncate_first)
+    coordinator = SynthesisCoordinator(config, "table-length-retry", store, client, client, client)
+    try:
+        result = coordinator._invoke(
+            client,
+            "table_source",
+            {},
+            (),
+            TableSource,
+            max_tokens=4096,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        store.close()
+
+    assert result.coverage == "UNKNOWN"
+    assert budgets == [4096, 8192]
+
+
 def test_semantic_contract_failure_retries_without_accepting_invalid_result(
     tmp_path: Path,
 ) -> None:

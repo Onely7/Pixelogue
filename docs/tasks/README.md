@@ -12,6 +12,8 @@ The installed catalog contains **65 core candidates and 7 validator-gated extens
 
 All **65 core operations** now have normal verification paths. The 31 newly connected operations use blind structured extraction followed by deterministic checks for finite sets, arithmetic, tables, charts, documents, formulas, graphs, scales, marked geometry and finite patterns. Unknown notation, incomplete extraction, ambiguous results or disagreement between extractors causes abstention. `grounded_arithmetic` uses the same exact numeric engine, including its original add/subtract/multiply/divide cases. Public precision and unit rules determine admissible calculations.
 
+Table source extraction uses the configured evidence token allowance. If a response reaches that limit before producing complete JSON, one blind retry can use up to twice the allowance, with an 8,192-token ceiling unless the configured allowance is already higher. A second incomplete response still abstains; no table cells are filled from the candidate answer.
+
 All 7 specialist validators are implemented within declared first-version ranges and can be named in `tasks.enabled_extensions`. Normal selection still requires an exact model-bound calibration certificate, a working validator environment and image-local eligibility. The all-seven example is `configs/specialist-pilot.yaml`. On this host the isolated renderer is unavailable, so both code reconstruction operations report an environment block. Static SVG/limited TikZ and HTML/CSS are rendered only within the OS sandbox when it works. A UI action is checked as data and never executed.
 
 ## Per-image flow

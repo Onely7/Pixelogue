@@ -1289,7 +1289,8 @@ class SynthesisCoordinator:
             client = tuple(self.generators.values())[judge]
             max_tokens = (
                 self.config.tasks.evidence_max_tokens
-                if stage.startswith("specialist_") and stage.endswith("_source")
+                if stage == "table_source"
+                or (stage.startswith("specialist_") and stage.endswith("_source"))
                 else 2048
             )
             return self._invoke(
@@ -1977,12 +1978,16 @@ class SynthesisCoordinator:
             "TEXT_RELATION_UNVERIFIED",
         }
         retry_feedback: str | None = None
+        prior_error: str | None = None
         for attempt in range(self.config.runtime.structured_output_max_attempts):
             call_kwargs = dict(kwargs)
             if attempt:
                 call_kwargs["seed"] = int(call_kwargs["seed"]) + 100_000 * attempt
                 call_kwargs["bypass_cache"] = True
                 call_kwargs["retry_feedback"] = retry_feedback
+                if stage == "table_source" and prior_error == "MODEL_FINISH_REASON":
+                    original_tokens = int(kwargs["max_tokens"])
+                    call_kwargs["max_tokens"] = max(original_tokens, min(original_tokens * 2, 8192))
             response: ModelResponse | None = None
             try:
                 response = client.invoke(stage, payload, images, model, **call_kwargs)
@@ -2136,6 +2141,7 @@ class SynthesisCoordinator:
                         },
                     )
                 if can_retry:
+                    prior_error = error.reason
                     continue
                 raise
             return response.value
