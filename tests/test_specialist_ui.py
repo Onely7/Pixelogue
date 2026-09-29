@@ -161,3 +161,49 @@ def test_click_uses_target_region_even_when_widget_kind_labels_differ() -> None:
         verify_ui_action((first, second), *args[:-1], answer.replace('"x":0.3', '"x":0.7'))[0]
         is GateVerdict.NOT_MET
     )
+
+
+def test_click_accepts_moderately_overlapping_target_boxes_only_at_agreed_point() -> None:
+    first = _source()
+    second = first.model_copy(
+        update={
+            "controls": (
+                first.controls[0].model_copy(
+                    update={
+                        "region": first.controls[0].region.model_copy(
+                            update={"left": 0.28, "right": 0.58}
+                        )
+                    }
+                ),
+            )
+        }
+    )
+    views = [{"view_id": "view-1", "width": "1000", "height": "500"}]
+    answer = (
+        '{"action":"click","target_id":"search","view_id":"view-1",'
+        '"x":0.3,"y":0.15,"pixel_x":300,"pixel_y":75,"text":null}'
+    )
+    args = (
+        (first, second),
+        "static-screen",
+        {"target": "search", "action": "click"},
+        "s",
+        "view-1",
+        views,
+    )
+    assert verify_ui_action(*args, answer)[0] is GateVerdict.MET
+    wrong_point = answer.replace('"x":0.3', '"x":0.25').replace('"pixel_x":300', '"pixel_x":250')
+    assert verify_ui_action(*args, wrong_point)[0] is GateVerdict.NOT_MET
+    focus = answer.replace('"action":"click"', '"action":"focus"')
+    assert (
+        verify_ui_action(
+            (first, second),
+            "static-screen",
+            {"target": "search", "action": "focus"},
+            "s",
+            "view-1",
+            views,
+            focus,
+        )[0]
+        is GateVerdict.UNKNOWN
+    )

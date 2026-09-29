@@ -105,7 +105,8 @@ def verify_ui_action(
     first, second = matched[0][0], matched[1][0]
     agreement = _region_iou(first.region, second.region)
     kinds_support_action = action == "click" or first.kind == second.kind == "field"
-    if not kinds_support_action or first.enabled != second.enabled or agreement < 0.7:
+    minimum_agreement = 0.5 if action == "click" else 0.7
+    if not kinds_support_action or first.enabled != second.enabled or agreement < minimum_agreement:
         return GateVerdict.UNKNOWN, {
             "reason": "Independent target controls disagree",
             "target_region_iou": agreement,
