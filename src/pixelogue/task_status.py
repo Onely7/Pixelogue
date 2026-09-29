@@ -34,6 +34,12 @@ SPECIALIST_TESTS = {
 
 # Named operation cases are distinct from a passing shared test module.
 TASK_BOUNDARY_TESTS = {
+    "entity_count": "test_closed_set_verification_uses_the_operation_contract_after_family_rename",
+    "text_transcription": "test_transcription_preserves_source_errors_and_meaningful_whitespace",
+    "grounded_arithmetic": (
+        "tests/test_task_verification.py",
+        "test_arithmetic_recomputes_only_the_bound_public_operator",
+    ),
     "spatial_ordering": "test_order_requires_all_visible_members_in_requested_sequence",
     "set_cardinality_comparison": "test_cardinality_comparison_uses_closed_group_counts",
     "quantified_statement_verification": "test_quantifier_checks_public_choice_and_threshold",
@@ -167,9 +173,12 @@ def task_status_report(
         )
         path = _test_module(task.id)
         boundary_test = TASK_BOUNDARY_TESTS.get(task.id)
+        boundary_path, boundary_name = (
+            boundary_test if isinstance(boundary_test, tuple) else (path, boundary_test)
+        )
         boundary_status = (
-            f"passed: {boundary_test}"
-            if boundary_test is not None and boundary_test in passed_names.get(path, set())
+            f"passed: {boundary_name}"
+            if boundary_name is not None and boundary_name in passed_names.get(boundary_path, set())
             else "not_recorded"
         )
         test_counts = tests.get(path)

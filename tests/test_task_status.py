@@ -38,6 +38,17 @@ def test_status_covers_all_tasks_without_claiming_unrun_cpu_checks(tmp_path: Pat
     assert renderer["calibration"] == "pending"
 
     junit.write_text(
+        '<testsuite><testcase classname="tests.test_task_verification" '
+        'name="test_arithmetic_recomputes_only_the_bound_public_operator[add-5-MET]"/>'
+        "</testsuite>"
+    )
+    arithmetic = task_status_report(config, junit)
+    arithmetic_row = next(
+        item for item in arithmetic["tasks"] if item["task_id"] == "grounded_arithmetic"
+    )
+    assert arithmetic_row["cpu_task_specific_boundaries"].startswith("passed:")
+
+    junit.write_text(
         '<testsuite><testcase classname="tests.test_specialist_render" '
         'name="test_svg_and_html_reject_executable_syntax"><skipped/></testcase></testsuite>'
     )
