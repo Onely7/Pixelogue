@@ -13,7 +13,7 @@ from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import normalized_identification_words
 from pixelogue.serialization import canonical_hash
 from pixelogue.task_catalog import TaskDefinition
-from pixelogue.task_evidence import CandidateBindings, ScopedEvidenceInventory
+from pixelogue.task_evidence import CandidateBindings, ImageRegion, ScopedEvidenceInventory
 from pixelogue.task_registry import REGISTRATIONS, registration
 
 # Keep this public view for existing catalog checks; registrations own implementation status.
@@ -162,6 +162,11 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         "definition": task.definition_en,
         "scope": scope,
         "scope_id": candidate.scope_id,
+        **(
+            {"target_region": candidate.target_region.model_dump(mode="json")}
+            if candidate.target_region is not None
+            else {}
+        ),
         "profile": candidate.profile,
         "profile_contract": catalog.profile_contracts[candidate.profile].model_dump(
             mode="json", exclude={"eligible_task_ids"}
@@ -428,10 +433,27 @@ def bind_candidates(
                 and parameters["format"].value != "structured_json"
             ):
                 continue
+        target = parameters["target"]
+        target_regions = (
+            [item.region for item in scope.observations if item.evidence_id in target.evidence_refs]
+            if target.origin == "image"
+            else []
+        )
+        target_region = (
+            ImageRegion(
+                left=min(region.left for region in target_regions),
+                top=min(region.top for region in target_regions),
+                right=max(region.right for region in target_regions),
+                bottom=max(region.bottom for region in target_regions),
+            )
+            if target_regions
+            else None
+        )
         candidate = template.model_copy(
             update={
                 "public_parameters": binding.public_parameters,
                 "evidence_refs": binding.evidence_refs,
+                "target_region": target_region,
             }
         )
         identity = fingerprint(candidate, inventory.image_id)

@@ -12,7 +12,7 @@ from pixelogue.config import StrictModel
 from pixelogue.errors import ExecutionError
 from pixelogue.ledger import Requirement
 from pixelogue.serialization import canonical_hash
-from pixelogue.task_evidence import PublicParameter
+from pixelogue.task_evidence import ImageRegion, PublicParameter
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
@@ -138,6 +138,7 @@ class InstructionCandidate(StrictModel):
     catalog_version: Literal["7.0"] | None = None
     scope_id: str | None = None
     view_id: str | None = None
+    target_region: ImageRegion | None = None
     public_parameters: tuple[PublicParameter, ...] = ()
     evidence_refs: tuple[str, ...] = ()
     verification_contracts: tuple[str, ...] = ()

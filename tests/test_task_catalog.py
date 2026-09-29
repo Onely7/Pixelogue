@@ -448,6 +448,53 @@ def test_answer_labels_are_hidden_from_model_operation_contract() -> None:
         assert contract["scope"] != visible_scope
 
 
+def test_bound_target_region_uses_only_target_evidence_without_disclosing_answer() -> None:
+    left = ImageRegion(left=0.1, top=0.2, right=0.4, bottom=0.8)
+    right = ImageRegion(left=0.6, top=0.2, right=0.9, bottom=0.8)
+    data = inventory(
+        ScopeEvidence(
+            scope_id="pair",
+            view_id="view",
+            public_description="Two nearby objects",
+            region=REGION,
+            observations=(
+                CapabilityObservation(
+                    evidence_id="left",
+                    capability="visible_entity",
+                    verdict="MET",
+                    region=left,
+                    detail="First visible object",
+                ),
+                CapabilityObservation(
+                    evidence_id="right",
+                    capability="scene_context",
+                    verdict="MET",
+                    region=right,
+                    detail="Adjacent visible object",
+                ),
+            ),
+        )
+    )
+    template = next(item for item in candidates(data) if item.task_id == "object_identification")
+    proposal = binding(
+        template,
+        public_parameters=(
+            PublicParameter(name="target", value="horse", origin="image", evidence_refs=("left",)),
+        ),
+        evidence_refs=("left", "right"),
+    )
+    (bound,) = bind_candidates(
+        (template,), CandidateBindings(bindings=(proposal,)), data, (), TaskRuntimeConfig()
+    )
+    assert bound.target_region == left
+    assert InstructionCandidate.model_validate(bound.model_dump()).target_region == left
+    contract = operation_contract(bound)
+    assert contract["target_region"] == left.model_dump()
+    assert selector_candidate(bound)["target_region"] == left.model_dump()
+    assert "horse" not in json.dumps(contract).lower()
+    assert "horse" not in json.dumps(selector_candidate(bound)).lower()
+
+
 def test_identification_fingerprint_collapses_label_format_and_plural() -> None:
     data = inventory(scope("left", visible_entity="MET"))
     template = next(item for item in candidates(data) if item.task_id == "object_identification")

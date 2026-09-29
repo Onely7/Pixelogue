@@ -238,7 +238,9 @@ this image and the exact public history. The candidate list is provisional: veri
 role, value, region, or pairing needed by an operation is visibly available. Compare all candidates
 and select the strongest fully supported operation. For example, counting does not realize matching,
 and repeated objects alone do not form a visible correspondence. Do not repeat a request already
-answered in the public history. Do not answer the candidate. Set candidate_id to null only when every
+answered in the public history. When target_region is supplied, use its normalized image coordinates
+as a location cue for the bound target; a nearby object in the same scope is a different target.
+Do not answer the candidate. Set candidate_id to null only when every
 listed candidate lacks a supported new request.""",
     "question_generation": """Write one user question realizing the selected instruction. Keep it in
 the target language and grounded in the visible scope and public history. Realize the selected
@@ -249,6 +251,9 @@ Controller IDs such as scope_id, view_id, candidate_id and evidence IDs are priv
 never print their values in the public question. Do not refer to a "selected region" or
 "selected image scene"; those are controller descriptions, not public visual locators.
 Describe the target using visible location or traits.
+When target_region is supplied, use it to locate the bound target in the image. Do not switch to
+another visible object in the same scope or print controller coordinates in the public question.
+If the region contains several possible targets and the intended one cannot be resolved, abstain.
 If those cues cannot identify it uniquely, return text=null with a reason.
 For scene_categorization, category_set
 must contain at least two distinct ordinary alternatives, including the supported target category;
@@ -285,7 +290,9 @@ conversation. A visible object, region, text, or complete image scope is a local
 is required: use MET, NOT_MET, or UNKNOWN, never NOT_APPLICABLE. Mark operation_coherent NOT_MET when
 the question changes the exact task_id, even within one family; counting or spatial ordering cannot
 realize correspondence matching. Mark useful_request NOT_MET when the public history already
-contains the same answered request. When a v7 contract is supplied, local_anchor and
+contains the same answered request. When target_region is supplied, check that the question refers
+to the bound target there rather than a nearby object in the same scope. If the target cannot be
+resolved from this cue, mark local_anchor UNKNOWN. When a v7 contract is supplied, local_anchor and
 operation_coherent also require every eligibility check and public parameter to hold. Check the
 alternative profile guard for limitations or false premises; do not require normal answerability
 for a limitation. Both the target and the stated limitation/contradiction must be locally grounded.

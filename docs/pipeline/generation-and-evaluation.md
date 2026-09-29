@@ -108,6 +108,8 @@ The controller matches reported capabilities to the checked-in task catalog. Eac
 
 A candidate is an operation, not a finished question. Each model binding has a required `target` object. `visible_count` might later become “How many red squares are there?”, while `attribute_lookup` might become “What colour is the left square?”
 
+For image-sourced targets, the controller carries the target evidence region into selection, question writing, and question review. This location cue helps keep a later question on its bound object when several objects share one scope. It does not reveal an answer label or permit a question about a nearby object.
+
 ### Step 3: select one instruction
 
 The active selector receives only:
