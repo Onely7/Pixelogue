@@ -16,7 +16,7 @@ Table source extraction uses the configured evidence token allowance. If a respo
 
 Chart verification also supports bars whose exact values are printed next to the marks but whose numeric axis has no labeled ticks. The extractor marks that axis `unmarked` and cannot use it for pixel-based estimates. Every relevant value must have a directly printed label; an unlabeled mark remains unverified. Calibrated linear and log axes still require at least two ordered labeled ticks.
 
-All 7 specialist validators are implemented within declared first-version ranges and can be named in `tasks.enabled_extensions`. Normal selection still requires an exact model-bound calibration certificate, a working validator environment and image-local eligibility. The all-seven example is `configs/specialist-pilot.yaml`. On this host the isolated renderer is unavailable, so both code reconstruction operations report an environment block. Static SVG/limited TikZ and HTML/CSS are rendered only within the OS sandbox when it works. A UI action is checked as data and never executed.
+All 7 specialist validators are implemented within declared first-version ranges and can be named in `tasks.enabled_extensions`. Normal selection still requires an exact model-bound calibration certificate, a working validator environment and image-local eligibility. The all-seven example is `configs/specialist-pilot.yaml`. On a host without a working OS sandbox, both code reconstruction operations report an environment block. Static SVG/limited TikZ and HTML/CSS are rendered only within that sandbox. A UI action is checked as data and never executed.
 
 ## Per-image flow
 
