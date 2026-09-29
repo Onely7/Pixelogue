@@ -495,6 +495,35 @@ def test_length_completion_missing_required_field_is_incomplete_not_schema_error
         client.client.close()
 
 
+def test_length_completion_with_runaway_whitespace_is_distinct_from_valid_json() -> None:
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="x")
+    response = {
+        "choices": [
+            {
+                "finish_reason": "length",
+                "message": {"content": '{"verdict":"MET"}' + " " * 512},
+            }
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1000},
+    }
+    try:
+        with pytest.raises(ExecutionError) as caught:
+            client._decode_typed_response(
+                json.dumps(response).encode(), RubricVerdict, max_tokens=1000
+            )
+        assert caught.value.reason == "MODEL_WHITESPACE_RUNAWAY"
+
+        response["choices"][0]["message"]["content"] = (
+            '{"verdict":"MET","reason":"Supported."}' + " " * 512
+        )
+        result, _ = client._decode_typed_response(
+            json.dumps(response).encode(), RubricVerdict, max_tokens=1000
+        )
+        assert result.verdict == "MET"
+    finally:
+        client.client.close()
+
+
 @pytest.mark.parametrize("recovers", [True, False])
 def test_malformed_json_uses_bounded_structured_retries(tmp_path, recovers):
     config = load_config(Path("configs/pilot.yaml"))

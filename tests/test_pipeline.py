@@ -530,6 +530,46 @@ def test_incomplete_evidence_extraction_gets_a_larger_retry_budget(
     assert budgets == [4096, 8192]
 
 
+def test_whitespace_runaway_retries_evidence_without_doubling_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "evidence-whitespace-retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a)
+    original_invoke = client.invoke
+    budgets: list[int] = []
+    feedback: list[str | None] = []
+
+    def whitespace_first(*args: Any, **kwargs: Any) -> ModelResponse:
+        budgets.append(kwargs["max_tokens"])
+        feedback.append(kwargs.get("retry_feedback"))
+        if len(budgets) == 1:
+            raise ExecutionError("MODEL_WHITESPACE_RUNAWAY", "Completion exhausted in whitespace")
+        return original_invoke(*args, **kwargs)
+
+    monkeypatch.setattr(client, "invoke", whitespace_first)
+    coordinator = SynthesisCoordinator(
+        config, "evidence-whitespace-retry", store, client, client, client
+    )
+    try:
+        result = coordinator._invoke(
+            client,
+            "evidence_extraction",
+            {"image_id": "image", "image_views": [{"view_id": "view"}]},
+            (),
+            ScopedEvidenceReport,
+            max_tokens=4096,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        store.close()
+
+    assert result.image_id == "image"
+    assert budgets == [4096, 4096]
+    assert "Do not emit blank lines" in (feedback[1] or "")
+
+
 def test_semantic_contract_failure_retries_without_accepting_invalid_result(
     tmp_path: Path,
 ) -> None:

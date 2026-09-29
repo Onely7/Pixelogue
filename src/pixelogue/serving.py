@@ -348,7 +348,27 @@ class VllmClient:
     ) -> tuple[ResponseModel, str]:
         """Validate one saved or fresh completion and return its typed content."""
         parsed = _model_json_object(raw_response)
-        content, usage = self._validate_completion(parsed)
+        choices = parsed.get("choices")
+        choice = (
+            choices[0]
+            if isinstance(choices, list) and len(choices) == 1 and isinstance(choices[0], dict)
+            else {}
+        )
+        message = choice.get("message")
+        raw_content = message.get("content") if isinstance(message, dict) else None
+        whitespace_runaway = (
+            choice.get("finish_reason") == "length"
+            and isinstance(raw_content, str)
+            and len(raw_content) - len(raw_content.rstrip()) >= 512
+        )
+        try:
+            content, usage = self._validate_completion(parsed)
+        except ExecutionError as error:
+            if whitespace_runaway and error.reason == "MODEL_FINISH_REASON":
+                raise ExecutionError(
+                    "MODEL_WHITESPACE_RUNAWAY", "Completion exhausted its limit in whitespace"
+                ) from error
+            raise
         if response_model is TextPayload and parsed["choices"][0]["finish_reason"] != "stop":
             raise ExecutionError(
                 "MODEL_FINISH_REASON", "Public text must finish before its token limit"
@@ -358,11 +378,23 @@ class VllmClient:
         if prompt_tokens < 0 or completion_tokens < 0 or completion_tokens > max_tokens:
             raise ExecutionError("MODEL_USAGE_INVALID", "Token usage is outside request bounds")
         cleaned = self.adapter.clean_content(content)
-        _model_json_object(cleaned)
+        try:
+            _model_json_object(cleaned)
+        except ExecutionError as error:
+            if whitespace_runaway and error.reason == "MODEL_SCHEMA_MISMATCH":
+                raise ExecutionError(
+                    "MODEL_WHITESPACE_RUNAWAY", "Completion exhausted its limit in whitespace"
+                ) from error
+            raise
         try:
             typed = response_model.model_validate_json(cleaned)
         except ValidationError as error:
             if parsed["choices"][0]["finish_reason"] == "length":
+                if whitespace_runaway:
+                    raise ExecutionError(
+                        "MODEL_WHITESPACE_RUNAWAY",
+                        "Completion exhausted its limit in whitespace",
+                    ) from error
                 raise ExecutionError(
                     "MODEL_FINISH_REASON", "Completion reached its token limit before the schema"
                 ) from error

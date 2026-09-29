@@ -133,6 +133,7 @@ MODEL_OUTPUT_ABSTENTIONS = frozenset(
     {
         "MODEL_CONTENT_EMPTY",
         "MODEL_FINISH_REASON",
+        "MODEL_WHITESPACE_RUNAWAY",
         "MODEL_SCHEMA_MISMATCH",
         "EVIDENCE_IMAGE_MISMATCH",
         "EVIDENCE_CAPABILITY_UNKNOWN",
@@ -421,6 +422,7 @@ class SynthesisCoordinator:
                     if error.reason not in {
                         "MODEL_CONTENT_EMPTY",
                         "MODEL_FINISH_REASON",
+                        "MODEL_WHITESPACE_RUNAWAY",
                         "MODEL_SCHEMA_MISMATCH",
                         "CANDIDATE_BINDING_ID",
                         "CANDIDATE_EVIDENCE_SCOPE",
@@ -2049,6 +2051,7 @@ class SynthesisCoordinator:
         retryable = {
             "MODEL_CONTENT_EMPTY",
             "MODEL_FINISH_REASON",
+            "MODEL_WHITESPACE_RUNAWAY",
             "MODEL_SCHEMA_MISMATCH",
             "EVIDENCE_IMAGE_MISMATCH",
             "EXTRACTION_SOURCE_INVALID",
@@ -2276,6 +2279,11 @@ class SynthesisCoordinator:
                 "The previous response was incomplete. Return a concise, complete JSON object "
                 "within the token limit and finish immediately."
             )
+        if reason == "MODEL_WHITESPACE_RUNAWAY":
+            return (
+                "The previous JSON response ended with excessive whitespace. Finish all required"
+                " JSON fields, close the object, and stop immediately. Do not emit blank lines."
+            )
         if reason == "REPEATED_PUBLIC_QUESTION":
             return (
                 "The draft repeats an answered question. Keep the selected task and ask for a"
@@ -2440,6 +2448,7 @@ class SynthesisCoordinator:
             if error.reason not in {
                 "MODEL_CONTENT_EMPTY",
                 "MODEL_FINISH_REASON",
+                "MODEL_WHITESPACE_RUNAWAY",
                 "MODEL_SCHEMA_MISMATCH",
                 "EVIDENCE_RECHECK_SCOPE",
             }:
