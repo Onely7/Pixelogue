@@ -86,6 +86,7 @@ from pixelogue.serving import VllmClient
 from pixelogue.specialist_evaluation import (
     SpecialistEvaluationCase,
     SpecialistEvaluationResult,
+    SpecialistInputManifest,
     build_calibration_manifest,
     run_specialist_evaluation,
 )
@@ -258,10 +259,16 @@ def calibration_build_command(
     report_path: Annotated[Path, typer.Option("--report", dir_okay=False)],
 ) -> None:
     """Compute exact model-bound confirmation certificates and pending-case counts."""
+    input_path = results_dir.parent / "input.json"
+    if not input_path.is_file():
+        raise ExternalInputError(
+            "SPECIALIST_INPUT_MISSING", "Calibration requires the frozen input.json beside results"
+        )
+    frozen = read_json(input_path, SpecialistInputManifest)
     results = tuple(
         read_json(path, SpecialistEvaluationResult) for path in sorted(results_dir.glob("*.json"))
     )
-    manifest, report = build_calibration_manifest(results)
+    manifest, report = build_calibration_manifest(results, frozen.case_ids)
     write_json(output, manifest)
     write_json(report_path, report)
     typer.echo(json.dumps(report))

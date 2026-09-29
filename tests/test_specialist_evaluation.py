@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
+from pixelogue.calibration import CalibrationManifest
 from pixelogue.config import load_config
 from pixelogue.contracts import GateVerdict, SourcePurpose, TextPayload
 from pixelogue.errors import ExecutionError
@@ -61,19 +63,25 @@ def _result(
     )
 
 
+def _manifest(
+    results: tuple[SpecialistEvaluationResult, ...],
+) -> tuple[CalibrationManifest, dict[str, Any]]:
+    return build_calibration_manifest(results, tuple(result.case_id for result in results))
+
+
 def test_complete_confirmation_group_computes_model_bound_certificate() -> None:
     results = (
         *(_result(index, positive=True) for index in range(20)),
         *(_result(index + 20, positive=False, verdict="NOT_MET") for index in range(60)),
     )
-    manifest, report = build_calibration_manifest(results)
+    manifest, report = _manifest(results)
     assert report["eligible"] == 1
     assert manifest.certificates[0].positive_images == 20
     assert manifest.certificates[0].negative_images == 60
 
 
 def test_failed_calls_hold_the_whole_confirmation_group_pending() -> None:
-    manifest, report = build_calibration_manifest(
+    manifest, report = _manifest(
         (
             _result(0, positive=True),
             _result(1, positive=False, status="FAILED"),
@@ -94,7 +102,7 @@ def test_failed_confirmation_cannot_inflate_eligible_certificate() -> None:
         *(_result(index + 20, positive=False, verdict="NOT_MET") for index in range(60)),
         _result(80, positive=True, status="FAILED"),
     )
-    manifest, report = build_calibration_manifest(results)
+    manifest, report = _manifest(results)
     assert not manifest.certificates
     assert report["eligible"] == 0
     assert report["incomplete_confirmation_groups"] == 1
@@ -107,13 +115,31 @@ def test_unlabeled_confirmation_cannot_be_dropped_from_certificate() -> None:
         *(_result(index + 20, positive=False, verdict="NOT_MET") for index in range(60)),
         _result(80, positive=True).model_copy(update={"gold_accept": None}),
     )
-    manifest, report = build_calibration_manifest(results)
+    manifest, report = _manifest(results)
     assert not manifest.certificates
     assert report["eligible"] == 0
     assert {item["reason"] for item in report["pending"]} == {
         "missing_gold_label",
         "incomplete_confirmation_group",
     }
+
+
+def test_missing_result_blocks_an_otherwise_eligible_confirmation_group() -> None:
+    results = (
+        *(_result(index, positive=True) for index in range(20)),
+        *(_result(index + 20, positive=False, verdict="NOT_MET") for index in range(60)),
+    )
+    expected = (*[result.case_id for result in results], "case-80")
+    manifest, report = build_calibration_manifest(results, expected)
+    assert not manifest.certificates
+    assert report["expected_cases"] == 81
+    assert report["missing_results"] == 1
+    assert {item["reason"] for item in report["pending"]} == {
+        "missing_result",
+        "incomplete_input_manifest",
+    }
+    with pytest.raises(ValueError, match="outside frozen input"):
+        build_calibration_manifest(results, expected[:-2])
 
 
 def test_failed_second_evaluator_resumes_from_first_saved_stage(

@@ -454,13 +454,26 @@ class SpecialistStageResult(StrictModel):
 
 def build_calibration_manifest(
     results: tuple[SpecialistEvaluationResult, ...],
+    expected_case_ids: tuple[str, ...],
 ) -> tuple[CalibrationManifest, dict[str, Any]]:
-    """Certify only complete held-out groups; retain every incomplete case in report."""
+    """Certify complete frozen input groups and report every missing expected case."""
+    if not expected_case_ids or len(set(expected_case_ids)) != len(expected_case_ids):
+        raise ValueError("Calibration requires unique frozen input case IDs")
+    result_ids = [result.case_id for result in results]
+    result_id_set = set(result_ids)
+    if len(result_id_set) != len(result_ids):
+        raise ValueError("Calibration result case IDs must be unique")
+    unknown = result_id_set - set(expected_case_ids)
+    if unknown:
+        raise ValueError(f"Calibration results are outside frozen input: {sorted(unknown)}")
+    missing = tuple(case_id for case_id in expected_case_ids if case_id not in result_id_set)
     groups: dict[tuple[str, str, tuple[str, str], str], list[CalibrationObservation]] = defaultdict(
         list
     )
     incomplete_groups: set[tuple[str, str, tuple[str, str], str]] = set()
-    pending: list[dict[str, str]] = []
+    pending: list[dict[str, str]] = [
+        {"case_id": case_id, "reason": "missing_result"} for case_id in missing
+    ]
     for result in results:
         key = (result.task_id, result.domain, result.model_locks, result.validator_version)
         confirmation = result.split == "confirmation"
@@ -496,6 +509,12 @@ def build_calibration_manifest(
     certified: list[CalibrationObservation] = []
     certificates: list[CalibrationCertificate] = []
     for key, observations in sorted(groups.items()):
+        if missing:
+            pending.extend(
+                {"case_id": item.case_id, "reason": "incomplete_input_manifest"}
+                for item in observations
+            )
+            continue
         if key in incomplete_groups:
             pending.extend(
                 {"case_id": item.case_id, "reason": "incomplete_confirmation_group"}
@@ -516,6 +535,8 @@ def build_calibration_manifest(
     manifest = CalibrationManifest(observations=tuple(certified), certificates=tuple(certificates))
     return manifest, {
         "input_results": len(results),
+        "expected_cases": len(expected_case_ids),
+        "missing_results": len(missing),
         "certificates": len(certificates),
         "eligible": sum(item.eligible for item in certificates),
         "incomplete_confirmation_groups": len(incomplete_groups),
