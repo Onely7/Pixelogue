@@ -110,6 +110,24 @@ uv run --locked python validation/build_screenspot_ui_cases.py
 
 The fetcher checks image and annotation hashes against the committed manifest. Selection also excluded screenshots with a 64-bit difference-hash distance at most five; this screen is not a complete near-copy audit. The case builder freezes 20 annotated-center clicks and 59 off-target clicks on separate confirmation screenshots. ScreenSpot images remain evaluation-only and outside Git. Model extraction and verifier outcomes must still satisfy the stated calibration bounds before normal selection.
 
+## PrIMuS music notation evaluation sample
+
+The [pinned PrIMuS manifest](../validation/primus_music_eval_manifest.jsonl) identifies 89 incipits from different work IDs in the [official PrIMuS archive](https://grfia.dlsi.ua.es/primus/). Each has a printed score and an independently generated MEI label. This first calibration domain covers only a complete first measure, one voice, treble or bass clef, no key signature, and supported note/rest durations without accidentals, ties or tuplets. The score strip is enlarged exactly twofold before ingestion. The original archive, images and MEI labels remain outside Git and never enter model requests.
+
+```sh
+uv sync --locked --directory runtime/validators
+uv run --locked python validation/fetch_primus_music_eval.py
+uv run --locked pixelogue ingest \
+  --config configs/paired-one-gpu-pilot.yaml \
+  --sources data/primus-music-eval/sources.jsonl \
+  --rights data/primus-music-eval/rights.jsonl \
+  --image-root data/primus-music-eval \
+  --artifact-root artifacts/prepared-primus-music-eval
+uv run --locked python validation/build_primus_music_cases.py
+```
+
+The fetcher checks the source archive, MEI, original PNG, transformed PNG and derived label hashes. The case builder freezes 20 exact transcriptions and 59 adjacent-note errors on separate confirmation works. Its label consistency check does not measure visual reading accuracy; independent model readings and the calibration bounds determine normal selection. The rights record points to the source page under the operator's evaluation-only testing authorization and does not assert a reuse license for the scores.
+
 ## Prepare existing CVDF training images
 
 `prepare-local-train` is a CPU-only adapter for an existing flat directory of
