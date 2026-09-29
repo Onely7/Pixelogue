@@ -98,17 +98,18 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
             "neither": len(planned_ids) - len(accepted[left] | accepted[right]),
         }
 
+    plan_fields = (
+        "baseline_commit",
+        "variant_commit",
+        "config_sha256",
+        "prepared_manifest_sha256",
+        "seed",
+        "workers",
+    )
     return {
         "plan": {
-            key: plan[key]
-            for key in (
-                "baseline_commit",
-                "variant_commit",
-                "config_sha256",
-                "prepared_manifest_sha256",
-                "seed",
-                "workers",
-            )
+            **{key: plan[key] for key in plan_fields},
+            **{key: plan[key] for key in ("intervention", "variant_config_sha256") if key in plan},
         },
         "images": len(planned_ids),
         "generator_and_language_assignments_identical": True,

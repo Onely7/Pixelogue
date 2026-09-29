@@ -27,6 +27,8 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
             "baseline_commit": "old",
             "variant_commit": "new",
             "config_sha256": "config",
+            "variant_config_sha256": "variant-config",
+            "intervention": "tasks.candidate_limit: 8 versus 4",
             "prepared_manifest_sha256": "images",
             "seed": 42,
             "workers": 2,
@@ -102,6 +104,7 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
     assert report["phases"]["baseline-1"]["human_approved_per_gpu_hour"] is None
     assert report["human_error_rates"] is None
     assert report["generator_and_language_assignments_identical"]
+    assert report["plan"]["variant_config_sha256"] == "variant-config"
 
     changed = tmp_path / "variant-2" / "conversations.jsonl"
     original = changed.read_text()
