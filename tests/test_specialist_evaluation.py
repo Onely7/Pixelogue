@@ -26,6 +26,7 @@ def test_specialist_retry_uses_stage_specific_feedback() -> None:
     geometry = _schema_retry_feedback("specialist_geometry_answer", error)
     assert "junction names" in circuit
     assert "scope_region must contain every event" in music
+    assert "measures=[]" in music
     assert "answer_quote and reported" in geometry
 
 
