@@ -125,6 +125,7 @@ After every pilot exit, including a failed exit, the watcher records a pending p
 The current pilot also processes the [60-category evaluation set](data.md#diverse-web-evaluation-sample) after the fixed Open Images comparison. Its separate output, diagnostics, replay, and per-category JSON/CSV/Markdown report appear in the run's `diverse/` directory and `diverse-*` files. This pilot uses the temporary one-GPU model override and has no independent gold labels; its acceptance count does not establish verifier accuracy.
 
 For an explicitly authorized later validation round, add `--campaign-id recheck-YYYYMMDD --additional-gpu-hours 2` to the `watch` command. The extension is added to the preserved cumulative ledger once per campaign ID. Reusing that ID on restart neither adds budget again nor reruns a completed pilot. The watcher runs one new pilot for a new campaign, then reacquires an idle GPU after the job until its extended budget expires.
+Each named extension can now allocate up to 24 GPU-hours for sustained, user-authorized validation. Record all model loading, inference and reservation intervals in the same ledger. A larger allowance does not change model identities, quantization or the idle-device check.
 
 Add `--reserve-only` while diagnosing a failed pilot. This holds an idle GPU without launching the pilot; stop the watcher and restart with the same campaign ID without that flag to run the corrected job. Both phases consume the same cumulative GPU ledger.
 
@@ -162,9 +163,9 @@ models:
 
 It is a 35B-total-parameter model for memory planning. Test it in a separate run on port 8001 with enough idle capacity. Pixelogue does not start it alongside the default selector and does not switch to it after a failure.
 
-## 6. Keep the four GPU-hour pilot limit
+## 6. Account for the complete GPU allocation
 
-GPU-hours equal elapsed hours multiplied by allocated GPU count. One GPU used for 45 minutes consumes 0.75 GPU-hours; two GPUs for the same time consume 1.5. Include model loading and smoke tests. Record start and stop times in a local `_docs/` note and stop before the cumulative 4.0 limit.
+GPU-hours equal elapsed hours multiplied by allocated GPU count. One GPU used for 45 minutes consumes 0.75 GPU-hours; two GPUs for the same time consume 1.5. Include model loading, smoke tests and reservation holders. The initial pilot allocation was four GPU-hours; named extensions record subsequent user-authorized validation in the same ledger. Record start and stop times in a local `_docs/` note.
 
 Pixelogue records requests and token use, but it cannot observe time spent starting an external vLLM process. The operator adds that time. An unavailable server is an unrun check, not a pass.
 

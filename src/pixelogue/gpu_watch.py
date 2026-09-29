@@ -7,6 +7,7 @@ import argparse
 import fcntl
 import importlib
 import json
+import math
 import os
 import select
 import signal
@@ -20,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 STATE = ROOT / "artifacts/gpu-watch/state.json"
 PYTHON_WITH_TORCH = ROOT / "runtime/vllm/.venv/bin/python"
 MAX_GPU_SECONDS = 4 * 3600
+MAX_CAMPAIGN_GPU_HOURS = 24.0
 stop = False
 
 
@@ -91,6 +93,15 @@ def _authorize_campaign(state: dict[str, Any], campaign_id: str, additional_hour
     )
     _save(state)
     print(f"authorized campaign {campaign_id}: +{additional_hours:.3f} GPU-hours", flush=True)
+
+
+def _valid_campaign_extension(hours: float, campaign_id: str | None) -> bool:
+    """Allow a named, finite validation extension within one-day allocation bounds."""
+    return (
+        math.isfinite(hours)
+        and 0 <= hours <= MAX_CAMPAIGN_GPU_HOURS
+        and (hours == 0 or bool(campaign_id))
+    )
 
 
 def _retry_failed_pilot(state: dict[str, Any], campaign_id: str | None) -> None:
@@ -530,10 +541,8 @@ def main() -> None:
     args = parser.parse_args()
     if not 5 <= args.poll_seconds <= 300 or not 0.20 <= args.memory_fraction <= 0.92:
         parser.error("Invalid polling or reservation fraction")
-    if not 0 <= args.additional_gpu_hours <= 4 or (
-        args.additional_gpu_hours and not args.campaign_id
-    ):
-        parser.error("Budget extension must be at most four GPU-hours with a campaign ID")
+    if not _valid_campaign_extension(args.additional_gpu_hours, args.campaign_id):
+        parser.error("Budget extension must be at most 24 GPU-hours with a campaign ID")
     if args.retry_failed_pilot and (args.reserve_only or args.mode != "watch"):
         parser.error("Pilot retry requires watch mode without --reserve-only")
     if args.rerun_completed_pilot and (

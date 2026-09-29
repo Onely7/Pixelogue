@@ -90,6 +90,13 @@ def test_named_validation_campaign_extends_budget_only_once(
         gpu_watch._authorize_campaign(state, "recheck-20260928", 3.0)
 
 
+def test_extended_gpu_campaign_requires_a_finite_named_allocation() -> None:
+    assert gpu_watch._valid_campaign_extension(24.0, "calibration-20260929")
+    assert not gpu_watch._valid_campaign_extension(24.01, "calibration-20260929")
+    assert not gpu_watch._valid_campaign_extension(float("inf"), "calibration-20260929")
+    assert not gpu_watch._valid_campaign_extension(2.0, None)
+
+
 def test_failed_pilot_can_retry_only_within_existing_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
