@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Annotated, Literal
 
 from pydantic import Field, ValidationError, model_validator
@@ -264,31 +265,77 @@ class CandidateBindingReport(StrictModel):
     estimated_answer_tokens: Annotated[int, Field(ge=1)]
 
 
+@dataclass(frozen=True)
+class BindingParseRejection:
+    """One rejected wire binding whose siblings may still be useful."""
+
+    candidate_id: str
+    reason: str
+    message: str
+
+
 class CandidateBindingsReport(StrictModel):
     """Model-facing candidate response convertible to the internal contract."""
 
     bindings: Annotated[tuple[CandidateBindingReport, ...], Field(max_length=32)]
 
+    @staticmethod
+    def _convert(binding: CandidateBindingReport) -> CandidateBinding:
+        """Apply the internal source and uniqueness checks to one wire binding."""
+        return CandidateBinding(
+            candidate_id=binding.candidate_id,
+            public_parameters=(
+                PublicParameter(name="target", **binding.target.model_dump()),
+                *binding.public_parameters,
+            ),
+            checks=binding.checks,
+            evidence_refs=binding.evidence_refs,
+            estimated_answer_tokens=binding.estimated_answer_tokens,
+        )
+
     def to_bindings(self) -> CandidateBindings:
         """Validate target sourcing and reject duplicate parameter names."""
         try:
             return CandidateBindings(
-                bindings=tuple(
-                    CandidateBinding(
-                        candidate_id=binding.candidate_id,
-                        public_parameters=(
-                            PublicParameter(name="target", **binding.target.model_dump()),
-                            *binding.public_parameters,
-                        ),
-                        checks=binding.checks,
-                        evidence_refs=binding.evidence_refs,
-                        estimated_answer_tokens=binding.estimated_answer_tokens,
-                    )
-                    for binding in self.bindings
-                )
+                bindings=tuple(self._convert(binding) for binding in self.bindings)
             )
         except ValidationError as error:
             raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
+
+    def partition_bindings(
+        self, allowed_ids: frozenset[str]
+    ) -> tuple[CandidateBindings, tuple[BindingParseRejection, ...]]:
+        """Keep valid siblings after checking all candidate identities together."""
+        ids = [binding.candidate_id for binding in self.bindings]
+        if len(ids) != len(set(ids)) or not set(ids) <= allowed_ids:
+            raise ExecutionError("CANDIDATE_BINDING_ID", "Unknown or repeated candidate binding")
+        accepted: list[CandidateBinding] = []
+        rejected: list[BindingParseRejection] = []
+        for binding in self.bindings:
+            target = binding.target
+            if (target.origin == "instruction" and target.evidence_refs) or (
+                target.origin != "instruction" and not target.evidence_refs
+            ):
+                rejected.append(
+                    BindingParseRejection(
+                        candidate_id=binding.candidate_id,
+                        reason="CANDIDATE_PARAMETER_SOURCE",
+                        message=f"Candidate {binding.candidate_id}: target origin and evidence references conflict",
+                    )
+                )
+                continue
+            try:
+                accepted.append(self._convert(binding))
+            except ValidationError as error:
+                message = str(error.errors()[0]["msg"])
+                rejected.append(
+                    BindingParseRejection(
+                        candidate_id=binding.candidate_id,
+                        reason="CANDIDATE_PARAMETER_VALUE",
+                        message=f"Candidate {binding.candidate_id}: {message[:500]}",
+                    )
+                )
+        return CandidateBindings(bindings=tuple(accepted)), tuple(rejected)
 
 
 class TranscriptInventory(StrictModel):

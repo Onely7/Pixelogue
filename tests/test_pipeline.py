@@ -399,6 +399,25 @@ def test_candidate_schema_retry_lists_required_binding_fields(tmp_path: Path) ->
     assert "estimated_answer_tokens must be a positive integer" in (client.retry_feedback[1] or "")
 
 
+def test_candidate_wire_partition_rejects_unknown_and_duplicate_ids() -> None:
+    binding = CandidateBindingReport(
+        candidate_id="known",
+        target=TargetReport(value="the visible object", origin="instruction"),
+        public_parameters=(),
+        checks=(),
+        evidence_refs=("e1",),
+        estimated_answer_tokens=10,
+    )
+    with pytest.raises(ExecutionError) as duplicate:
+        CandidateBindingsReport(bindings=(binding, binding)).partition_bindings(
+            frozenset({"known"})
+        )
+    assert duplicate.value.reason == "CANDIDATE_BINDING_ID"
+    with pytest.raises(ExecutionError) as unknown:
+        CandidateBindingsReport(bindings=(binding,)).partition_bindings(frozenset({"other"}))
+    assert unknown.value.reason == "CANDIDATE_BINDING_ID"
+
+
 @pytest.mark.parametrize(
     ("stage", "model", "expected"),
     [
@@ -664,8 +683,20 @@ def test_exhausted_candidate_binding_checks_abstain_without_accepting(
     assert stop["reason"] == "CANDIDATE_CHECKS_MISMATCH"
 
 
+@pytest.mark.parametrize(
+    ("invalid_part", "expected_reason"),
+    [
+        ("checks", "CANDIDATE_CHECKS_MISMATCH"),
+        ("target_source", "CANDIDATE_PARAMETER_SOURCE"),
+        ("target_missing_source", "CANDIDATE_PARAMETER_SOURCE"),
+    ],
+)
 def test_malformed_binding_preserves_valid_sibling_and_records_rejection(
-    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    image_artifact,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_part: str,
+    expected_reason: str,
 ) -> None:
     image, root = image_artifact
     coordinator, store, selector, generator_a, _ = _coordinator(tmp_path)
@@ -703,7 +734,17 @@ def test_malformed_binding_preserves_valid_sibling_and_records_rejection(
         binding_calls += 1
         assert len(response.value.bindings) >= 2
         first, *siblings = response.value.bindings
-        malformed = first.model_copy(update={"checks": ()})
+        if invalid_part == "checks":
+            malformed = first.model_copy(update={"checks": ()})
+        else:
+            target_update = (
+                {"origin": "instruction", "evidence_refs": ("entity",)}
+                if invalid_part == "target_source"
+                else {"origin": "image", "evidence_refs": ()}
+            )
+            malformed = first.model_copy(
+                update={"target": first.target.model_copy(update=target_update)}
+            )
         return ModelResponse(
             value=CandidateBindingsReport(bindings=(malformed, *siblings)),
             request_hash=response.request_hash,
@@ -725,7 +766,7 @@ def test_malformed_binding_preserves_valid_sibling_and_records_rejection(
     assert binding_calls >= 1
     assert [stage for stage, _ in selector.calls if stage == "instruction_selection"]
     assert rejected
-    assert rejected[0]["rejections"][0]["reason"] == "CANDIDATE_CHECKS_MISMATCH"
+    assert rejected[0]["rejections"][0]["reason"] == expected_reason
 
 
 def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_error(

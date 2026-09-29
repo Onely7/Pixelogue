@@ -374,16 +374,19 @@ class SynthesisCoordinator:
                     templates: tuple[InstructionCandidate, ...] = candidates,
                     public_history: tuple[PublicMessage, ...] = snapshot.public_history,
                 ) -> None:
+                    parsed, parse_rejections = result.partition_bindings(
+                        frozenset(template.candidate_id for template in templates)
+                    )
                     result_batch = bind_candidates_individually(
                         templates,
-                        result.to_bindings(),
+                        parsed,
                         inventory,
                         public_history,
                         self.config.tasks,
                         frozenset(turn.instruction.candidate_id for turn in turns),
                     )
-                    if not result_batch.admitted and result_batch.rejected:
-                        first = result_batch.rejected[0]
+                    if not result_batch.admitted and (parse_rejections or result_batch.rejected):
+                        first = (*parse_rejections, *result_batch.rejected)[0]
                         raise ExecutionError(first.reason, first.message)
 
                 try:
@@ -434,7 +437,9 @@ class SynthesisCoordinator:
                     terminal_stage = "candidate_binding"
                     terminal_reason = error.reason
                     break
-                bindings = bindings_report.to_bindings()
+                bindings, parse_rejections = bindings_report.partition_bindings(
+                    frozenset(candidate.candidate_id for candidate in candidates)
+                )
                 self.store.write_json_artifact(
                     "candidate-bindings", bindings.model_dump(mode="json")
                 )
@@ -446,7 +451,8 @@ class SynthesisCoordinator:
                     self.config.tasks,
                     frozenset(turn.instruction.candidate_id for turn in turns),
                 )
-                if binding_result.rejected:
+                rejected_bindings = (*parse_rejections, *binding_result.rejected)
+                if rejected_bindings:
                     self.store.write_json_artifact(
                         "candidate-binding-rejections",
                         {
@@ -458,7 +464,7 @@ class SynthesisCoordinator:
                                     "reason": item.reason,
                                     "message": item.message,
                                 }
-                                for item in binding_result.rejected
+                                for item in rejected_bindings
                             ],
                         },
                     )
