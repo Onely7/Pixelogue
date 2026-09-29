@@ -38,6 +38,8 @@ uv run --locked pixelogue synthesize \
 
 standardと通常pilotは `runtime.max_concurrent_images` により最大4画像、1 GPUのモデル対pilotは最大2画像を同時に処理します。独立した要求をvLLMへ重ねて送り、continuous batchingが働くようにするためです。測定時の `--workers` は設定上限以下に限り、より高い並列数の比較には上限を明示した別設定を使います。`conversations.jsonl` は計画した入力順で保存します。1つの対話内の往復は確定済みの公開履歴に依存するため、順番を変えません。
 
+並列数1/2/4の比較では、6回のrunと固定済みの `experiment-plan.json`・`progress.json` を同じディレクトリに保存し、`python validation/compare_concurrency_runs.py EXPERIMENT_DIR` を実行します。JSON・CSV・Markdownの集計で画像順、モデル割当、設定hash、ターン数を検査します。自動品質候補数／合成時GPU時間は記述的な値であり、人手承認済み出力／総割当GPU時間は独立評価票が確定するまで未測定です。
+
 対象を絞る診断runでは `--source-id ID` を繰り返し指定し、権利確認済みの準備済みmanifestから正確な画像を選択できます。元の `images.jsonl` とmanifest全体の一致は引き続き検査します。未知・重複したIDはモデル呼び出し前に拒否し、選択集合ごとに新しいrun IDを使います。
 
 実行後は保存済み要求から、画像・ターン単位の非公開診断レポートを作成できます。
