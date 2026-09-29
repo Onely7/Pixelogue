@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import io
 import json
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -28,13 +29,20 @@ def _hash(value: bytes) -> str:
 
 def _request(url: str, limit: int = 20_000_000) -> bytes:
     """Fetch one bounded benchmark response."""
-    with urllib.request.urlopen(
-        urllib.request.Request(url, headers=HEADERS), timeout=90
-    ) as response:
-        data = response.read(limit + 1)
-        if response.status != 200 or len(data) > limit:
-            raise ValueError("ScreenSpot response is unavailable or oversized")
-        return data
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(url, headers=HEADERS), timeout=90
+            ) as response:
+                data = response.read(limit + 1)
+                if response.status != 200 or len(data) > limit:
+                    raise ValueError("ScreenSpot response is unavailable or oversized")
+                return data
+        except OSError:
+            if attempt == 3:
+                raise
+            time.sleep(2**attempt)
+    raise AssertionError("unreachable")
 
 
 def _rows() -> dict[int, dict[str, Any]]:
