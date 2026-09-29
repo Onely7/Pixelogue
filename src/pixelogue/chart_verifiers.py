@@ -29,7 +29,7 @@ Precision = Literal["explicit_label", "calibrated_estimate", "interval"]
 
 
 class ChartAxis(StrictModel):
-    """Y-axis semantics and labeled calibration marks."""
+    """Numeric value-axis semantics and labeled calibration marks."""
 
     scale: Literal["linear", "log", "unmarked"]
     unit: str | None = None

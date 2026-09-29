@@ -94,7 +94,8 @@ the complete bounded page as ordered heading, paragraph, list, table, formula, c
 nodes with parent links and regions. Hidden or unreadable content makes coverage UNKNOWN. The output
 format is strict structured_json. Never see the proposed answer.""",
     "chart_source": """Read only the image, question, public history and bound operation.
-Recover the y-axis scale, units and labeled ticks, legend and requested marks. Give each mark its
+Recover the numeric value axis (horizontal or vertical), units and labeled ticks, legend and
+requested marks. Give each mark its
 series, category, image region, value interval and honest precision. Exact values require visible
 printed labels; pixel estimates need intervals and declared decimal precision. For ranking, trends
 and relations certify the complete relevant series. A missing series or missing numeric calibration
