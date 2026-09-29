@@ -40,12 +40,14 @@ from pixelogue.evaluation import (
     unverified_transcription_relation,
 )
 from pixelogue.export import training_record
+from pixelogue.formula_verifier import FormulaSource
 from pixelogue.ledger import RequirementInventory, RequirementSpec
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.prompts import STAGE_INSTRUCTIONS
 from pixelogue.rules import CountGroup, SetCheck, SetInventory, verify_set_inventories
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
+from pixelogue.table_verifiers import TableSource
 from pixelogue.task_evidence import (
     CandidateBinding,
     CandidateBindingReport,
@@ -163,6 +165,32 @@ class ScriptedClient:
                     )
                     for candidate in payload["candidates"]
                 )
+            )
+        elif response_model is TableSource:
+            value = TableSource.model_validate(
+                {
+                    "task_id": "table_cell_lookup",
+                    "coverage": "UNKNOWN",
+                    "scope_id": "whole",
+                    "view_id": "view",
+                    "scope_region": {"left": 0, "top": 0, "right": 1, "bottom": 1},
+                    "tables": (),
+                    "query": {"operation": "lookup", "table_ids": ()},
+                    "reason": "The table is not readable.",
+                }
+            )
+        elif response_model is FormulaSource:
+            value = FormulaSource.model_validate(
+                {
+                    "coverage": "UNKNOWN",
+                    "scope_id": "whole",
+                    "view_id": "view",
+                    "scope_region": {"left": 0, "top": 0, "right": 1, "bottom": 1},
+                    "notation": "latex",
+                    "root": None,
+                    "formula_region": None,
+                    "reason": "The formula is not readable.",
+                }
             )
         elif response_model is EvidenceInventory:
             value = EvidenceInventory(
@@ -369,6 +397,42 @@ def test_candidate_schema_retry_lists_required_binding_fields(tmp_path: Path) ->
     assert len(result.bindings) == 1
     assert "Required fields in each binding" in (client.retry_feedback[1] or "")
     assert "estimated_answer_tokens must be a positive integer" in (client.retry_feedback[1] or "")
+
+
+@pytest.mark.parametrize(
+    ("stage", "model", "expected"),
+    [
+        ("table_source", TableSource, ("data_rows", "query object", "left < right")),
+        ("formula_source", FormulaSource, ("zero children", "script has three", "root=null")),
+    ],
+)
+def test_source_schema_retry_names_nested_contracts(
+    tmp_path: Path,
+    stage: str,
+    model: type[TableSource] | type[FormulaSource],
+    expected: tuple[str, ...],
+) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", stage, require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a, fail_first_schema=True)
+    coordinator = SynthesisCoordinator(config, stage, store, client, client, client)
+    try:
+        result = coordinator._invoke(
+            client,
+            stage,
+            {},
+            (),
+            model,
+            max_tokens=256,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        store.close()
+
+    assert result.coverage == "UNKNOWN"
+    assert client.retry_feedback[0] is None
+    assert all(fragment in (client.retry_feedback[1] or "") for fragment in expected)
 
 
 def test_semantic_contract_failure_retries_without_accepting_invalid_result(

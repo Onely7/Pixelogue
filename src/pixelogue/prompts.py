@@ -84,7 +84,9 @@ the proposed answer. Recover literal symbols, order, parentheses, scripts, stack
 radicals as a FormulaNode tree. A missing script uses symbol ∅ in the script node. Do not solve,
 simplify, repair or replace the expression by an algebraically equivalent one. Unsupported symbols,
 unreadable marks and ambiguous grouping are UNKNOWN. Bind the formula to its exact image view and
-scope region.""",
+scope region. A symbol or number node has a value and zero children; group, negative and sqrt
+have one child; binary operators and fraction have two; script has three. Operator nodes have
+value=null. If coverage is UNKNOWN, use root=null and formula_region=null.""",
     "document_source": """Read only the image, public history, question and bound operation.
 For field extraction, identify every explicitly requested field and its visible value, label and
 image region; mark missing fields with null, never guessed values. For document structure, recover
@@ -105,8 +107,11 @@ Do not infer values or structure from an expected chart result.""",
 Reconstruct each relevant table as a complete rectangular grid. Preserve every blank as an explicit
 cell and every merged cell with its exact row/column span, text, kind and image region. Distinguish
 header rows from data rows. Bind the requested lookup, predicate, sort or join to explicit row and
-column indices and keys. Missing headers, obscured cells, ambiguous joins or off-scope tables are
-UNKNOWN. Never use the candidate answer to fill a cell.""",
+column indices and keys. Each table needs table_id, rows, cols, cells, data_rows and closed;
+query is a separate required object with operation and table_ids. Each cell region has positive
+width and height within the scope. Missing headers, obscured cells, ambiguous joins or off-scope
+tables are UNKNOWN. For UNKNOWN use tables=[] and still describe the public operation in query.
+Never use the candidate answer to fill a cell.""",
     "table_answer": """Parse only the candidate answer and public question, with no image.
 Quote the exact answer substring and return only its literal lookup value, selected row labels in
 order, or matched value pairs. Ambiguous, missing or conflicting results are UNKNOWN. Do not infer

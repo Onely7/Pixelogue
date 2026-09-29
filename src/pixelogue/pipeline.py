@@ -2074,6 +2074,25 @@ class SynthesisCoordinator:
                                     " evidence_refs. Omit names outside this candidate's"
                                     " bindable_parameter_names."
                                 )
+                        elif stage == "table_source":
+                            retry_feedback += (
+                                " Every tables[] entry needs table_id, rows, cols, cells,"
+                                " data_rows and closed. Include the separate query object with"
+                                " operation and table_ids, even for UNKNOWN coverage. Each cell"
+                                " region needs 0 <= left < right <= 1 and"
+                                " 0 <= top < bottom <= 1 inside scope_region. For UNKNOWN use"
+                                " tables=[]; never invent missing cells or set closed=true for"
+                                " an incomplete grid."
+                            )
+                        elif stage == "formula_source":
+                            retry_feedback += (
+                                " Repair the FormulaNode tree arity: symbol and number have zero"
+                                " children and a nonempty value; group, negative and sqrt have"
+                                " one child; add, subtract, multiply, slash, equal and fraction"
+                                " have two; script has three. Operator nodes use value=null."
+                                " If the visual parse is uncertain, return coverage=UNKNOWN,"
+                                " root=null and formula_region=null rather than guessing."
+                            )
                     elif error.reason == "EVIDENCE_IMAGE_MISMATCH":
                         retry_feedback = (
                             "The previous response referred to another image. Re-examine only the "
