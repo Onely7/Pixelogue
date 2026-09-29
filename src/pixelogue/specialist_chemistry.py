@@ -72,6 +72,26 @@ class ChemicalSource(StrictModel):
                     )
         if any(bond.a not in ids or bond.b not in ids or bond.a == bond.b for bond in self.bonds):
             raise ValueError("Invalid chemical bond endpoints")
+        neighbors: dict[str, set[str]] = {atom_id: set() for atom_id in ids}
+        for bond in self.bonds:
+            if bond.b in neighbors[bond.a]:
+                raise ValueError("Repeated chemical bond")
+            neighbors[bond.a].add(bond.b)
+            neighbors[bond.b].add(bond.a)
+        for bond in self.bonds:
+            if bond.order != "aromatic":
+                continue
+            reached = {bond.a}
+            pending = [bond.a]
+            while pending:
+                current = pending.pop()
+                for adjacent in neighbors[current]:
+                    if {current, adjacent} == {bond.a, bond.b} or adjacent in reached:
+                        continue
+                    reached.add(adjacent)
+                    pending.append(adjacent)
+            if bond.b not in reached:
+                raise ValueError(f"Aromatic bond {bond.a}-{bond.b} needs a visible closed ring")
         return self
 
 

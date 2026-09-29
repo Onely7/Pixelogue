@@ -34,6 +34,7 @@ def test_specialist_retry_uses_stage_specific_feedback() -> None:
     assert "For a rest event, set staff_step, accidental, and tie to null" in music
     assert "never a coordinate array" in chemistry
     assert "specific atoms[] or bonds[] box outside scope" in chemistry
+    assert "explicitly drawn closed ring" in chemistry
     assert "answer_quote and reported" in geometry
 
 

@@ -64,6 +64,23 @@ def test_out_of_scope_chemical_box_identifies_the_offending_region() -> None:
         ChemicalSource.model_validate(source)
 
 
+def test_aromatic_bond_requires_a_closed_ring() -> None:
+    source = _source().model_dump()
+    source["bonds"][0]["order"] = "aromatic"
+    with pytest.raises(ValidationError, match="needs a visible closed ring"):
+        ChemicalSource.model_validate(source)
+
+    source["atoms"] = tuple(
+        {"atom_id": f"c{index}", "element": "C", "aromatic": True, "region": REGION}
+        for index in range(6)
+    )
+    source["bonds"] = tuple(
+        {"a": f"c{index}", "b": f"c{(index + 1) % 6}", "order": "aromatic", "region": REGION}
+        for index in range(6)
+    )
+    assert ChemicalSource.model_validate(source).coverage == "MET"
+
+
 def test_graph_equivalence_ignores_atom_ids_and_explicit_hydrogens() -> None:
     source = _source()
     graph = source.model_dump(mode="json")

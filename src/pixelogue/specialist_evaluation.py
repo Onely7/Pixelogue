@@ -80,6 +80,8 @@ def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
             "If the error identifies a specific atoms[] or bonds[] box outside scope, "
             "redraw that box inside the actual scope; use the full view scope only when "
             "the complete requested molecule is visible there. "
+            "Use aromatic bond order only for an explicitly drawn closed ring; "
+            "a chain bond must have its visible single, double, or triple order. "
             "Use a small positive-extent box around each visible atom and bond; widen "
             "horizontal and vertical line regions slightly so top < bottom and left < right. "
             "Include H atoms only if H is explicitly drawn. Unlabeled skeletal endpoints "
