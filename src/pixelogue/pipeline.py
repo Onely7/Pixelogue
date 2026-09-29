@@ -112,6 +112,12 @@ _INTERNAL_QUESTION_REFERENCE = re.compile(
     r")(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
+_DIRECT_IDENTIFICATION_COLOR = re.compile(
+    r"^\s*(?:what|which)\s+is\s+(?:this|that)\s+"
+    r"(?:red|orange|yellow|green|blue|purple|pink|brown|black|white|gray|grey|"
+    r"golden|silver|beige|tan)\s+[\w-]+\b",
+    re.IGNORECASE,
+)
 
 
 def internal_reference_in_question(text: str) -> bool:
@@ -1724,11 +1730,15 @@ class SynthesisCoordinator:
         """Omit already answered object-name and explicit attribute requests."""
         retained: list[InstructionCandidate] = []
         answered_attributes = {
-            key for turn in prior_turns if (key := attribute_fact_key(turn.instruction)) is not None
+            key
+            for turn in prior_turns
+            if turn.status == "COMMITTED"
+            if (key := attribute_fact_key(turn.instruction)) is not None
         }
         for candidate in candidates:
             if (fact_key := attribute_fact_key(candidate)) is not None and (
                 fact_key in answered_attributes
+                or self._direct_identification_stated_color(fact_key, prior_turns)
             ):
                 self.store.write_json_artifact(
                     "candidate-admission-rejections",
@@ -1767,6 +1777,35 @@ class SynthesisCoordinator:
                 continue
             retained.append(candidate)
         return tuple(retained)
+
+    @staticmethod
+    def _direct_identification_stated_color(
+        fact_key: tuple[str, str, str, str], prior_turns: Sequence[TurnArtifact]
+    ) -> bool:
+        """Recognize a color already stated in a direct, committed naming question.
+
+        This intentionally handles only a narrow public pattern. A color mentioned for a nearby
+        object, or a part-specific request such as nose color, must remain eligible.
+        """
+        view_id, scope_id, target, attribute = fact_key
+        if attribute != "color":
+            return False
+
+        def normalized_name(value: str) -> str:
+            words = re.findall(r"\w+", value.casefold())
+            while words and words[0] in {"a", "an", "the"}:
+                words.pop(0)
+            return " ".join(words)
+
+        return any(
+            turn.status == "COMMITTED"
+            and turn.instruction.task_id == "object_identification"
+            and turn.instruction.scope_id == scope_id
+            and (turn.instruction.view_id or "") == view_id
+            and normalized_name(turn.answer.content) == target
+            and _DIRECT_IDENTIFICATION_COLOR.search(turn.question.content) is not None
+            for turn in prior_turns
+        )
 
     @staticmethod
     def _answer_disclosure_reason(

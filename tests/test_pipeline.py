@@ -991,6 +991,63 @@ def test_answered_attribute_is_removed_before_selection_but_new_part_remains(
     assert rejection["reason"] == "ATTRIBUTE_FACT_ALREADY_PUBLIC"
 
 
+def test_identification_color_descriptor_blocks_only_the_same_public_fact(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    try:
+        first = coordinator.synthesize_image(image, root).turns[0]
+        identified = first.model_copy(
+            update={
+                "instruction": first.instruction.model_copy(
+                    update={
+                        "task_id": "object_identification",
+                        "scope_id": "fruit",
+                        "view_id": "view",
+                    }
+                ),
+                "question": first.question.model_copy(
+                    update={"content": "What is this red fruit?"}
+                ),
+                "answer": first.answer.model_copy(update={"content": "strawberry"}),
+                "status": "COMMITTED",
+            }
+        )
+
+        def attribute(name: str, value: str) -> InstructionCandidate:
+            return InstructionCandidate(
+                candidate_id=name,
+                task_id="attribute_lookup",
+                family="visual_description",
+                visible_scope="the fruit",
+                instruction_summary="Report a visible property",
+                required_capabilities=("visible_entity", "visible_attribute"),
+                scope_id="fruit",
+                view_id="view",
+                public_parameters=(
+                    PublicParameter(name="target", value="strawberry", origin="instruction"),
+                    PublicParameter(name="attribute", value=value, origin="instruction"),
+                ),
+            )
+
+        color = attribute("color", "color")
+        seeds = attribute("seeds", "seed color")
+        assert coordinator._drop_answered_candidates((color, seeds), (identified,), "c", 2) == (
+            seeds,
+        )
+        context = identified.model_copy(
+            update={
+                "question": identified.question.model_copy(
+                    update={"content": "What fruit is beside this red cup?"}
+                )
+            }
+        )
+        assert coordinator._drop_answered_candidates((color,), (context,), "c", 2) == (color,)
+    finally:
+        store.close()
+
+
 def test_identification_question_must_not_contain_its_target_or_answer():
     assert identification_label_in_question("What is this gibbon sitting on a railing?", "gibbon")
     assert identification_label_in_question(
