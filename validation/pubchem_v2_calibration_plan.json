@@ -1,0 +1,20 @@
+{
+  "case_file": "artifacts/plan-followup/pubchem-2d-chemical-v2-confirmation.jsonl",
+  "case_file_committed": false,
+  "case_sha256": "e0eb8e1f5cd1c28945dbb6374a4908880f7e1f12207451ba33057eb7979c2bcb",
+  "decision": "Run only after development corrections are frozen; bind certificate to exact model and validator versions. Abstentions fail positive acceptance; communication failures and invalid outputs remain separately reported.",
+  "independent_image_groups": 90,
+  "manifest_sha256": "47f9a687c2dbcfaea0a4e0732dbba7af87844e5c9b5d4c689ef8bf481cc4cc45",
+  "negative_images": 60,
+  "positive_images": 30,
+  "prior_manifest_molecular_overlap": 0,
+  "provenance": "validation/pubchem_2d_eval_v2_manifest.jsonl and validation/pubchem_2d_eval_v2_selection.json; image bytes remain local",
+  "selection_sha256": "9145ab67ea33a42fee6175939a6970b0e7ff47ce1513e26bfba5cad98512a023",
+  "status": "sealed_before_model_confirmation",
+  "thresholds": {
+    "false_accept_upper_95_at_0_of_60": 0.04870291331009751,
+    "maximum_accepted_negative": 0,
+    "minimum_accepted_positive": 28,
+    "positive_lower_95_at_28_of_30": 0.8046739563450785
+  }
+}
