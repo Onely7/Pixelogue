@@ -27,6 +27,7 @@ def test_specialist_retry_uses_stage_specific_feedback() -> None:
     assert "junction names" in circuit
     assert "scope_region must contain every event" in music
     assert "measures=[]" in music
+    assert "For a rest event, set staff_step, accidental, and tie to null" in music
     assert "answer_quote and reported" in geometry
 
 

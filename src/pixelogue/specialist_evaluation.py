@@ -49,6 +49,8 @@ def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
             "The scope_region must contain every event region in the requested bars. "
             "For a whole-view score, use left=0, top=0, right=1, bottom=1. "
             "For UNKNOWN or NOT_MET coverage, return measures=[] with no partial events. "
+            "For a rest event, set staff_step, accidental, and tie to null; "
+            "for a note event, set a resolved integer staff_step. "
         ),
         "specialist_circuit_source": (
             "Net terminals may contain only component pins, such as R1:a. "
