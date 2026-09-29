@@ -22,6 +22,7 @@ from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import (
+    AttributeRecheckReport,
     CandidateBindingsReport,
     ScopedEvidenceInventory,
     ScopedEvidenceReport,
@@ -419,6 +420,12 @@ class VllmClient:
             if not isinstance(image_id, str) or not image_id:
                 raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")
             schema["properties"]["image_id"]["const"] = image_id
+        if response_model is AttributeRecheckReport:
+            for field in ("image_id", "scope_id", "view_id"):
+                value = payload.get(field)
+                if not isinstance(value, str) or not value:
+                    raise ExecutionError("MODEL_PAYLOAD_FIELD", f"Attribute recheck lacks {field}")
+                schema["properties"][field]["const"] = value
         if response_model is ScopedEvidenceReport:
             vocabulary = payload.get("capability_vocabulary")
             limit = payload.get("max_observations_per_scope")

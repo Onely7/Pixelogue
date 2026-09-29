@@ -26,7 +26,11 @@ from pixelogue.serving import (
 from pixelogue.specialist_chemistry import ChemicalSource
 from pixelogue.specialist_music import MusicSource
 from pixelogue.store import RunStore
-from pixelogue.task_evidence import CandidateBindingsReport, ScopedEvidenceReport
+from pixelogue.task_evidence import (
+    AttributeRecheckReport,
+    CandidateBindingsReport,
+    ScopedEvidenceReport,
+)
 
 
 def test_instruction_selector_information_boundary() -> None:
@@ -829,6 +833,39 @@ def test_evidence_schema_fixes_only_the_requested_image_identity():
             assert schema["properties"]["image_id"]["const"] == image_id
             assert "const" not in schema["properties"]["capabilities"]
         assert "const" not in EvidenceInventory.model_json_schema()["properties"]["image_id"]
+
+
+def test_attribute_recheck_schema_fixes_existing_scope_and_view() -> None:
+    payload = {
+        "image_id": "image-1",
+        "scope_id": "subject",
+        "view_id": "full:test",
+        "scope_region": {"left": 0.1, "top": 0.1, "right": 0.8, "bottom": 0.8},
+        "scope_description": "Visible subject",
+        "image_views": [],
+    }
+    with httpx.Client(base_url="http://127.0.0.1:8000/v1/") as http:
+        client = VllmClient(
+            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
+            RuntimeConfig(),
+            run_id="attribute-recheck-identity",
+            client=http,
+        )
+        body = client._build_body(
+            "attribute_recheck",
+            payload,
+            (),
+            AttributeRecheckReport,
+            max_tokens=512,
+            temperature=0.0,
+            seed=1,
+        )
+        schema = body["response_format"]["json_schema"]["schema"]
+        assert {
+            field: schema["properties"][field]["const"]
+            for field in ("image_id", "scope_id", "view_id")
+        } == {field: payload[field] for field in ("image_id", "scope_id", "view_id")}
+        assert "const" not in AttributeRecheckReport.model_json_schema()["properties"]["scope_id"]
 
 
 def test_specialist_source_schema_fixes_public_ids_and_music_bar_range(tmp_path):
