@@ -121,6 +121,21 @@ uv run --locked python validation/build_pubchem_chemical_cases.py
 
 取得時にCID、画像SHA-256、寸法、画像群、SMILESハッシュを固定manifestと照合します。`private_labels.jsonl` は `data/` にのみ保存します。case生成では確認用の正例20件と誤答59件を固定し、モデルにはCID・元のSMILES・期待判定を渡しません。通常選択に入れるには、実測結果が校正の信頼区間基準を満たす必要があります。
 
+[第2のPubChemコホート](../validation/pubchem_2d_eval_v2_manifest.jsonl)は、以前の89分子構造をすべて除外しています。[選定記録](../validation/pubchem_2d_eval_v2_selection.json)には、検索条件・seed・検索応答のハッシュ・異なる90画像群・正例30件と誤答60件の確認計画を、モデル評価前に固定しました。次の手順で別の検証専用データとして復元します。
+
+```sh
+runtime/validators/.venv/bin/python validation/fetch_pubchem_chemical_eval.py --cohort v2
+uv run --locked pixelogue ingest \
+  --config configs/paired-one-gpu-pilot.yaml \
+  --sources data/pubchem-2d-v2-eval/sources.jsonl \
+  --rights data/pubchem-2d-v2-eval/rights.jsonl \
+  --image-root data/pubchem-2d-v2-eval \
+  --artifact-root artifacts/prepared-pubchem-2d-v2-eval
+uv run --locked python validation/build_pubchem_chemical_cases_v2.py
+```
+
+初回の出典固定には `validation/prepare_pubchem_chemical_eval_v2.py` を使用しました。通常の復元は固定manifestを照合し、CIDを選び直しません。この標本数では、正例28/30件の受理で片側95%下限が0.805、負例0/60件の誤受理で上限が0.049です。これは設計上の基準であり、モデルの実測結果ではありません。両コホートとも検証専用です。以前の結果を見て修正した後の新たな校正には、第2コホートでモデル・検証器・確認計画を固定してから得た結果だけを用います。
+
 ## ScreenSpotのUIクリック検証用サンプル
 
 [固定したScreenSpot manifest](../validation/screenspot_ui_eval_manifest.jsonl)には、人手で文字対象の領域が注釈された異なるスクリーンショット89件を記録します。開発用10件と確認用79件を分けます。[ScreenSpotのtest split](https://huggingface.co/datasets/bevaya/ScreenSpot)を出典とし、対象領域はローカルの非公開ラベルファイルにだけ保存してモデルには渡しません。対象範囲は画面上の文字対象に対する単一クリック指定であり、任意のUI操作や実操作は含みません。

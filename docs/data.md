@@ -125,6 +125,21 @@ uv run --locked python validation/build_pubchem_chemical_cases.py
 
 The fetcher checks the committed CID, image SHA-256, dimensions, source group and SMILES hash before restoring local files. It writes `private_labels.jsonl` only under `data/`; the case builder uses those labels to freeze 20 correct and 59 incorrect confirmation answers. Model requests carry the image, public operation and question, but never a CID, the source SMILES or the expected verdict. Calibration is still conditional on actual model results and the stated confidence bounds.
 
+The [second PubChem cohort](../validation/pubchem_2d_eval_v2_manifest.jsonl) excludes all 89 earlier molecular structures. Its [selection record](../validation/pubchem_2d_eval_v2_selection.json) fixes the query, seed, source search hash, 90 independent image groups, and a 30-correct/60-incorrect confirmation plan before model evaluation. Restore and validate it separately:
+
+```sh
+runtime/validators/.venv/bin/python validation/fetch_pubchem_chemical_eval.py --cohort v2
+uv run --locked pixelogue ingest \
+  --config configs/paired-one-gpu-pilot.yaml \
+  --sources data/pubchem-2d-v2-eval/sources.jsonl \
+  --rights data/pubchem-2d-v2-eval/rights.jsonl \
+  --image-root data/pubchem-2d-v2-eval \
+  --artifact-root artifacts/prepared-pubchem-2d-v2-eval
+uv run --locked python validation/build_pubchem_chemical_cases_v2.py
+```
+
+The selection script `validation/prepare_pubchem_chemical_eval_v2.py` records the initial source identities; routine restoration uses the pinned manifest and never reselects CIDs. With this sample size, 28/30 accepted positives give a one-sided 95% lower bound of 0.805, and 0/60 accepted negatives give an upper bound of 0.049. These are design thresholds, not measured model outcomes. Keep both cohorts evaluation-only. The second cohort can support a fresh certificate only after the model, validator and confirmation plan are frozen; the earlier observed cohort is development evidence for later changes.
+
 ## ScreenSpot UI click evaluation sample
 
 The [pinned ScreenSpot manifest](../validation/screenspot_ui_eval_manifest.jsonl) identifies 89 distinct screenshots with human annotated text targets: 10 for development and 79 for confirmation. The [ScreenSpot test split](https://huggingface.co/datasets/bevaya/ScreenSpot) supplies the screenshot, instruction and target box. Target boxes stay in the private local label file and are never included in model requests. This sample assesses a single specified click on a visible text target, not arbitrary GUI actions or live interaction.

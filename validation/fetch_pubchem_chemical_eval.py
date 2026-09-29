@@ -17,6 +17,7 @@ from rdkit import Chem, RDLogger
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "validation/pubchem_2d_eval_manifest.jsonl"
+V2_MANIFEST = ROOT / "validation/pubchem_2d_eval_v2_manifest.jsonl"
 HEADERS = {"User-Agent": "Pixelogue evaluation-only research test/0.1"}
 ALLOWED_ELEMENTS = {"C", "N", "O", "F", "Cl", "Br"}
 
@@ -63,14 +64,24 @@ def _canonical_smiles(raw: str) -> str:
     return Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=False)
 
 
-def _rows() -> list[dict[str, Any]]:
+def _rows(manifest: Path = MANIFEST, cohort: str = "v1") -> list[dict[str, Any]]:
     """Load the committed identities and reject edited or duplicate split records."""
-    rows = [json.loads(line) for line in MANIFEST.read_text().splitlines()]
-    if len(rows) != 89 or len({row["cid"] for row in rows}) != 89:
-        raise ValueError("Expected 89 distinct PubChem CIDs")
-    if len({row["source_group_id"] for row in rows}) != 89:
+    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
+    expected = 89 if cohort == "v1" else 90
+    splits = (
+        (["development"] * 10 + ["confirmation"] * 79) if cohort == "v1" else ["confirmation"] * 90
+    )
+    if len(rows) != expected or len({row["cid"] for row in rows}) != expected:
+        raise ValueError(f"Expected {expected} distinct PubChem CIDs")
+    if len({row["source_group_id"] for row in rows}) != expected:
         raise ValueError("Molecular structures must be independent image groups")
-    if [row["split"] for row in rows] != ["development"] * 10 + ["confirmation"] * 79:
+    if cohort == "v2":
+        earlier = {
+            row["source_group_id"] for row in map(json.loads, MANIFEST.read_text().splitlines())
+        }
+        if earlier & {row["source_group_id"] for row in rows}:
+            raise ValueError("PubChem v2 repeats a development structure")
+    if [row["split"] for row in rows] != splits:
         raise ValueError("Development and confirmation splits changed")
     for row in rows:
         cid = row["cid"]
@@ -117,10 +128,11 @@ def _property_labels(rows: list[dict[str, Any]]) -> dict[int, str]:
 def main() -> None:
     """Verify pixels and labels, then restore local-only ingestion manifests."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--destination", type=Path, default=ROOT / "data/pubchem-2d-simple-eval")
+    parser.add_argument("--cohort", choices=("v1", "v2"), default="v1")
+    parser.add_argument("--destination", type=Path)
     args = parser.parse_args()
     RDLogger.DisableLog("rdApp.error")
-    rows = _rows()
+    rows = _rows(V2_MANIFEST if args.cohort == "v2" else MANIFEST, args.cohort)
     labels = _property_labels(rows)
     images: dict[int, bytes] = {}
     for index, row in enumerate(rows):
@@ -137,8 +149,10 @@ def main() -> None:
         images[row["cid"]] = raw
         time.sleep(0.35)
         if index % 10 == 9:
-            print(f"verified {index + 1}/89", flush=True)
-    output = args.destination
+            print(f"verified {index + 1}/{len(rows)}", flush=True)
+    output = args.destination or ROOT / (
+        "data/pubchem-2d-v2-eval" if args.cohort == "v2" else "data/pubchem-2d-simple-eval"
+    )
     (output / "images").mkdir(parents=True, exist_ok=True)
     sources, rights, private_labels = [], [], []
     for row in rows:
@@ -192,7 +206,18 @@ def main() -> None:
         (output / name).write_text(
             "".join(json.dumps(record, sort_keys=True) + "\n" for record in records)
         )
-    print(json.dumps({"restored": len(rows), "split": {"development": 10, "confirmation": 79}}))
+    print(
+        json.dumps(
+            {
+                "restored": len(rows),
+                "cohort": args.cohort,
+                "split": {
+                    "development": sum(row["split"] == "development" for row in rows),
+                    "confirmation": sum(row["split"] == "confirmation" for row in rows),
+                },
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

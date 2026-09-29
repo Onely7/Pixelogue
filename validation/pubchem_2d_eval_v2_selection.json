@@ -1,0 +1,11 @@
+{
+  "confirmation_negative": 60,
+  "confirmation_positive": 30,
+  "eligible_unused_structures": 118,
+  "prior_manifest_sha256": "dbaca8c35285e9bd8a564411a2c0974e97039de08bc9cbb56593e51602745862",
+  "query": "3:5[hac] AND 1:10000[cid]",
+  "search_sha256": "485762e67bdac306c4c60dcf5016b09b20f70a27bbe79d5be8dcf9ed16574d89",
+  "seed": "pixelogue-pubchem-2d-independent-confirmation-20260930",
+  "selected": 90,
+  "selection": "SHA256(seed:canonical_smiles), first 90 after excluding v1 structures"
+}
