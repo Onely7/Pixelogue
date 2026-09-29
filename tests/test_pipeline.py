@@ -949,6 +949,48 @@ def test_answered_identification_is_removed_before_instruction_selection(
     assert rejection["reason"] == "IDENTIFICATION_ANSWER_ALREADY_PUBLIC"
 
 
+def test_answered_attribute_is_removed_before_selection_but_new_part_remains(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    try:
+        first = coordinator.synthesize_image(image, root).turns[0]
+
+        def attribute_candidate(candidate_id: str, target: str, attribute: str):
+            return InstructionCandidate(
+                candidate_id=candidate_id,
+                task_id="attribute_lookup",
+                family="visual_description",
+                visible_scope="the dog",
+                instruction_summary="Report a visible property",
+                required_capabilities=("visible_entity", "visible_attribute"),
+                scope_id="dog",
+                view_id="view",
+                public_parameters=(
+                    PublicParameter(name="target", value=target, origin="instruction"),
+                    PublicParameter(name="attribute", value=attribute, origin="instruction"),
+                ),
+            )
+
+        prior = first.model_copy(
+            update={"instruction": attribute_candidate("prior", "The dog", "fur color")}
+        )
+        repeat = attribute_candidate("repeat", "dog", "fur colour")
+        novel = attribute_candidate("novel", "dog", "nose color")
+        kept = coordinator._drop_answered_candidates((repeat, novel), (prior,), "conversation", 2)
+        row = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = 'candidate-admission-rejections'"
+        ).fetchone()
+        rejection = json.loads(store.read_artifact(row[0]))
+    finally:
+        store.close()
+
+    assert kept == (novel,)
+    assert rejection["candidate_id"] == "repeat"
+    assert rejection["reason"] == "ATTRIBUTE_FACT_ALREADY_PUBLIC"
+
+
 def test_identification_question_must_not_contain_its_target_or_answer():
     assert identification_label_in_question("What is this gibbon sitting on a railing?", "gibbon")
     assert identification_label_in_question(

@@ -106,6 +106,12 @@ def instruction_candidates(
         depth += 1
     fresh = [candidate for candidate in ranked if candidate.task_id not in used_task_ids]
     used = [candidate for candidate in ranked if candidate.task_id in used_task_ids]
+    if turn_index > 1 and len(fresh) >= limit and limit > 1:
+        attribute_retry = next(
+            (candidate for candidate in used if candidate.task_id == "attribute_lookup"), None
+        )
+        if attribute_retry is not None:
+            return tuple((*fresh[: limit - 1], attribute_retry))
     return tuple((fresh + used)[:limit])
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -295,6 +296,28 @@ def fingerprint(candidate: InstructionCandidate, image_id: str) -> str:
             },
         }
     )
+
+
+def attribute_fact_key(candidate: InstructionCandidate) -> tuple[str, str, str, str] | None:
+    """Identify the public target and property of a visible attribute request.
+
+    The key deliberately does not use the task ID. It applies only when both public choices are
+    explicit; a broad description cannot be assumed to ask the same fact.
+    """
+    if candidate.task_id != "attribute_lookup" or candidate.scope_id is None:
+        return None
+    parameters = {item.name: item.value for item in candidate.public_parameters}
+    target, attribute = parameters.get("target"), parameters.get("attribute")
+    if not isinstance(target, str) or not isinstance(attribute, str):
+        return None
+
+    def normalize(value: str) -> str:
+        words = re.findall(r"\w+", value.casefold().replace("_", " "))
+        while words and words[0] in {"a", "an", "the"}:
+            words = words[1:]
+        return " ".join("color" if word == "colour" else word for word in words)
+
+    return (candidate.view_id or "", candidate.scope_id, normalize(target), normalize(attribute))
 
 
 def validate_evidence(

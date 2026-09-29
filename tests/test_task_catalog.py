@@ -34,6 +34,7 @@ from pixelogue.task_evidence import (
 )
 from pixelogue.task_runtime import (
     admission_report,
+    attribute_fact_key,
     bind_candidates,
     bind_candidates_individually,
     bindable_parameter_names,
@@ -202,6 +203,48 @@ def test_later_turn_prefers_unused_tasks_within_candidate_limit() -> None:
     later = instruction_candidates(data, seed=13, turn_index=2, limit=8, used_task_ids=used)
     assert len(later) == 8
     assert not used & {candidate.task_id for candidate in later}
+
+
+def test_later_turn_keeps_one_attribute_slot_for_another_visible_fact() -> None:
+    observations: dict[str, ObservationVerdict] = {
+        key: "MET" for key in task_catalog().capabilities
+    }
+    data = inventory(scope("all", **observations))
+    later = instruction_candidates(
+        data,
+        seed=13,
+        turn_index=2,
+        limit=8,
+        used_task_ids=frozenset({"attribute_lookup"}),
+    )
+    assert len(later) == 8
+    assert later[-1].task_id == "attribute_lookup"
+    assert len({candidate.task_id for candidate in later}) == 8
+
+
+def test_attribute_fact_key_preserves_new_parts_and_normalizes_color_spelling() -> None:
+    data = inventory(scope("dog", visible_entity="MET", visible_attribute="MET"))
+    template = next(item for item in candidates(data) if item.task_id == "attribute_lookup")
+
+    def with_fact(target: str, attribute: str) -> InstructionCandidate:
+        return template.model_copy(
+            update={
+                "public_parameters": (
+                    PublicParameter(name="target", value=target, origin="instruction"),
+                    PublicParameter(name="attribute", value=attribute, origin="instruction"),
+                )
+            }
+        )
+
+    assert attribute_fact_key(with_fact("The dog", "fur color")) == attribute_fact_key(
+        with_fact("dog", "fur colour")
+    )
+    assert attribute_fact_key(with_fact("dog", "nose color")) != attribute_fact_key(
+        with_fact("dog", "fur color")
+    )
+    assert attribute_fact_key(with_fact("cat", "fur color")) != attribute_fact_key(
+        with_fact("dog", "fur color")
+    )
 
 
 def test_binding_cannot_borrow_refs_or_ignore_unknown_eligibility():

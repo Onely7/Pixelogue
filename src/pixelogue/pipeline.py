@@ -82,6 +82,7 @@ from pixelogue.task_evidence import (
     out_of_scope_region_feedback,
 )
 from pixelogue.task_runtime import (
+    attribute_fact_key,
     bind_candidates_individually,
     binding_candidate,
     operation_contract,
@@ -1720,9 +1721,25 @@ class SynthesisCoordinator:
         conversation_id: str,
         turn_index: int,
     ) -> tuple[InstructionCandidate, ...]:
-        """Omit an object-name request already answered in the same visible scope."""
+        """Omit already answered object-name and explicit attribute requests."""
         retained: list[InstructionCandidate] = []
+        answered_attributes = {
+            key for turn in prior_turns if (key := attribute_fact_key(turn.instruction)) is not None
+        }
         for candidate in candidates:
+            if (fact_key := attribute_fact_key(candidate)) is not None and (
+                fact_key in answered_attributes
+            ):
+                self.store.write_json_artifact(
+                    "candidate-admission-rejections",
+                    {
+                        "conversation_id": conversation_id,
+                        "turn_index": turn_index,
+                        "candidate_id": candidate.candidate_id,
+                        "reason": "ATTRIBUTE_FACT_ALREADY_PUBLIC",
+                    },
+                )
+                continue
             target = next(
                 (item.value for item in candidate.public_parameters if item.name == "target"),
                 None,
