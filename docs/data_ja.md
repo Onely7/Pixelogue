@@ -89,6 +89,23 @@ uv run --locked python validation/build_pubchem_chemical_cases.py
 
 取得時にCID、画像SHA-256、寸法、画像群、SMILESハッシュを固定manifestと照合します。`private_labels.jsonl` は `data/` にのみ保存します。case生成では確認用の正例20件と誤答59件を固定し、モデルにはCID・元のSMILES・期待判定を渡しません。通常選択に入れるには、実測結果が校正の信頼区間基準を満たす必要があります。
 
+## ScreenSpotのUIクリック検証用サンプル
+
+[固定したScreenSpot manifest](../validation/screenspot_ui_eval_manifest.jsonl)には、人手で文字対象の領域が注釈された異なるスクリーンショット89件を記録します。開発用10件と確認用79件を分けます。[ScreenSpotのtest split](https://huggingface.co/datasets/bevaya/ScreenSpot)を出典とし、対象領域はローカルの非公開ラベルファイルにだけ保存してモデルには渡しません。対象範囲は画面上の文字対象に対する単一クリック指定であり、任意のUI操作や実操作は含みません。
+
+```sh
+uv run --locked python validation/fetch_screenspot_ui_eval.py
+uv run --locked pixelogue ingest \
+  --config configs/paired-one-gpu-pilot.yaml \
+  --sources data/screenspot-ui-eval/sources.jsonl \
+  --rights data/screenspot-ui-eval/rights.jsonl \
+  --image-root data/screenspot-ui-eval \
+  --artifact-root artifacts/prepared-screenspot-ui-eval
+uv run --locked python validation/build_screenspot_ui_cases.py
+```
+
+取得時に画像と注釈のハッシュを固定manifestと照合します。抽出時には64ビットのdifference hashで距離5以下の近似画面も除きますが、近似コピーの完全な監査ではありません。確認用の異なる画面について、対象領域の中心を示す正例20件と領域外を示す誤答59件を固定します。画像は検証専用でGit管理外です。通常選択には、実際の抽出と判定が校正基準を満たす必要があります。
+
 ## 取得済みのCVDF train画像を使う
 
 `prepare-local-train` は、未加工のCVDF画像 `<ImageID>.jpg` が並ぶディレクトリと

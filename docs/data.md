@@ -93,6 +93,23 @@ uv run --locked python validation/build_pubchem_chemical_cases.py
 
 The fetcher checks the committed CID, image SHA-256, dimensions, source group and SMILES hash before restoring local files. It writes `private_labels.jsonl` only under `data/`; the case builder uses those labels to freeze 20 correct and 59 incorrect confirmation answers. Model requests carry the image, public operation and question, but never a CID, the source SMILES or the expected verdict. Calibration is still conditional on actual model results and the stated confidence bounds.
 
+## ScreenSpot UI click evaluation sample
+
+The [pinned ScreenSpot manifest](../validation/screenspot_ui_eval_manifest.jsonl) identifies 89 distinct screenshots with human annotated text targets: 10 for development and 79 for confirmation. The [ScreenSpot test split](https://huggingface.co/datasets/bevaya/ScreenSpot) supplies the screenshot, instruction and target box. Target boxes stay in the private local label file and are never included in model requests. This sample assesses a single specified click on a visible text target, not arbitrary GUI actions or live interaction.
+
+```sh
+uv run --locked python validation/fetch_screenspot_ui_eval.py
+uv run --locked pixelogue ingest \
+  --config configs/paired-one-gpu-pilot.yaml \
+  --sources data/screenspot-ui-eval/sources.jsonl \
+  --rights data/screenspot-ui-eval/rights.jsonl \
+  --image-root data/screenspot-ui-eval \
+  --artifact-root artifacts/prepared-screenspot-ui-eval
+uv run --locked python validation/build_screenspot_ui_cases.py
+```
+
+The fetcher checks image and annotation hashes against the committed manifest. Selection also excluded screenshots with a 64-bit difference-hash distance at most five; this screen is not a complete near-copy audit. The case builder freezes 20 annotated-center clicks and 59 off-target clicks on separate confirmation screenshots. ScreenSpot images remain evaluation-only and outside Git. Model extraction and verifier outcomes must still satisfy the stated calibration bounds before normal selection.
+
 ## Prepare existing CVDF training images
 
 `prepare-local-train` is a CPU-only adapter for an existing flat directory of
