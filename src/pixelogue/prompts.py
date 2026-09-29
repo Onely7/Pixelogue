@@ -97,8 +97,11 @@ format is strict structured_json. Never see the proposed answer.""",
 Recover the y-axis scale, units and labeled ticks, legend and requested marks. Give each mark its
 series, category, image region, value interval and honest precision. Exact values require visible
 printed labels; pixel estimates need intervals and declared decimal precision. For ranking, trends
-and relations certify the complete relevant series; missing series or axes mean UNKNOWN. Respect
-linear and log axes. Never inspect or anticipate the candidate answer.""",
+and relations certify the complete relevant series. A missing series or missing numeric calibration
+for an estimated value means UNKNOWN. Respect linear and log axes. If no numeric ticks are printed
+but all relevant values have exact printed labels, set axis.scale=unmarked and axis.ticks=[]; never
+invent ticks or estimate unlabeled values from that axis. Never inspect or anticipate the candidate
+answer.""",
     "chart_answer": """Parse only the candidate answer and public operation, without an image.
 Quote the exact answer substring. Return one numeric value, relation, tied rank groups or trend.
 Keep signs, units and decimal places as written. Ambiguous or multiple interpretations are UNKNOWN.

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from pixelogue.chart_verifiers import (
     ChartAnswer,
     ChartAxis,
@@ -34,7 +37,7 @@ def _mark(
             "lower": lower,
             "upper": upper,
             "precision": precision,
-            "decimal_places": 0,
+            "decimal_places": len(lower.partition(".")[2]),
             "visible_label": lower if precision == "explicit_label" else None,
             "region": REGION,
         }
@@ -164,6 +167,43 @@ def test_log_axis_rejects_nonpositive_intervals() -> None:
     log = source.model_copy(update={"axis": ChartAxis(scale="log", unit="kg", ticks=("1", "100"))})
     answer = _answer(answer_quote="0 kg", value=NumericValue(value="0", unit="kg"))
     assert _check(log, answer, "0 kg", precision="explicit_label")[0] is GateVerdict.UNKNOWN
+
+
+def test_directly_labeled_bar_chart_without_numeric_ticks() -> None:
+    source = _source(
+        "chart_value_lookup",
+        "value",
+        (_mark("Domains", "reddit.com", "27.8"),),
+        series=("Domains",),
+        categories=("reddit.com",),
+    ).model_copy(
+        update={"axis": ChartAxis(scale="unmarked", unit="%", ticks=()), "encoding": "bar"}
+    )
+    correct = _answer(answer_quote="27.8%", value=NumericValue(value="27.8", unit="%"))
+    wrong = _answer(answer_quote="28%", value=NumericValue(value="28", unit="%"))
+    assert _check(source, correct, "27.8%", precision="explicit_label")[0] is GateVerdict.MET
+    assert _check(source, wrong, "28%", precision="explicit_label")[0] is GateVerdict.NOT_MET
+
+
+def test_unmarked_chart_rejects_guessed_ticks_and_unlabeled_estimates() -> None:
+    with pytest.raises(ValidationError):
+        ChartAxis(scale="unmarked", unit="%", ticks=("0", "100"))
+    with pytest.raises(ValidationError):
+        ChartAxis(scale="linear", unit="%", ticks=())
+    source = _source(
+        "chart_value_lookup",
+        "value",
+        (_mark("Domains", "reddit.com", "27", "29", precision="interval"),),
+        series=("Domains",),
+        categories=("reddit.com",),
+    )
+    with pytest.raises(ValidationError):
+        ChartSource.model_validate(
+            {
+                **source.model_dump(mode="json"),
+                "axis": ChartAxis(scale="unmarked", unit="%", ticks=()).model_dump(mode="json"),
+            }
+        )
 
 
 def test_reconstruction_schema_and_content_are_independent() -> None:

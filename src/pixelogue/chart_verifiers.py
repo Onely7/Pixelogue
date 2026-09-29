@@ -31,13 +31,19 @@ Precision = Literal["explicit_label", "calibrated_estimate", "interval"]
 class ChartAxis(StrictModel):
     """Y-axis semantics and labeled calibration marks."""
 
-    scale: Literal["linear", "log"]
+    scale: Literal["linear", "log", "unmarked"]
     unit: str | None = None
-    ticks: Annotated[tuple[str, ...], Field(min_length=2, max_length=32)]
+    ticks: Annotated[tuple[str, ...], Field(max_length=32)]
 
     @model_validator(mode="after")
     def check_ticks(self) -> ChartAxis:
         """Reject ambiguous or nonmonotonic axis calibration."""
+        if self.scale == "unmarked":
+            if self.ticks:
+                raise ValueError("Unmarked axis cannot claim visible calibration ticks")
+            return self
+        if len(self.ticks) < 2:
+            raise ValueError("Calibrated axis requires at least two labeled ticks")
         try:
             values = tuple(parse_numeric_lexeme(item) for item in self.ticks)
         except ExecutionError as exc:
@@ -114,6 +120,13 @@ class ChartSource(StrictModel):
             raise ValueError("Duplicate chart mark binding")
         if self.coverage != "MET" and (self.axis is not None or self.marks or self.closed):
             raise ValueError("Incomplete chart extraction cannot certify an axis or marks")
+        if (
+            self.coverage == "MET"
+            and self.axis is not None
+            and self.axis.scale == "unmarked"
+            and any(mark.precision != "explicit_label" for mark in self.marks)
+        ):
+            raise ValueError("An unmarked axis supports only directly printed exact values")
         for mark in self.marks:
             region = mark.region
             scope = self.scope_region
@@ -285,14 +298,15 @@ def verify_chart(
         return unknown
     source = sources[0]
     assert source.axis is not None
-    axis_min = parse_numeric_lexeme(source.axis.ticks[0])
-    axis_max = parse_numeric_lexeme(source.axis.ticks[-1])
-    if any(
-        (low < axis_min or high > axis_max or (source.axis.scale == "log" and low <= 0))
-        for mark in source.marks
-        for low, high in (_interval(mark),)
-    ):
-        return unknown
+    if source.axis.scale != "unmarked":
+        axis_min = parse_numeric_lexeme(source.axis.ticks[0])
+        axis_max = parse_numeric_lexeme(source.axis.ticks[-1])
+        if any(
+            (low < axis_min or high > axis_max or (source.axis.scale == "log" and low <= 0))
+            for mark in source.marks
+            for low, high in (_interval(mark),)
+        ):
+            return unknown
     query = source.query
     by_key = {(mark.series, mark.category): mark for mark in source.marks}
     if task_id == "chart_data_reconstruction":

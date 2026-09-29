@@ -14,6 +14,8 @@ All **65 core operations** now have normal verification paths. The 31 newly conn
 
 Table source extraction uses the configured evidence token allowance. If a response reaches that limit before producing complete JSON, one blind retry can use up to twice the allowance, with an 8,192-token ceiling unless the configured allowance is already higher. A second incomplete response still abstains; no table cells are filled from the candidate answer.
 
+Chart verification also supports bars whose exact values are printed next to the marks but whose numeric axis has no labeled ticks. The extractor marks that axis `unmarked` and cannot use it for pixel-based estimates. Every relevant value must have a directly printed label; an unlabeled mark remains unverified. Calibrated linear and log axes still require at least two ordered labeled ticks.
+
 All 7 specialist validators are implemented within declared first-version ranges and can be named in `tasks.enabled_extensions`. Normal selection still requires an exact model-bound calibration certificate, a working validator environment and image-local eligibility. The all-seven example is `configs/specialist-pilot.yaml`. On this host the isolated renderer is unavailable, so both code reconstruction operations report an environment block. Static SVG/limited TikZ and HTML/CSS are rendered only within the OS sandbox when it works. A UI action is checked as data and never executed.
 
 ## Per-image flow
