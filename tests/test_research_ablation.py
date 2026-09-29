@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 
 from pixelogue.catalog import task_catalog
 from pixelogue.config import load_config
@@ -10,6 +13,7 @@ from pixelogue.contracts import ImageArtifact, ImageView, InstructionCandidate, 
 from pixelogue.io import write_json
 from pixelogue.research_ablation import (
     AblationCase,
+    AblationPlan,
     AblationResult,
     AblationTurn,
     AblationTurnResult,
@@ -18,6 +22,7 @@ from pixelogue.research_ablation import (
     write_ablation_reports,
 )
 from pixelogue.research_exposure import FiveQuestionRating
+from pixelogue.serialization import canonical_hash
 
 
 def _case() -> AblationCase:
@@ -80,6 +85,22 @@ def test_full_factorial_plan_and_unbiased_depth_denominators(tmp_path: Path) -> 
     assert all(cell["depth"][1]["false_accept"] is None for cell in report["cells"])
     assert all(cell["depth"][1]["false_reject"] is None for cell in report["cells"])
     assert report["training_export_allowed"] is False
+
+
+def test_legacy_ablation_plan_keeps_omitted_target_region_identity() -> None:
+    plan = build_ablation_plan((_case(),), load_config(Path("configs/pilot.yaml")), 11)
+    legacy = plan.model_dump(mode="json")
+    for case in legacy["cases"]:
+        for turn in case["turns"]:
+            assert turn["instruction"].pop("target_region") is None
+    legacy["plan_hash"] = canonical_hash(
+        {key: value for key, value in legacy.items() if key != "plan_hash"}
+    )
+    restored = AblationPlan.model_validate_json(json.dumps(legacy))
+    assert restored.plan_hash == legacy["plan_hash"]
+    legacy["cases"][0]["turns"][0]["question"] = "A changed question?"
+    with pytest.raises(ValueError, match="plan hash differs"):
+        AblationPlan.model_validate_json(json.dumps(legacy))
 
 
 def test_report_counts_human_error_overlap_and_writes_depth_csv(tmp_path: Path) -> None:

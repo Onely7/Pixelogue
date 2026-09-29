@@ -84,8 +84,17 @@ class AblationPlan(StrictModel):
     @model_validator(mode="after")
     def check_identity(self) -> AblationPlan:
         """Reject changed trials or input cases on resume."""
-        if self.plan_hash != canonical_hash(self.model_dump(mode="json", exclude={"plan_hash"})):
-            raise ValueError("Ablation plan hash differs from contents")
+        body = self.model_dump(mode="json", exclude={"plan_hash"})
+        if self.plan_hash != canonical_hash(body):
+            # Older frozen plans predate InstructionCandidate.target_region. Preserve only
+            # that omitted optional field when reconstructing their original identity.
+            for case_model, case_data in zip(self.cases, body["cases"], strict=True):
+                for turn_model, turn_data in zip(case_model.turns, case_data["turns"], strict=True):
+                    instruction = turn_model.instruction
+                    if "target_region" not in instruction.model_fields_set:
+                        turn_data["instruction"].pop("target_region", None)
+            if self.plan_hash != canonical_hash(body):
+                raise ValueError("Ablation plan hash differs from contents")
         if len({case.case_id for case in self.cases}) != len(self.cases):
             raise ValueError("Ablation case IDs must be unique")
         if len({trial.trial_id for trial in self.trials}) != len(self.trials):
