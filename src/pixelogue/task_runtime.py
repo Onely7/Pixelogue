@@ -10,7 +10,10 @@ from pixelogue.catalog import task_catalog
 from pixelogue.config import ModelConfig, TaskRuntimeConfig
 from pixelogue.contracts import InstructionCandidate, PublicMessage
 from pixelogue.errors import ExecutionError
-from pixelogue.evaluation import normalized_identification_words
+from pixelogue.evaluation import (
+    identification_target_named_in_evidence,
+    normalized_identification_words,
+)
 from pixelogue.serialization import canonical_hash
 from pixelogue.task_catalog import TaskDefinition
 from pixelogue.task_evidence import CandidateBindings, ImageRegion, ScopedEvidenceInventory
@@ -434,6 +437,21 @@ def bind_candidates(
             ):
                 continue
         target = parameters["target"]
+        if target.origin == "image" and task.id == "object_identification":
+            cited_details = [
+                item.detail
+                for item in scope.observations
+                if item.evidence_id in target.evidence_refs
+            ]
+            if not isinstance(target.value, str) or not identification_target_named_in_evidence(
+                target.value, cited_details
+            ):
+                raise ExecutionError(
+                    "CANDIDATE_PARAMETER_SOURCE",
+                    f"Candidate {binding.candidate_id}: identification target {target.value!r} "
+                    "is not named in its cited local evidence; cite the observation naming "
+                    "that object or mark the eligibility check UNKNOWN",
+                )
         target_regions = (
             [item.region for item in scope.observations if item.evidence_id in target.evidence_refs]
             if target.origin == "image"

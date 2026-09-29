@@ -166,6 +166,17 @@ def normalized_identification_words(text: str) -> list[str]:
     return words
 
 
+def identification_target_named_in_evidence(label: str, details: Sequence[str]) -> bool:
+    """Check that cited observations name an identification target's head noun.
+
+    This lexical guard checks citation consistency, not whether the image is correct.
+    """
+    words = normalized_identification_words(label)
+    return bool(
+        words and any(_contains_identification_phrase(detail, words[-1:]) for detail in details)
+    )
+
+
 def _contains_identification_phrase(text: str, words: list[str]) -> bool:
     if not words:
         return False

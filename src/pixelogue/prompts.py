@@ -189,6 +189,9 @@ controller-private image binding: for object_identification it may be the object
 choose only a category whose distinguishing visible features are clear. If closely related
 categories remain visually confusable, bind their reliably supported broader category or omit
 the candidate. A plausible familiar label is not sufficient evidence for a fine-grained target.
+For object_identification with origin=image, target.evidence_refs must cite a local observation
+whose detail explicitly names the target object's category. Citing a broad observation about other
+objects in the same scope is insufficient; use UNKNOWN if no such observation exists.
 for scene_categorization it MUST be exactly one image-supported category_set choice with origin=image
 and local evidence_refs. Do not replace that target with a generic phrase such as "the scene".
 Each parameter names its origin:

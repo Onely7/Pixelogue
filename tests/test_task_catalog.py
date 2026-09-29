@@ -463,7 +463,7 @@ def test_bound_target_region_uses_only_target_evidence_without_disclosing_answer
                     capability="visible_entity",
                     verdict="MET",
                     region=left,
-                    detail="First visible object",
+                    detail="Several brown horses are visible",
                 ),
                 CapabilityObservation(
                     evidence_id="right",
@@ -493,6 +493,19 @@ def test_bound_target_region_uses_only_target_evidence_without_disclosing_answer
     assert selector_candidate(bound)["target_region"] == left.model_dump()
     assert "horse" not in json.dumps(contract).lower()
     assert "horse" not in json.dumps(selector_candidate(bound)).lower()
+
+    unsupported = binding(
+        template,
+        public_parameters=(
+            PublicParameter(name="target", value="mallet", origin="image", evidence_refs=("left",)),
+        ),
+    )
+    with pytest.raises(ExecutionError) as caught:
+        bind_candidates(
+            (template,), CandidateBindings(bindings=(unsupported,)), data, (), TaskRuntimeConfig()
+        )
+    assert caught.value.reason == "CANDIDATE_PARAMETER_SOURCE"
+    assert "mallet" in str(caught.value)
 
 
 def test_identification_fingerprint_collapses_label_format_and_plural() -> None:
