@@ -45,6 +45,10 @@ ANSWER_ONLY_STAGES = frozenset(
 def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
     """Describe a rejected output to the same blind evaluator for one retry."""
     guidance = {
+        "specialist_ui_source": (
+            "If coverage is UNKNOWN or NOT_MET, set controls=[] even when some other "
+            "controls are visible. Only MET coverage may include controls. "
+        ),
         "specialist_music_source": (
             "The scope_region must contain every event region in the requested bars. "
             "For a whole-view score, use left=0, top=0, right=1, bottom=1. "
