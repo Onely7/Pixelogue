@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from pixelogue.calibration import CalibrationManifest
-from pixelogue.config import load_config
+from pixelogue.config import StrictModel, load_config
 from pixelogue.contracts import GateVerdict, SourcePurpose, TextPayload
 from pixelogue.errors import ExecutionError
 from pixelogue.specialist_evaluation import (
@@ -175,6 +175,9 @@ def test_failed_second_evaluator_resumes_from_first_saved_stage(
     calls = [0, 0]
     second_online = False
 
+    class TupleSource(StrictModel):
+        values: tuple[str, ...]
+
     class FakeClient:
         def __init__(self, *args, **kwargs):
             self.client = self
@@ -188,7 +191,7 @@ def test_failed_second_evaluator_resumes_from_first_saved_stage(
             if judge and not second_online:
                 raise ExecutionError("MODEL_OFFLINE", "Second evaluator is offline")
             return SimpleNamespace(
-                value=TextPayload(text="source"),
+                value=TupleSource(values=("note",)),
                 request_hash="a" * 64,
                 response_hash="b" * 64,
                 prompt_tokens=1,
@@ -196,8 +199,11 @@ def test_failed_second_evaluator_resumes_from_first_saved_stage(
             )
 
     def fake_verify(instruction, payload, invoke, image_path):
-        invoke("specialist_music_source", {"question": payload["question"]}, TextPayload, 0)
-        invoke("specialist_music_source", {"question": payload["question"]}, TextPayload, 1)
+        first = invoke("specialist_music_source", {"question": payload["question"]}, TupleSource, 0)
+        second = invoke(
+            "specialist_music_source", {"question": payload["question"]}, TupleSource, 1
+        )
+        assert first.values == second.values == ("note",)
         return (
             SimpleNamespace(
                 name="music_notation_validator",

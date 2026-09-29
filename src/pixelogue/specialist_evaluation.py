@@ -20,7 +20,7 @@ from pixelogue.config import PixelogueConfig, StrictModel
 from pixelogue.contracts import ImageArtifact, InstructionCandidate, PublicMessage, SourcePurpose
 from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.io import read_json, write_json
-from pixelogue.serialization import canonical_hash
+from pixelogue.serialization import canonical_hash, canonical_json
 from pixelogue.serving import ModelImage, VllmClient
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import PublicParameter
@@ -308,7 +308,7 @@ def run_specialist_evaluation(
                                 "SPECIALIST_STAGE_CHANGED", "Saved evaluator stage differs"
                             )
                         stats["stage_reused"] += 1
-                        return model.model_validate(saved.value)
+                        return model.model_validate_json(canonical_json(saved.value))
                     request_images = () if stage in ANSWER_ONLY_STAGES else (image,)
                     max_tokens = (
                         config.tasks.evidence_max_tokens
