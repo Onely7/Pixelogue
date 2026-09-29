@@ -55,6 +55,9 @@ class GeometryProblem(StrictModel):
         """Reject partial or nonlocal proof inputs."""
         if self.coverage != "MET" and self.premises:
             raise ValueError("Incomplete geometry extraction cannot supply premises")
+        fact_keys = [(item.rule, item.variables, item.constants) for item in self.premises]
+        if len(fact_keys) != len(set(fact_keys)):
+            raise ValueError("Repeated geometry premise")
         for premise in self.premises:
             region = premise.region
             scope = self.scope_region
@@ -103,14 +106,34 @@ def verify_geometry_problem(
         for source in sources
     ):
         return GateVerdict.UNKNOWN, {"reason": "Incomplete or mismatched visual premise domain"}
-    canonical = [
-        source.model_dump(mode="json", exclude={"reason", "scope_region"}) for source in sources
-    ]
-    for item in canonical:
-        for premise in item["premises"]:
-            premise.pop("region", None)
-    if canonical[0] != canonical[1]:
+
+    def comparable(source: GeometryProblem) -> tuple[object, ...]:
+        """Compare proof facts without requiring identical prose or list order."""
+        return (
+            source.domain,
+            source.scope_id,
+            source.view_id,
+            source.target,
+            source.target_domain,
+        )
+
+    if comparable(sources[0]) != comparable(sources[1]):
         return GateVerdict.UNKNOWN, {"reason": "Independent premise extractions disagree"}
+    premise_maps = [
+        {(item.rule, item.variables, item.constants): item.region for item in source.premises}
+        for source in sources
+    ]
+    if premise_maps[0].keys() != premise_maps[1].keys():
+        return GateVerdict.UNKNOWN, {"reason": "Independent premise extractions disagree"}
+    for key, first in premise_maps[0].items():
+        second = premise_maps[1][key]
+        width = max(0.0, min(first.right, second.right) - max(first.left, second.left))
+        height = max(0.0, min(first.bottom, second.bottom) - max(first.top, second.top))
+        intersection = width * height
+        area_first = (first.right - first.left) * (first.bottom - first.top)
+        area_second = (second.right - second.left) * (second.bottom - second.top)
+        if intersection / (area_first + area_second - intersection) < 0.1:
+            return GateVerdict.UNKNOWN, {"reason": "Independent premise regions disagree"}
     if any(
         answer.coverage != "MET" or answer.answer_quote not in candidate_answer
         for answer in answers

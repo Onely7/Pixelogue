@@ -80,6 +80,74 @@ def test_right_triangle_rule_derives_unique_positive_length() -> None:
     assert wrong is GateVerdict.NOT_MET
 
 
+def test_geometry_agreement_compares_facts_independent_of_prose_and_order() -> None:
+    source = _problem()
+    reordered = source.model_copy(
+        update={
+            "reason": "Independent visual explanation",
+            "premises": tuple(
+                item.model_copy(update={"evidence_text": f"Visible mark {item.constants}"})
+                for item in reversed(source.premises)
+            ),
+        }
+    )
+    answer = _answer("5")
+    verdict, evidence = verify_geometry_problem(
+        (source, reordered), (answer, answer), source.domain, source.scope_id, source.view_id, "5"
+    )
+    assert verdict is GateVerdict.MET
+    assert evidence["expected"] == "5"
+    changed = reordered.model_copy(
+        update={
+            "premises": (
+                reordered.premises[0],
+                reordered.premises[1],
+                _premise("given", ("a",), ("5",)),
+            )
+        }
+    )
+    assert (
+        verify_geometry_problem(
+            (source, changed),
+            (answer, answer),
+            source.domain,
+            source.scope_id,
+            source.view_id,
+            "5",
+        )[0]
+        is GateVerdict.UNKNOWN
+    )
+    displaced = reordered.model_copy(
+        update={
+            "premises": (
+                reordered.premises[0].model_copy(
+                    update={"region": ImageRegion(left=0.8, top=0.8, right=0.9, bottom=0.9)}
+                ),
+                *reordered.premises[1:],
+            )
+        }
+    )
+    assert (
+        verify_geometry_problem(
+            (source, displaced),
+            (answer, answer),
+            source.domain,
+            source.scope_id,
+            source.view_id,
+            "5",
+        )[0]
+        is GateVerdict.UNKNOWN
+    )
+
+
+def test_duplicate_geometry_premises_are_rejected() -> None:
+    source = _problem()
+    with pytest.raises(ValidationError, match="Repeated geometry premise"):
+        GeometryProblem.model_validate(
+            source.model_dump() | {"premises": (*source.premises, source.premises[0])}
+        )
+
+
 def test_missing_premises_and_model_domain_mismatch_abstain() -> None:
     source = _problem()
     incomplete = source.model_copy(update={"premises": source.premises[-1:]})
