@@ -29,6 +29,7 @@ from pixelogue.contracts import (
 )
 from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import (
+    action_affordance_question,
     action_answer_already_public,
     applicable_rubric_items,
     has_natural_language_content,
@@ -1502,6 +1503,16 @@ def test_reciprocal_identification_disclosure_requires_both_public_directions() 
     )
 
 
+def test_visible_action_affordance_is_not_an_observed_action() -> None:
+    assert action_affordance_question(
+        "Based on its wheels touching the ground, what action is the car supported to perform?"
+    )
+    assert action_affordance_question("What can the car do?")
+    assert action_affordance_question("What is the athlete capable of doing?")
+    assert not action_affordance_question("What is the athlete doing with the ball?")
+    assert not action_affordance_question("What can you see the athlete do with the ball?")
+
+
 def test_rerating_rejects_reciprocal_identification_without_second_judge_call(
     tmp_path: Path, image_artifact, monkeypatch
 ) -> None:
@@ -1567,6 +1578,43 @@ def test_rerating_rejects_reciprocal_identification_without_second_judge_call(
     assert [turn.status for turn in rerated.turns] == ["COMMITTED", "REJECTED"]
     assert len(rated_calls) == 1
     assert rejection["reason"] == "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC"
+
+
+def test_rerating_rejects_action_affordance_without_judge_calls(
+    tmp_path: Path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, evaluation_mode="holistic"
+    )
+    try:
+        original = coordinator.synthesize_image(image, root)
+        first = original.turns[0]
+        affordance = first.model_copy(
+            update={
+                "instruction": first.instruction.model_copy(
+                    update={"task_id": "visible_action_relation"}
+                ),
+                "question": first.question.model_copy(
+                    update={"content": "What action is the car supported to perform?"}
+                ),
+                "answer": first.answer.model_copy(update={"content": "driving"}),
+            }
+        )
+        saved = original.model_copy(update={"turns": (affordance,), "status": "REJECTED"})
+        calls_before = sum(len(client.calls) for client in (generator_a, generator_b))
+        rerated = coordinator.rate_existing(saved, root)
+        calls_after = sum(len(client.calls) for client in (generator_a, generator_b))
+        rejection_hash = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = 'public-text-rejections' "
+            "ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()[0]
+        rejection = json.loads(store.read_artifact(rejection_hash))
+    finally:
+        store.close()
+    assert rerated.turns[0].status == "REJECTED"
+    assert calls_after == calls_before
+    assert rejection["reason"] == "ACTION_AFFORDANCE_NOT_VISIBLE"
 
 
 def test_identification_target_leak_retries_before_answer(

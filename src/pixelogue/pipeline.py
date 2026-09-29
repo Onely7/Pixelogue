@@ -38,6 +38,7 @@ from pixelogue.contracts import (
 )
 from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import (
+    action_affordance_question,
     action_answer_already_public,
     aggregate_rating,
     applicable_rubric_items,
@@ -109,6 +110,7 @@ type PublicTextRejectionReason = Literal[
     "TRANSCRIPTION_ANSWER_IN_QUESTION",
     "TEXT_RELATION_UNVERIFIED",
     "ACTION_ALREADY_PUBLIC",
+    "ACTION_AFFORDANCE_NOT_VISIBLE",
     "CATEGORY_OPTIONS_NOT_PUBLIC",
 ]
 _INTERNAL_QUESTION_REFERENCE = re.compile(
@@ -546,6 +548,10 @@ class SynthesisCoordinator:
                     )
                 ):
                     reason = "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC"
+                elif selected_instruction.task_id == "visible_action_relation" and (
+                    action_affordance_question(result.text)
+                ):
+                    reason = "ACTION_AFFORDANCE_NOT_VISIBLE"
                 elif selected_instruction.task_id == "text_transcription" and (
                     unverified_transcription_relation(result.text)
                 ):
@@ -602,6 +608,7 @@ class SynthesisCoordinator:
                     "REPEATED_PUBLIC_QUESTION",
                     "IDENTIFICATION_TARGET_IN_QUESTION",
                     "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC",
+                    "ACTION_AFFORDANCE_NOT_VISIBLE",
                     "TEXT_RELATION_UNVERIFIED",
                     "CATEGORY_OPTIONS_NOT_PUBLIC",
                 }:
@@ -965,6 +972,18 @@ class SynthesisCoordinator:
                     reason="TEXT_RELATION_UNVERIFIED",
                     content=turn.question.content,
                 )
+            unsupported_action_affordance = (
+                turn.instruction.task_id == "visible_action_relation"
+                and action_affordance_question(turn.question.content)
+            )
+            if unsupported_action_affordance:
+                self._record_public_text_rejection(
+                    conversation.conversation_id,
+                    turn.turn_index,
+                    field="question",
+                    reason="ACTION_AFFORDANCE_NOT_VISIBLE",
+                    content=turn.question.content,
+                )
             target = next(
                 (
                     parameter.value
@@ -1001,6 +1020,7 @@ class SynthesisCoordinator:
                 or disclosure
                 or missing_scene_options
                 or unverified_text_relation
+                or unsupported_action_affordance
                 or reciprocal_identification
                 or internal_reference
                 else GateVerdict.MET

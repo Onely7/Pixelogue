@@ -30,6 +30,8 @@ All 7 specialist validators are implemented within declared first-version ranges
 
 A reciprocal object-identification question is rejected before the question judges when the new target label already appeared in a committed identification question and the new question repeats that turn's answer label. The same public-text check runs when saved conversations are re-evaluated. Distinct targets with no such two-way disclosure remain eligible.
 
+`visible_action_relation` requires an action or contact shown in the still image. An overt question about what an object can or could do is stopped before the question judges, including when a vehicle's design merely suggests an action. The blind judges also check less explicit ability claims; a static pose alone does not establish movement.
+
 A second turn is not automatically history-dependent. Requested regrouping can be useful without a new visual fact. The default `normal` profile requires all normal capabilities. Opt-in `limitation` instead requires a local anchor and an observed missing/uncertain relevant capability, followed by independent verification of the specific limitation. `false_premise` conservatively also requires closed scope and independent local contradiction checks. Failure to find something never establishes absence. Alternative profiles do not run the normal transcription/count verifier against an intentionally unanswerable question.
 
 ## Configuration and budgets

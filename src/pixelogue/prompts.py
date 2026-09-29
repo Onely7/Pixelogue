@@ -295,6 +295,8 @@ the action or posture being requested in the question, even if a private target 
 description contains it. If the subject cannot be identified without that clue, return text=null.
 Ask what the subject is doing or how it interacts with a visible target. A question phrased
 as "What is its body posture?" requests an attribute and does not realize this operation.
+Do not ask what a subject can or could do, is capable of, or is supported to perform. Those are
+abilities, not actions shown by the image; wheels touching the ground do not prove driving.
 The absence of motion blur cannot establish that an object is stationary.
 Never request code execution. Return public text, or set text to null and give an internal reason if unsupported.""",
     "question_intent": """Independently classify the exact operation requested by the public
@@ -318,6 +320,8 @@ resolved from this cue, mark local_anchor UNKNOWN. When a v7 contract is supplie
 operation_coherent also require every eligibility check and public parameter to hold. Check the
 alternative profile guard for limitations or false premises; do not require normal answerability
 for a limitation. Both the target and the stated limitation/contradiction must be locally grounded.
+For visible_action_relation, an ability or hypothetical action is operation_coherent NOT_MET;
+visible contact alone cannot establish movement or intended future action.
 Reject compound independent operations and any extra machine-readable output request not supported
 by the selected operation. A still image alone cannot establish that an object is stationary from
 the absence of blur; mark such an unsupported motion question NOT_MET or UNKNOWN as appropriate.
@@ -444,6 +448,8 @@ interchangeable. Do not certify an independent compound request as a single oper
 operation ID is not evidence of realization. UNKNOWN is required for unresolved classification.
 For object identification, compare a named category with distinguishing visible features; a
 related but different category is NOT_MET, and unresolved fine-grained identity is UNKNOWN.
+For visible_action_relation, require an action or contact actually visible in the still image.
+An answer about what an object could do is unsuitable even if its design makes that plausible.
 For limitation/false_premise independently verify the local condition and appropriate response;
 normal answerability is not required, but an unsupported negative assertion is never accepted.
 Return the schema only.""",

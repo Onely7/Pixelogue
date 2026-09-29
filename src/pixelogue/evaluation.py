@@ -277,6 +277,19 @@ def action_answer_already_public(
     )
 
 
+_ACTION_AFFORDANCE = re.compile(
+    r"\b(?:supported\s+to\s+(?:perform|do)|capable\s+of|able\s+to|"
+    r"(?:what|which)\s+(?:(?:action|activity)\s+)?(?:can|could)\s+"
+    r"(?:the|this|that|it|he|she|they)\b[^?.!]{0,80}\b(?:do|perform))\b",
+    re.IGNORECASE,
+)
+
+
+def action_affordance_question(question: str) -> bool:
+    """Catch an overt ability request where the task requires an observed action."""
+    return _ACTION_AFFORDANCE.search(question) is not None
+
+
 def _contains_public_phrase(question: str, phrase_words: list[str]) -> bool:
     question_words = _public_words(question)
     for start, word in enumerate(question_words):
