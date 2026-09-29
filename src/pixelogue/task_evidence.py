@@ -152,6 +152,34 @@ class ScopedEvidenceReport(StrictModel):
             raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
 
 
+def out_of_scope_region_feedback(report: ScopedEvidenceReport) -> str:
+    """Describe invalid nested boxes without echoing model-generated text."""
+    mismatches: list[str] = []
+    for scope_index, scope in enumerate(report.scopes, start=1):
+        parent = scope.region
+        for observation_index, observation in enumerate(scope.observations.values(), start=1):
+            region = observation.region
+            if (
+                parent.left <= region.left < region.right <= parent.right
+                and parent.top <= region.top < region.bottom <= parent.bottom
+            ):
+                continue
+            mismatches.append(
+                f"scope {scope_index} observation {observation_index}:"
+                f" observation box [{region.left:g}, {region.top:g},"
+                f" {region.right:g}, {region.bottom:g}] exceeds parent box"
+                f" [{parent.left:g}, {parent.top:g}, {parent.right:g}, {parent.bottom:g}]"
+            )
+    if not mismatches:
+        return ""
+    return (
+        " Invalid boxes in the previous response: "
+        + "; ".join(mismatches[:3])
+        + ". Redraw each observation inside its actual parent region."
+        " If evidence spans the full view, define a full-view scope."
+    )
+
+
 class PublicParameter(StrictModel):
     """A public operation choice or explicitly sourced factual parameter."""
 

@@ -78,6 +78,7 @@ from pixelogue.task_evidence import (
     ScopedEvidenceInventory,
     ScopedEvidenceReport,
     alias_evidence_ids,
+    out_of_scope_region_feedback,
 )
 from pixelogue.task_runtime import (
     bind_candidates,
@@ -2047,6 +2048,10 @@ class SynthesisCoordinator:
                                 " 0 <= top < bottom <= 1. Keep each observation inside its scope;"
                                 " never use a point or an all-1 box."
                             )
+                            if response is not None and isinstance(
+                                response.value, ScopedEvidenceReport
+                            ):
+                                retry_feedback += out_of_scope_region_feedback(response.value)
                         elif stage == "candidate_binding":
                             retry_feedback += (
                                 " Every binding needs the separate target object; do not repeat"
