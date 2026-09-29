@@ -335,6 +335,42 @@ def test_evidence_schema_retry_explains_nonempty_nested_regions(tmp_path: Path) 
     assert "inside its scope" in (client.retry_feedback[1] or "")
 
 
+def test_candidate_schema_retry_lists_required_binding_fields(tmp_path: Path) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "candidate-schema-retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a, fail_first_schema=True)
+    coordinator = SynthesisCoordinator(
+        config, "candidate-schema-retry", store, client, client, client
+    )
+    try:
+        result = coordinator._invoke(
+            client,
+            "candidate_binding",
+            {
+                "candidates": [
+                    {
+                        "candidate_id": "candidate",
+                        "eligibility_checks": [],
+                        "required_evidence_ids": ["e1"],
+                        "local_evidence_ids": ["e1"],
+                    }
+                ],
+                "public_history": [],
+            },
+            (),
+            CandidateBindingsReport,
+            max_tokens=256,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        store.close()
+
+    assert len(result.bindings) == 1
+    assert "Required fields in each binding" in (client.retry_feedback[1] or "")
+    assert "estimated_answer_tokens must be a positive integer" in (client.retry_feedback[1] or "")
+
+
 def test_semantic_contract_failure_retries_without_accepting_invalid_result(
     tmp_path: Path,
 ) -> None:

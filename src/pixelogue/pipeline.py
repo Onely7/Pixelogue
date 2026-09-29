@@ -74,6 +74,7 @@ from pixelogue.serialization import canonical_hash
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import (
+    CandidateBindingReport,
     CandidateBindingsReport,
     ScopedEvidenceInventory,
     ScopedEvidenceReport,
@@ -2058,6 +2059,11 @@ class SynthesisCoordinator:
                                 " target in public_parameters. Include only operation-relevant"
                                 " parameters, use each name once, and"
                                 " match origin with evidence_refs."
+                            )
+                            retry_feedback += (
+                                " Required fields in each binding: "
+                                + ", ".join(CandidateBindingReport.model_json_schema()["required"])
+                                + ". estimated_answer_tokens must be a positive integer."
                             )
                             if "Factual parameters require explicit evidence references" in str(
                                 error
