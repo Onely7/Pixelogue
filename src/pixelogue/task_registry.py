@@ -134,7 +134,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "chemical_graph_validator",
-            "2",
+            "3",
             "chemistry",
             "rdkit",
             frozenset({"chemical_structure_reading"}),

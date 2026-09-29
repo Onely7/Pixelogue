@@ -56,14 +56,20 @@ class ChemicalSource(StrictModel):
         ids = {atom.atom_id for atom in self.atoms}
         if len(ids) != len(self.atoms):
             raise ValueError("Repeated atom IDs")
-        for item in (*self.atoms, *self.bonds):
-            region = item.region
-            scope = self.scope_region
-            if not (
-                scope.left <= region.left < region.right <= scope.right
-                and scope.top <= region.top < region.bottom <= scope.bottom
-            ):
-                raise ValueError("Chemical evidence lies outside scope")
+        for kind, items in (("atoms", self.atoms), ("bonds", self.bonds)):
+            for index, item in enumerate(items):
+                region = item.region
+                scope = self.scope_region
+                if not (
+                    scope.left <= region.left < region.right <= scope.right
+                    and scope.top <= region.top < region.bottom <= scope.bottom
+                ):
+                    raise ValueError(
+                        f"Chemical {kind}[{index}] region "
+                        f"[{region.left:g}, {region.top:g}, {region.right:g}, {region.bottom:g}] "
+                        f"exceeds scope [{scope.left:g}, {scope.top:g}, "
+                        f"{scope.right:g}, {scope.bottom:g}]"
+                    )
         if any(bond.a not in ids or bond.b not in ids or bond.a == bond.b for bond in self.bonds):
             raise ValueError("Invalid chemical bond endpoints")
         return self

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from pixelogue.contracts import GateVerdict
 from pixelogue.specialist_chemistry import ChemicalSource, verify_chemistry
 
@@ -52,6 +55,13 @@ def test_unresolved_stereochemistry_and_disputed_graph_abstain() -> None:
         )[0]
         is GateVerdict.UNKNOWN
     )
+
+
+def test_out_of_scope_chemical_box_identifies_the_offending_region() -> None:
+    source = _source().model_dump()
+    source["scope_region"] = {"left": 0.2, "top": 0.2, "right": 0.8, "bottom": 0.8}
+    with pytest.raises(ValidationError, match=r"atoms\[0\].*exceeds scope"):
+        ChemicalSource.model_validate(source)
 
 
 def test_graph_equivalence_ignores_atom_ids_and_explicit_hydrogens() -> None:
