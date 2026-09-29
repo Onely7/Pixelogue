@@ -36,6 +36,7 @@ class DiagnosticRow(TypedDict):
     stop_stage: str | None
     stop_stage_evidence: str
     stop_reason: str | None
+    attempted_turns: int
     committed_turns: int
     stage_calls: dict[str, int]
     turn_stage_calls: dict[str, dict[str, int]]
@@ -292,6 +293,13 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
                 item["stage_sequence"][-1] if item["stage_sequence"] else None,
                 "last_model_call" if item["stage_sequence"] else "unrecorded",
             )
+        attempted_indices = {turn.turn_index for turn in conversation.turns}
+        attempted_indices.update(int(index) for index in item["turn_stage_calls"] if int(index) > 0)
+        attempted_indices.update(
+            stop["turn_index"]
+            for stop in recorded_stops
+            if isinstance(stop["turn_index"], int) and stop["turn_index"] > 0
+        )
         rows.append(
             {
                 "conversation_id": conversation.conversation_id,
@@ -310,6 +318,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
                     if recorded_stops
                     else None
                 ),
+                "attempted_turns": len(attempted_indices),
                 "committed_turns": sum(turn.status == "COMMITTED" for turn in conversation.turns),
                 "stage_calls": dict(sorted(item["stage_calls"].items())),
                 "turn_stage_calls": {
@@ -333,6 +342,9 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
     return {
         "run_id": store.run_dir.name,
         "conversations": len(rows),
+        "attempted_turns": sum(row["attempted_turns"] for row in rows),
+        "committed_turns": sum(row["committed_turns"] for row in rows),
+        "completed_conversations": sum(row["status"] == "QUALITY_CANDIDATE" for row in rows),
         "status_counts": dict(sorted(Counter(row["status"] for row in rows).items())),
         "stop_category_counts": dict(sorted(Counter(row["stop_category"] for row in rows).items())),
         "committed_turn_counts": dict(
@@ -379,6 +391,7 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
                 "stop_stage",
                 "stop_stage_evidence",
                 "stop_reason",
+                "attempted_turns",
                 "committed_turns",
                 "model_calls",
                 "invalid_calls",
@@ -417,6 +430,9 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
         "",
         f"Conversations: {report['conversations']}; model calls: {report['model_calls']}; "
         f"retries: {report['retry_calls']}; invalid calls: {report['invalid_calls']}.",
+        f"Attempted turns: {report['attempted_turns']}; committed turns: "
+        f"{report['committed_turns']}; completed conversations: "
+        f"{report['completed_conversations']}.",
         f"Recorded structured-output contract failures: {report['contract_failure_attempts']}.",
         f"Rejected individual candidate bindings: {report['binding_rejections']}.",
         f"Token usage is missing for {report['token_usage_missing_calls']} calls.",

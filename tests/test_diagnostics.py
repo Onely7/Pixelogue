@@ -113,6 +113,10 @@ def test_diagnostics_join_image_calls_and_private_stop_without_loading_image(
         report = build_diagnostic_report(store, conversations)
     row = report["rows"][0]
     assert report["status_counts"] == {"ABSTAINED": 1}
+    assert report["attempted_turns"] == 1
+    assert report["committed_turns"] == 0
+    assert report["completed_conversations"] == 0
+    assert row["attempted_turns"] == 1
     assert report["retry_calls"] == 1
     assert row["stage_calls"] == {"candidate_binding": 1}
     assert row["turn_stage_calls"] == {"1": {"candidate_binding": 1}}
