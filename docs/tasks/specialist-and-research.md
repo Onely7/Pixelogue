@@ -26,6 +26,7 @@ The render worker accepts a small static syntax grammar, disables JavaScript and
 The blind render source reader reports only visible labels and image coverage. Renderer availability and calibration are controller checks, so an evaluator must not treat missing sandbox details in the image request as missing visual evidence.
 
 For a UI action, both blind readings must copy the public target string as the control ID and agree on enabled state. The actionable regions must overlap with intersection-over-union of at least 0.5 for a click or 0.7 for focus and input. A click accepts different control-kind labels when both readings identify the same enabled target; focus and input require both readings to identify a field. Other controls may differ. The reported point must lie inside both target regions and match the delivered view's pixel conversion; unresolved or conflicting targets abstain.
+The public target may describe a visible function instead of quoting its label. Readers may use that description only when the screenshot identifies one control unambiguously; they must not infer a hidden action or treat different actions as synonyms.
 
 ## Held-out evaluation and calibration
 
