@@ -32,6 +32,7 @@ from pixelogue.task_evidence import (
 from pixelogue.task_runtime import (
     admission_report,
     bind_candidates,
+    bind_candidates_individually,
     bindable_parameter_names,
     binding_candidate,
     fingerprint,
@@ -293,6 +294,82 @@ def test_compact_evidence_ids_preserve_scope_and_reject_old_references() -> None
             TaskRuntimeConfig(),
         )
     assert caught.value.reason == "CANDIDATE_EVIDENCE_SCOPE"
+
+
+def test_bad_identification_binding_does_not_hide_valid_sibling() -> None:
+    """A local source error excludes its entry while a grounded sibling survives."""
+    regions = (scope("left", visible_entity="MET"), scope("right", visible_entity="MET"))
+    named_scopes = tuple(
+        region.model_copy(
+            update={
+                "observations": (
+                    region.observations[0].model_copy(update={"detail": f"A {name} is visible"}),
+                )
+            }
+        )
+        for region, name in zip(regions, ("horse", "dog"), strict=True)
+    )
+    data = inventory(*named_scopes)
+    options = candidates(data, limit=64)
+    left = next(
+        item
+        for item in options
+        if item.task_id == "object_identification" and item.scope_id == "left"
+    )
+    right = next(
+        item
+        for item in options
+        if item.task_id == "object_identification" and item.scope_id == "right"
+    )
+    valid = binding(
+        left,
+        public_parameters=(
+            PublicParameter(
+                name="target",
+                value="horse",
+                origin="image",
+                evidence_refs=("left:visible_entity",),
+            ),
+        ),
+    )
+    invalid = binding(
+        right,
+        public_parameters=(
+            PublicParameter(
+                name="target",
+                value="mallet",
+                origin="image",
+                evidence_refs=("right:visible_entity",),
+            ),
+        ),
+    )
+    result = bind_candidates_individually(
+        (left, right), CandidateBindings(bindings=(valid, invalid)), data, (), TaskRuntimeConfig()
+    )
+    assert len(result.admitted) == 1
+    assert result.admitted[0].scope_id == "left"
+    assert [(item.candidate_id, item.reason) for item in result.rejected] == [
+        (right.candidate_id, "CANDIDATE_PARAMETER_SOURCE")
+    ]
+
+    with pytest.raises(ExecutionError, match="Unknown or repeated candidate binding"):
+        bind_candidates_individually(
+            (left, right),
+            CandidateBindings(bindings=(valid, valid)),
+            data,
+            (),
+            TaskRuntimeConfig(),
+        )
+    with pytest.raises(ExecutionError, match="Unknown or repeated candidate binding"):
+        bind_candidates_individually(
+            (left, right),
+            CandidateBindings(
+                bindings=(valid, invalid.model_copy(update={"candidate_id": "unknown"}))
+            ),
+            data,
+            (),
+            TaskRuntimeConfig(),
+        )
 
 
 def test_met_binding_missing_required_public_choice_is_retryable_contract_error() -> None:

@@ -627,6 +627,70 @@ def test_exhausted_candidate_binding_checks_abstain_without_accepting(
     assert stop["reason"] == "CANDIDATE_CHECKS_MISMATCH"
 
 
+def test_malformed_binding_preserves_valid_sibling_and_records_rejection(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image, root = image_artifact
+    coordinator, store, selector, generator_a, _ = _coordinator(tmp_path)
+    original = generator_a.invoke
+    binding_calls = 0
+
+    def inject_bad_binding(stage, payload, images, response_model, **kwargs):
+        nonlocal binding_calls
+        response = original(stage, payload, images, response_model, **kwargs)
+        if stage == "evidence_extraction":
+            first_scope = response.value.scopes[0]
+            second_scope = first_scope.model_copy(
+                update={
+                    "scope_id": "other-blue",
+                    "observations": {
+                        "visible_entity": first_scope.observations["visible_entity"].model_copy(
+                            update={"evidence_id": "other-entity"}
+                        )
+                    },
+                }
+            )
+            return ModelResponse(
+                value=ScopedEvidenceReport(
+                    image_id=response.value.image_id,
+                    reason=response.value.reason,
+                    scopes=(first_scope, second_scope),
+                ),
+                request_hash=response.request_hash,
+                response_hash=response.response_hash,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+            )
+        if stage != "candidate_binding":
+            return response
+        binding_calls += 1
+        assert len(response.value.bindings) >= 2
+        first, *siblings = response.value.bindings
+        malformed = first.model_copy(update={"checks": ()})
+        return ModelResponse(
+            value=CandidateBindingsReport(bindings=(malformed, *siblings)),
+            request_hash=response.request_hash,
+            response_hash=response.response_hash,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+        )
+
+    monkeypatch.setattr(generator_a, "invoke", inject_bad_binding)
+    try:
+        coordinator.synthesize_image(image, root, generator_role="generator_a")
+        rejection_rows = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = 'candidate-binding-rejections'"
+        ).fetchall()
+        rejected = [json.loads(store.read_artifact(row[0])) for row in rejection_rows]
+    finally:
+        store.close()
+
+    assert binding_calls >= 1
+    assert [stage for stage, _ in selector.calls if stage == "instruction_selection"]
+    assert rejected
+    assert rejected[0]["rejections"][0]["reason"] == "CANDIDATE_CHECKS_MISMATCH"
+
+
 def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_error(
     tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from pixelogue.calibration import eligible_domains, model_calibration_lock
@@ -483,3 +484,76 @@ def bind_candidates(
         if identity not in used_fingerprints:
             accepted.append(candidate.model_copy(update={"candidate_id": identity}))
     return tuple(accepted)
+
+
+@dataclass(frozen=True)
+class BindingRejection:
+    """One malformed candidate excluded from an otherwise usable model response."""
+
+    candidate_id: str
+    reason: str
+    message: str
+
+
+@dataclass(frozen=True)
+class BindingBatchResult:
+    """Admitted candidates and candidate-local contract failures."""
+
+    admitted: tuple[InstructionCandidate, ...]
+    rejected: tuple[BindingRejection, ...]
+
+
+_CANDIDATE_LOCAL_ERRORS = frozenset(
+    {
+        "CANDIDATE_EVIDENCE_SCOPE",
+        "CANDIDATE_CHECKS_MISMATCH",
+        "CANDIDATE_PARAMETER_UNKNOWN",
+        "CANDIDATE_PARAMETER_MISSING",
+        "CANDIDATE_PARAMETER_SOURCE",
+        "CANDIDATE_PARAMETER_VALUE",
+    }
+)
+
+
+def bind_candidates_individually(
+    templates: Sequence[InstructionCandidate],
+    response: CandidateBindings,
+    inventory: ScopedEvidenceInventory,
+    history: Sequence[PublicMessage],
+    settings: TaskRuntimeConfig,
+    used_fingerprints: frozenset[str] = frozenset(),
+) -> BindingBatchResult:
+    """Reject malformed candidate entries without discarding valid siblings.
+
+    Unknown and duplicate candidate IDs invalidate the entire response before any entry is
+    evaluated. Every admitted entry still passes the unchanged strict binding contract.
+    """
+    by_id = {template.candidate_id: template for template in templates}
+    ids = [binding.candidate_id for binding in response.bindings]
+    if len(ids) != len(set(ids)) or not set(ids) <= by_id.keys():
+        raise ExecutionError("CANDIDATE_BINDING_ID", "Unknown or repeated candidate binding")
+    admitted: list[InstructionCandidate] = []
+    rejected: list[BindingRejection] = []
+    for binding in response.bindings:
+        try:
+            admitted.extend(
+                bind_candidates(
+                    (by_id[binding.candidate_id],),
+                    CandidateBindings(bindings=(binding,)),
+                    inventory,
+                    history,
+                    settings,
+                    used_fingerprints,
+                )
+            )
+        except ExecutionError as error:
+            if error.reason not in _CANDIDATE_LOCAL_ERRORS:
+                raise
+            rejected.append(
+                BindingRejection(
+                    candidate_id=binding.candidate_id,
+                    reason=error.reason,
+                    message=str(error)[:600],
+                )
+            )
+    return BindingBatchResult(admitted=tuple(admitted), rejected=tuple(rejected))

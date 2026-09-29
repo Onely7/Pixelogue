@@ -77,6 +77,20 @@ def test_diagnostics_join_image_calls_and_private_stop_without_loading_image(
                 "next_retry_feedback": "Include exact checks",
             },
         )
+        store.write_json_artifact(
+            "candidate-binding-rejections",
+            {
+                "conversation_id": conversation.conversation_id,
+                "turn_index": 1,
+                "rejections": [
+                    {
+                        "candidate_id": "invalid-candidate",
+                        "reason": "CANDIDATE_PARAMETER_SOURCE",
+                        "message": "The cited target is missing",
+                    }
+                ],
+            },
+        )
         with store.transaction() as connection:
             connection.execute(
                 """INSERT INTO model_call(
@@ -110,6 +124,8 @@ def test_diagnostics_join_image_calls_and_private_stop_without_loading_image(
     assert row["input_tokens"] == 0
     assert row["token_usage_missing_calls"] == 1
     assert row["contract_failure_attempts"] == 1
+    assert report["binding_rejections"] == 1
+    assert row["binding_rejections"][0]["candidate_id"] == "invalid-candidate"
     assert row["attempt_failures"][0]["next_retry_feedback"] == "Include exact checks"
     assert row["cost_usd"] is None
 
@@ -117,5 +133,6 @@ def test_diagnostics_join_image_calls_and_private_stop_without_loading_image(
     write_diagnostic_reports(report, stem)
     assert json.loads(stem.with_suffix(".json").read_text())["model_calls"] == 1
     assert "CANDIDATE_CHECKS_MISMATCH" in stem.with_suffix(".csv").read_text()
+    assert "CANDIDATE_PARAMETER_SOURCE" in stem.with_suffix(".csv").read_text()
     assert "ABSTAINED" in stem.with_suffix(".md").read_text()
     assert "| source-1 | MALFORMED_MODEL_OUTPUT |" in stem.with_suffix(".md").read_text()

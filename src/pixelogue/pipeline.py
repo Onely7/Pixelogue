@@ -82,7 +82,7 @@ from pixelogue.task_evidence import (
     out_of_scope_region_feedback,
 )
 from pixelogue.task_runtime import (
-    bind_candidates,
+    bind_candidates_individually,
     binding_candidate,
     operation_contract,
     selector_candidate,
@@ -365,7 +365,7 @@ class SynthesisCoordinator:
                     templates: tuple[InstructionCandidate, ...] = candidates,
                     public_history: tuple[PublicMessage, ...] = snapshot.public_history,
                 ) -> None:
-                    bind_candidates(
+                    result_batch = bind_candidates_individually(
                         templates,
                         result.to_bindings(),
                         inventory,
@@ -373,6 +373,9 @@ class SynthesisCoordinator:
                         self.config.tasks,
                         frozenset(turn.instruction.candidate_id for turn in turns),
                     )
+                    if not result_batch.admitted and result_batch.rejected:
+                        first = result_batch.rejected[0]
+                        raise ExecutionError(first.reason, first.message)
 
                 try:
                     bindings_report = self._invoke(
@@ -426,7 +429,7 @@ class SynthesisCoordinator:
                 self.store.write_json_artifact(
                     "candidate-bindings", bindings.model_dump(mode="json")
                 )
-                candidates = bind_candidates(
+                binding_result = bind_candidates_individually(
                     candidates,
                     bindings,
                     inventory,
@@ -434,6 +437,23 @@ class SynthesisCoordinator:
                     self.config.tasks,
                     frozenset(turn.instruction.candidate_id for turn in turns),
                 )
+                if binding_result.rejected:
+                    self.store.write_json_artifact(
+                        "candidate-binding-rejections",
+                        {
+                            "conversation_id": conversation_id,
+                            "turn_index": turn_index,
+                            "rejections": [
+                                {
+                                    "candidate_id": item.candidate_id,
+                                    "reason": item.reason,
+                                    "message": item.message,
+                                }
+                                for item in binding_result.rejected
+                            ],
+                        },
+                    )
+                candidates = binding_result.admitted
                 candidates = self._drop_answered_candidates(
                     candidates, turns, conversation_id, turn_index
                 )

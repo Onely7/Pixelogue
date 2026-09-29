@@ -43,6 +43,7 @@ class DiagnosticRow(TypedDict):
     invalid_calls: int
     contract_failure_attempts: int
     attempt_failures: list[dict[str, Any]]
+    binding_rejections: list[dict[str, Any]]
     retry_calls: int
     input_tokens: int
     output_tokens: int
@@ -160,6 +161,35 @@ def _attempt_records(
     return by_conversation
 
 
+def _binding_rejections(store: RunStore) -> dict[str, list[dict[str, Any]]]:
+    """Collect candidate-local failures that did not stop the whole response."""
+    by_conversation: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    rows = store.connection.execute(
+        "SELECT artifact_hash FROM artifact WHERE kind = 'candidate-binding-rejections'"
+    )
+    for row in rows:
+        record = strict_json_object(store.read_artifact(row["artifact_hash"]))
+        conversation_id = record.get("conversation_id")
+        rejections = record.get("rejections")
+        if not isinstance(conversation_id, str) or not isinstance(rejections, list):
+            raise ExternalInputError("DIAGNOSTIC_BINDING", "Saved binding rejections are malformed")
+        for rejection in rejections:
+            if not isinstance(rejection, dict):
+                raise ExternalInputError(
+                    "DIAGNOSTIC_BINDING", "Saved binding rejection is malformed"
+                )
+            by_conversation[conversation_id].append(
+                {
+                    "artifact_hash": row["artifact_hash"],
+                    "turn_index": record.get("turn_index"),
+                    "candidate_id": rejection.get("candidate_id"),
+                    "reason": rejection.get("reason"),
+                    "message": rejection.get("message"),
+                }
+            )
+    return by_conversation
+
+
 def _markdown_cell(value: str | None) -> str:
     """Keep private model text inside one report table cell."""
     return (value or "unrecorded")[:120].replace("|", "\\|").replace("\n", " ")
@@ -230,6 +260,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
         item["duration_ms"] += call["duration_ms"]
     stops = _stop_records(store)
     attempts = _attempt_records(store, view_to_conversation)
+    binding_rejections = _binding_rejections(store)
     rows: list[DiagnosticRow] = []
     for conversation in conversations:
         item = metrics[conversation.conversation_id]
@@ -289,6 +320,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
                 "invalid_calls": item["invalid_calls"],
                 "contract_failure_attempts": len(attempts.get(conversation.conversation_id, [])),
                 "attempt_failures": attempts.get(conversation.conversation_id, []),
+                "binding_rejections": binding_rejections.get(conversation.conversation_id, []),
                 "retry_calls": item["retry_calls"],
                 "input_tokens": item["input_tokens"],
                 "output_tokens": item["output_tokens"],
@@ -311,6 +343,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
         "retry_calls": sum(row["retry_calls"] for row in rows),
         "invalid_calls": sum(row["invalid_calls"] for row in rows),
         "contract_failure_attempts": sum(row["contract_failure_attempts"] for row in rows),
+        "binding_rejections": sum(len(row["binding_rejections"]) for row in rows),
         "stage_reach_images": dict(
             sorted(Counter(stage for row in rows for stage in row["stage_calls"]).items())
         ),
@@ -351,6 +384,7 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
                 "invalid_calls",
                 "contract_failure_attempts",
                 "attempt_failures",
+                "binding_rejections",
                 "retry_calls",
                 "input_tokens",
                 "output_tokens",
@@ -372,6 +406,7 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
                         "turn_stage_calls",
                         "recorded_stops",
                         "attempt_failures",
+                        "binding_rejections",
                     }
                     else row[key]
                     for key in writer.fieldnames
@@ -383,6 +418,7 @@ def write_diagnostic_reports(report: dict[str, Any], output_stem: Path) -> None:
         f"Conversations: {report['conversations']}; model calls: {report['model_calls']}; "
         f"retries: {report['retry_calls']}; invalid calls: {report['invalid_calls']}.",
         f"Recorded structured-output contract failures: {report['contract_failure_attempts']}.",
+        f"Rejected individual candidate bindings: {report['binding_rejections']}.",
         f"Token usage is missing for {report['token_usage_missing_calls']} calls.",
         "",
         "| Status | Count |",

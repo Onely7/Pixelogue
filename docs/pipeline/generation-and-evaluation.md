@@ -50,7 +50,7 @@ uv run --locked pixelogue run-diagnostics \
   --output-stem artifacts/open-images-pilot-001/diagnostics
 ```
 
-This writes JSON, CSV, and Markdown. The report includes reached stages, malformed calls, retries, private stop reasons, elapsed model-call time, and recorded tokens. New runs save each structured-output contract failure and its next correction prompt as a private artifact. Failed calls may lack token usage, and cost remains unknown without a recorded price schedule. Older runs may lack explicit stop or per-attempt records.
+This writes JSON, CSV, and Markdown. The report includes reached stages, malformed calls, retries, candidate-local binding rejections, private stop reasons, elapsed model-call time, and recorded tokens. New runs save each structured-output contract failure and its next correction prompt as a private artifact. Failed calls may lack token usage, and cost remains unknown without a recorded price schedule. Older runs may lack explicit stop or per-attempt records.
 Completed quality candidates have no stop stage or stop reason; earlier corrected attempts remain visible in the attempt records.
 
 Use a new run ID after changing configuration, code, prompts, catalogs, or schemas. The configuration hash includes package Python and resource files, selected lock files, Schemas, pinned model and processor settings, and the configured input manifest. `synthesize` also binds the prepared rights-checked manifest and selected image records to its run contract; a conflicting resume is rejected.
@@ -110,6 +110,7 @@ A candidate is an operation, not a finished question. Each model binding has a r
 
 For image-sourced targets, the controller carries the target evidence region into selection, question writing, and question review. This location cue helps keep a later question on its bound object when several objects share one scope. It does not reveal an answer label or permit a question about a nearby object.
 For object identification, the cited observation must also name the target category; a citation to a broad region containing other objects is rejected during binding.
+The controller validates every binding independently after checking all candidate IDs for unknown or duplicate values. A malformed binding is recorded privately and excluded; another fully valid binding in the same response remains selectable. If every proposed binding is malformed, the bounded model retry still applies and exhaustion abstains. Missing or UNKNOWN checks never become MET.
 
 ### Step 3: select one instruction
 
