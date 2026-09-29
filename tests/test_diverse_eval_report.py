@@ -44,8 +44,8 @@ def test_report_includes_unattempted_category_and_does_not_infer_gold() -> None:
         {
             "image": {"source_id": "commons-eval:1"},
             "turns": [
-                {"instruction": {"task_id": "attribute_lookup"}},
-                {"instruction": {"task_id": "object_identification"}},
+                {"status": "COMMITTED", "instruction": {"task_id": "attribute_lookup"}},
+                {"status": "COMMITTED", "instruction": {"task_id": "object_identification"}},
             ],
         }
     ]
@@ -61,6 +61,57 @@ def test_report_includes_unattempted_category_and_does_not_infer_gold() -> None:
     assert [row["status"] for row in rows] == ["QUALITY_CANDIDATE", "NOT_RUN"]
     assert rows[0]["task_ids"] == "attribute_lookup,object_identification"
     assert rows[1]["model_calls"] is None
+
+
+def test_report_excludes_stopped_turns_from_committed_tasks() -> None:
+    """A failed terminal turn must not appear as a committed task."""
+    manifest = [
+        {
+            "category_number": 1,
+            "category": "写真",
+            "commons_page_id": 1,
+            "file_page_url": "https://commons.wikimedia.org/wiki/File:1.png",
+        }
+    ]
+    diagnostics = {
+        "run_id": "stopped-test",
+        "rows": [
+            {
+                "source_id": "commons-eval:1",
+                "status": "REJECTED",
+                "committed_turns": 1,
+                "stop_stage": "answer_verification",
+                "stop_category": "QUALITY_REJECTION",
+                "stop_reason": "RATING_FAIL",
+                "model_calls": 12,
+                "retry_calls": 0,
+                "invalid_calls": 0,
+                "duration_ms": 1000,
+                "input_tokens": 100,
+                "output_tokens": 20,
+            }
+        ],
+        "model_calls": 12,
+        "retry_calls": 0,
+        "invalid_calls": 0,
+        "stage_reach_images": {"evidence_extraction": 1},
+    }
+    conversations = [
+        {
+            "image": {"source_id": "commons-eval:1"},
+            "turns": [
+                {"status": "COMMITTED", "instruction": {"task_id": "object_identification"}},
+                {"status": "REJECTED", "instruction": {"task_id": "attribute_lookup"}},
+            ],
+        }
+    ]
+    summary, rows = build_report(diagnostics, manifest, conversations)
+    assert summary["committed_task_counts"] == {"object_identification": 1}
+    assert rows[0]["task_ids"] == "object_identification"
+
+    diagnostics["rows"][0]["committed_turns"] = 2
+    with pytest.raises(ValueError, match="Committed turns differ"):
+        build_report(diagnostics, manifest, conversations)
 
 
 def test_report_rejects_sources_outside_pinned_manifest() -> None:

@@ -48,7 +48,9 @@ def build_report(
         observed[source_id] = row
     turns_by_source = {
         conversation["image"]["source_id"]: tuple(
-            turn["instruction"]["task_id"] for turn in conversation["turns"]
+            turn["instruction"]["task_id"]
+            for turn in conversation["turns"]
+            if turn["status"] == "COMMITTED"
         )
         for conversation in conversations or ()
     }
@@ -57,6 +59,9 @@ def build_report(
             raise ValueError("Conversation output contains duplicate sources")
         if set(turns_by_source) != set(observed):
             raise ValueError("Conversation output differs from diagnostic sources")
+        for source_id, task_ids in turns_by_source.items():
+            if len(task_ids) != observed[source_id]["committed_turns"]:
+                raise ValueError(f"Committed turns differ from diagnostics: {source_id}")
     rows = []
     for source_id, item in sorted(by_source.items(), key=lambda pair: pair[1]["category_number"]):
         outcome = observed.get(source_id)

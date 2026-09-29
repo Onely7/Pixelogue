@@ -69,6 +69,8 @@ uv run --locked pixelogue ingest \
 
 取得処理は固定したCommonsページID、サムネイルSHA-256、記録済みライセンスURIを照合します。`ingest` でも通常どおり画像と利用条件を検査します。`failures.jsonl` を確認し、合成前に60枚すべてが受理されたことを確認してください。分類40は複数フレームを並べた**静止コンタクトシート**です。アニメーション画像そのものは取り込み対象外です。分類名とCommonsの説明文はモデル入力に渡しません。検証器の精度を測る校正には、別途、独立した人手ラベルが必要です。
 
+多様画像レポートのタスク一覧と件数には、`COMMITTED` のターンだけを含めます。最後に棄却・棄権された試行は診断用の停止記録に残し、確定タスク件数には含めません。
+
 楽譜・幾何・回路の追加画像3枚は[専門評価用manifest](../validation/specialist_web_eval_manifest.jsonl)に固定しています。`uv run --locked python validation/fetch_specialist_eval.py` で画像と出典・権利記録を復元し、`data/specialist-web-eval` と `data/specialist-extra-eval` をそれぞれ検証専用として取り込めます。取得時にバイトハッシュと寸法を照合します。同じ画像に別の候補回答を与えても、独立した校正標本には数えません。
 
 ## PubChem構造式の検証用サンプル

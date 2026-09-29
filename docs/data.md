@@ -73,6 +73,8 @@ uv run --locked pixelogue ingest \
 
 The fetcher verifies the pinned Commons page ID, thumbnail SHA-256, and recorded licence URI. `ingest` still applies the normal image and permission checks; inspect `failures.jsonl` and require 60 accepted images before synthesis. Category 40 is a *static contact sheet* representing multiple frames because animated images are deliberately unsupported by ingestion. The category names and Commons descriptions are retained outside model inputs. A separate calibration set with independent human labels is still required to estimate verifier accuracy.
 
+The diverse report lists and counts only `COMMITTED` turn tasks. A rejected or abstained terminal attempt remains in the diagnostic stop record and is excluded from committed task counts.
+
 Three additional score, geometry, and circuit diagrams are pinned in the [specialist evaluation manifest](../validation/specialist_web_eval_manifest.jsonl). Restore their source and rights records with `uv run --locked python validation/fetch_specialist_eval.py`, then ingest `data/specialist-web-eval` and `data/specialist-extra-eval` as separate evaluation-only roots. The fetcher verifies each byte hash and image size. These development images and alternate candidate answers do not constitute independent calibration samples.
 
 ## PubChem structure evaluation sample
