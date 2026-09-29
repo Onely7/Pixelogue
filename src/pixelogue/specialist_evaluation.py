@@ -53,6 +53,9 @@ def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
             "The scope_region must contain every event region in the requested bars. "
             "For a whole-view score, use left=0, top=0, right=1, bottom=1. "
             "For UNKNOWN or NOT_MET coverage, return measures=[] with no partial events. "
+            "For MET, each complete measure's written durations must add to the meter: "
+            "base=1 is a whole note, 2 a half note, 4 a quarter note, 8 an eighth note, "
+            "16 a sixteenth note; one dot multiplies by 3/2. "
             "For a rest event, set staff_step, accidental, and tie to null; "
             "for a note event, set a resolved integer staff_step. "
         ),

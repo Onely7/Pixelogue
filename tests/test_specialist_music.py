@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from pixelogue.contracts import GateVerdict
 from pixelogue.specialist_music import MusicSource, verify_music
 
@@ -119,3 +122,11 @@ def test_equivalent_score_readings_allow_different_enclosing_regions() -> None:
         }
     )
     assert verify_music((score, other), score.domain, "1-1", "s", "v", answer)[0] is GateVerdict.MET
+
+
+def test_complete_score_rejects_durations_exceeding_declared_meter() -> None:
+    score = _score()
+    invalid = score.model_dump()
+    invalid["measures"][0]["events"][0]["base"] = 1
+    with pytest.raises(ValidationError, match="durations do not fill declared meter"):
+        MusicSource.model_validate(invalid)

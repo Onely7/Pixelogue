@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from fractions import Fraction
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
@@ -72,6 +73,18 @@ class MusicSource(StrictModel):
             or [item.number for item in self.measures] != list(range(first, last + 1))
         ):
             raise ValueError("Score measures do not match public bar range")
+        if self.coverage == "MET":
+            bar_duration = Fraction(4 * self.meter_top, self.meter_bottom)
+            for measure in self.measures:
+                total = sum(
+                    (
+                        Fraction(4, event.base) * (Fraction(3, 2) if event.dots else 1)
+                        for event in measure.events
+                    ),
+                    Fraction(0),
+                )
+                if total != bar_duration:
+                    raise ValueError("Score measure durations do not fill declared meter")
         for event in (event for measure in self.measures for event in measure.events):
             region = event.region
             scope = self.scope_region
