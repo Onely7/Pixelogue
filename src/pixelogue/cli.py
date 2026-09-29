@@ -587,6 +587,8 @@ def synthesize(
 ) -> None:
     """Generate and independently rate bounded multi-turn conversations."""
     config = load_config(config_path)
+    if workers is not None and workers > config.runtime.max_concurrent_images:
+        raise typer.BadParameter("--workers exceeds runtime.max_concurrent_images")
     image_records = read_jsonl(images, ImageArtifact)
     prepared = read_json(artifact_root / "manifest.json", PreparedDataset)
     if tuple(image_records) != prepared.images:

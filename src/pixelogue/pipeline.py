@@ -202,10 +202,12 @@ class SynthesisCoordinator:
         sequential, while independent model requests can be continuously batched by the server.
 
         Raises:
-            ValueError: If ``max_workers`` is not positive.
+            ValueError: If ``max_workers`` is outside the configured image concurrency range.
         """
         if max_workers < 1:
             raise ValueError("max_workers must be positive")
+        if max_workers > self.config.runtime.max_concurrent_images:
+            raise ValueError("max_workers exceeds runtime.max_concurrent_images")
         iterator = iter(jobs)
         if max_workers == 1:
             for job in iterator:

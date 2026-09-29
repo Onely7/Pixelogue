@@ -840,6 +840,17 @@ def test_batch_synthesis_overlaps_images_and_preserves_input_order(
     )
 
 
+def test_batch_synthesis_rejects_workers_above_configured_limit(
+    tmp_path: Path, image_artifact
+) -> None:
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    try:
+        with pytest.raises(ValueError, match="runtime.max_concurrent_images"):
+            tuple(coordinator.synthesize_batch((), image_artifact[1], max_workers=5))
+    finally:
+        store.close()
+
+
 def test_selection_rejection_stops_before_question_or_answer(
     tmp_path: Path, image_artifact
 ) -> None:

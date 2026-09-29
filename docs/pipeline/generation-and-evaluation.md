@@ -36,7 +36,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot-001/conversations.jsonl
 ```
 
-The checked-in profiles allow four images in flight through `runtime.max_concurrent_images`. This gives vLLM independent requests to combine with continuous batching. `--workers` can override the value for a measured run. Pixelogue preserves the scheduled input order in `conversations.jsonl`, while every turn within one conversation remains sequential because it depends on committed public history.
+The standard and regular pilot profiles allow four images in flight through `runtime.max_concurrent_images`; the one-GPU paired pilot allows two. This gives vLLM independent requests to combine with continuous batching. `--workers` may reduce the value for a measured run but cannot exceed the configured bound. Use a separate configuration with an explicit bound for a higher-concurrency comparison. Pixelogue preserves the scheduled input order in `conversations.jsonl`, while every turn within one conversation remains sequential because it depends on committed public history.
 
 For a focused diagnostic run, repeat `--source-id ID` to select exact sources from the already rights-checked prepared manifest. The full manifest must still match `images.jsonl`; unknown or repeated IDs fail before any model call. Use a new run ID for each selected set.
 

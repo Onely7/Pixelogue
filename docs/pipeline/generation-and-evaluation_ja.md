@@ -36,7 +36,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot-001/conversations.jsonl
 ```
 
-Gitに含まれる設定では、`runtime.max_concurrent_images` により、最大4画像を同時に処理します。独立した要求をvLLMへ重ねて送り、continuous batchingが働くようにするためです。測定時は `--workers` で一時的に上書きできます。`conversations.jsonl` は計画した入力順で保存します。1つの対話内の往復は確定済みの公開履歴に依存するため、順番を変えません。
+standardと通常pilotは `runtime.max_concurrent_images` により最大4画像、1 GPUのモデル対pilotは最大2画像を同時に処理します。独立した要求をvLLMへ重ねて送り、continuous batchingが働くようにするためです。測定時の `--workers` は設定上限以下に限り、より高い並列数の比較には上限を明示した別設定を使います。`conversations.jsonl` は計画した入力順で保存します。1つの対話内の往復は確定済みの公開履歴に依存するため、順番を変えません。
 
 対象を絞る診断runでは `--source-id ID` を繰り返し指定し、権利確認済みの準備済みmanifestから正確な画像を選択できます。元の `images.jsonl` とmanifest全体の一致は引き続き検査します。未知・重複したIDはモデル呼び出し前に拒否し、選択集合ごとに新しいrun IDを使います。
 

@@ -112,3 +112,24 @@ def test_synthesize_cli_progress_leaves_stdout_json_and_uses_scheduled_total(
         assert "started: 0/2" in result.stderr
         assert "finished: 2/2" in result.stderr
         assert "REJECTED=1, ABSTAINED=0, ERROR=1" in result.stderr
+
+
+def test_synthesize_cli_rejects_workers_above_configured_limit(tmp_path: Path) -> None:
+    images = tmp_path / "images.jsonl"
+    images.touch()
+    result = CliRunner().invoke(
+        app,
+        [
+            "synthesize",
+            "--config",
+            "configs/pilot.yaml",
+            "--images",
+            str(images),
+            "--artifact-root",
+            str(tmp_path),
+            "--workers",
+            "5",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--workers exceeds runtime.max_concurrent_images" in result.output

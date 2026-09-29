@@ -15,7 +15,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot/conversations.jsonl
 ```
 
-`runtime.max_concurrent_images` controls how many independent images can be in flight. The checked-in profiles use four so vLLM can apply continuous batching. Use `--workers 1` for a serial diagnostic or `--workers N` for a measured override (1–64 workers). Pixelogue still processes the turns within one conversation in order and writes final conversation rows in input order.
+`runtime.max_concurrent_images` is the upper bound on independent images in flight. The standard and regular pilot profiles allow four; the one-GPU paired pilot allows two. Use `--workers 1` for a serial diagnostic or `--workers N` up to the configured bound for a measured run. Set the bound explicitly in a separate config when comparing higher concurrency. Pixelogue still processes the turns within one conversation in order and writes final conversation rows in input order.
 
 The coordinator assigns languages and generators with exact batch quotas. A conversation uses one generator throughout. The v7 flow is:
 
