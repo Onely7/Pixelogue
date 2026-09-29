@@ -82,6 +82,17 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
             "committed_turns": committed,
             "completed_conversations": len(accepted[name]),
             "zero_committed_images": sum(row["committed_turns"] == 0 for row in rows),
+            "two_or_more_committed_images": sum(row["committed_turns"] >= 2 for row in rows),
+            "stop_stage_counts": dict(
+                Counter(row["stop_stage"] or "completed" for row in rows if "stop_stage" in row)
+            ),
+            "zero_committed_stop_stage_counts": dict(
+                Counter(
+                    row["stop_stage"] or "unknown"
+                    for row in rows
+                    if row["committed_turns"] == 0 and "stop_stage" in row
+                )
+            ),
             "model_calls": report["model_calls"],
             "retry_calls": report["retry_calls"],
             "contract_failure_attempts": report["contract_failure_attempts"],
@@ -153,6 +164,7 @@ def main() -> None:
             "committed_turns",
             "completed_conversations",
             "zero_committed_images",
+            "two_or_more_committed_images",
             "model_calls",
             "retry_calls",
             "contract_failure_attempts",
@@ -172,11 +184,12 @@ def main() -> None:
         f"{result['total_allocated_gpu_hours']:.3f}.",
         "",
         "| Phase | Attempted turns | Committed turns | Completed conversations | "
-        "Zero-commit images | Model calls | Retries | Binding rejections | Phase GPU hours |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "Zero-commit images | 2+ committed images | Model calls | Retries | Binding rejections | Phase GPU hours |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         *(
             f"| {name} | {phase['attempted_turns']} | {phase['committed_turns']} | "
             f"{phase['completed_conversations']} | {phase['zero_committed_images']} | "
+            f"{phase['two_or_more_committed_images']} | "
             f"{phase['model_calls']} | {phase['retry_calls']} | "
             f"{phase['candidate_binding_rejections']} | {phase['phase_gpu_hours']:.3f} |"
             for name, phase in result["phases"].items()
@@ -189,6 +202,13 @@ def main() -> None:
             f"{counts['right_only']} | {counts['neither']} |"
             for group in ("repeat_overlap", "paired_overlap")
             for name, counts in result[group].items()
+        ),
+        "",
+        "Zero-commit stop stages by phase:",
+        "",
+        *(
+            f"- {name}: {', '.join(f'{stage}={count}' for stage, count in sorted(phase['zero_committed_stop_stage_counts'].items())) or 'none'}"
+            for name, phase in result["phases"].items()
         ),
         "",
         "Human-approved conversations per GPU hour and human error rates are unmeasured "

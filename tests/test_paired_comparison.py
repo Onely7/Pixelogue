@@ -88,8 +88,9 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
                         "source_id": source,
                         "status": status,
                         "attempted_turns": 2,
-                        "committed_turns": 1,
+                        "committed_turns": 2 if status == "QUALITY_CANDIDATE" else 0,
                         "output_tokens": 50,
+                        "stop_stage": None if status == "QUALITY_CANDIDATE" else "question_gate",
                     }
                     for source, status in zip(("a", "b"), statuses, strict=True)
                 ],
@@ -106,6 +107,14 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
     assert report["repeat_overlap"]["variant"]["both"] == 0
     assert report["paired_overlap"]["first"]["left_only"] == 1
     assert report["phases"]["baseline-1"]["human_approved_per_gpu_hour"] is None
+    assert report["phases"]["baseline-1"]["two_or_more_committed_images"] == 1
+    assert report["phases"]["baseline-1"]["stop_stage_counts"] == {
+        "completed": 1,
+        "question_gate": 1,
+    }
+    assert report["phases"]["baseline-1"]["zero_committed_stop_stage_counts"] == {
+        "question_gate": 1
+    }
     assert report["human_error_rates"] is None
     assert report["generator_and_language_assignments_identical"]
     assert report["plan"]["variant_config_sha256"] == "variant-config"
