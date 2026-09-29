@@ -75,6 +75,22 @@ The fetcher verifies the pinned Commons page ID, thumbnail SHA-256, and recorded
 
 The diverse report lists and counts only `COMMITTED` turn tasks. A rejected or abstained terminal attempt remains in the diagnostic stop record and is excluded from committed task counts.
 
+## Separate six-image holdout smoke set
+
+The [holdout manifest](../validation/holdout_web_eval_manifest.jsonl) pins six other Commons pages: a photograph, document, table, chart, flowchart, and app screen. Their page IDs, pixel hashes, and visual groups differ from the 60 development images and the fixed Open Images sample. The fetcher restores evaluation-only source and rights records; image bytes stay out of Git.
+
+```sh
+uv run --locked python validation/fetch_holdout_eval.py
+uv run --locked pixelogue ingest \
+  --config configs/gpu-watch-diverse.yaml \
+  --sources data/holdout-web-eval/sources.jsonl \
+  --rights data/holdout-web-eval/rights.jsonl \
+  --image-root data/holdout-web-eval \
+  --artifact-root artifacts/prepared-holdout-web-eval
+```
+
+All six images must be accepted before synthesis. These few images check behavior across formats; they do not estimate a general success rate or provide human answer labels. Keep their later question and answer audit separate from the images used to tune the pipeline.
+
 Three additional score, geometry, and circuit diagrams are pinned in the [specialist evaluation manifest](../validation/specialist_web_eval_manifest.jsonl). Restore their source and rights records with `uv run --locked python validation/fetch_specialist_eval.py`, then ingest `data/specialist-web-eval` and `data/specialist-extra-eval` as separate evaluation-only roots. The fetcher verifies each byte hash and image size. These development images and alternate candidate answers do not constitute independent calibration samples.
 
 ## PubChem structure evaluation sample

@@ -71,6 +71,22 @@ uv run --locked pixelogue ingest \
 
 多様画像レポートのタスク一覧と件数には、`COMMITTED` のターンだけを含めます。最後に棄却・棄権された試行は診断用の停止記録に残し、確定タスク件数には含めません。
 
+## 独立した6画像の保留評価セット
+
+[保留評価manifest](../validation/holdout_web_eval_manifest.jsonl)には、写真・文書・表・チャート・フローチャート・アプリ画面の別のCommonsページ6件を固定しています。ページID、画素ハッシュ、視覚groupは、調整用60枚およびOpen Imagesの固定サンプルと重なりません。取得処理は検証専用の出典・権利記録を復元し、画像本体はGitに含めません。
+
+```sh
+uv run --locked python validation/fetch_holdout_eval.py
+uv run --locked pixelogue ingest \
+  --config configs/gpu-watch-diverse.yaml \
+  --sources data/holdout-web-eval/sources.jsonl \
+  --rights data/holdout-web-eval/rights.jsonl \
+  --image-root data/holdout-web-eval \
+  --artifact-root artifacts/prepared-holdout-web-eval
+```
+
+合成前に6枚すべての受理を確認します。少数の画像で形式別の動作を点検するためのセットであり、一般的な成功率や人手の回答正解ラベルは示しません。後で質問・回答を監査する際も、調整用画像とは分けて扱います。
+
 楽譜・幾何・回路の追加画像3枚は[専門評価用manifest](../validation/specialist_web_eval_manifest.jsonl)に固定しています。`uv run --locked python validation/fetch_specialist_eval.py` で画像と出典・権利記録を復元し、`data/specialist-web-eval` と `data/specialist-extra-eval` をそれぞれ検証専用として取り込めます。取得時にバイトハッシュと寸法を照合します。同じ画像に別の候補回答を与えても、独立した校正標本には数えません。
 
 ## PubChem構造式の検証用サンプル
