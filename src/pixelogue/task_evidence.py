@@ -162,6 +162,17 @@ class ScopedEvidenceReport(StrictModel):
             raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
 
 
+class AttributeRecheckReport(StrictModel):
+    """One answer-blind visual property check for an existing image scope."""
+
+    image_id: Nonempty
+    scope_id: Nonempty
+    view_id: Nonempty
+    verdict: Literal["MET", "UNKNOWN"]
+    region: ImageRegion
+    detail: Nonempty
+
+
 def out_of_scope_region_feedback(report: ScopedEvidenceReport) -> str:
     """Describe invalid nested boxes without echoing model-generated text."""
     mismatches: list[str] = []

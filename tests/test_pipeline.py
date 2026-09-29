@@ -49,14 +49,18 @@ from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
 from pixelogue.table_verifiers import TableSource
 from pixelogue.task_evidence import (
+    AttributeRecheckReport,
     CandidateBinding,
     CandidateBindingReport,
     CandidateBindingsReport,
+    CapabilityObservation,
     CapabilityReport,
     EligibilityObservation,
     ImageRegion,
     PublicParameter,
+    ScopedEvidenceInventory,
     ScopedEvidenceReport,
+    ScopeEvidence,
     ScopeEvidenceReport,
     TargetReport,
 )
@@ -886,6 +890,173 @@ def _coordinator(
         generator_b,
     )
     return coordinator, store, selector, generator_a, generator_b
+
+
+def _attribute_recheck_inventory() -> ScopedEvidenceInventory:
+    region = ImageRegion(left=0.1, top=0.1, right=0.8, bottom=0.8)
+    return ScopedEvidenceInventory(
+        image_id="image-1",
+        reason="One visible subject",
+        scopes=(
+            ScopeEvidence(
+                scope_id="subject",
+                view_id="full:test",
+                public_description="A dog beside a person",
+                object_label="dog",
+                region=region,
+                observations=(
+                    CapabilityObservation(
+                        evidence_id="entity-1",
+                        capability="visible_entity",
+                        verdict="MET",
+                        region=region,
+                        detail="One dog is visible",
+                    ),
+                    CapabilityObservation(
+                        evidence_id="interaction-1",
+                        capability="visible_interaction",
+                        verdict="MET",
+                        region=region,
+                        detail="The dog stands beside a person",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def test_attribute_recheck_adds_only_view_bound_visible_property(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coordinator, store, _, generator, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "tasks": coordinator.config.tasks.model_copy(update={"attribute_recheck_enabled": True})
+        }
+    )
+    inventory = _attribute_recheck_inventory()
+    model_image = ModelImage("full:test", tmp_path / "image.png", "digest", "image/png")
+    calls: list[dict[str, Any]] = []
+
+    def respond(client, stage, payload, images, model, **kwargs):
+        del client, kwargs
+        assert stage == "attribute_recheck"
+        assert model is AttributeRecheckReport
+        assert images == (model_image,)
+        calls.append(payload)
+        return AttributeRecheckReport(
+            image_id="image-1",
+            scope_id="subject",
+            view_id="full:test",
+            verdict="MET",
+            region=ImageRegion(left=0.2, top=0.2, right=0.5, bottom=0.5),
+            detail="White fur is visible",
+        )
+
+    monkeypatch.setattr(coordinator, "_invoke", respond)
+    try:
+        enriched = coordinator._maybe_recheck_attribute(
+            inventory, generator, model_image, [{"view_id": "full:test"}]
+        )
+        assert len(calls) == 1
+        assert set(calls[0]) == {
+            "image_id",
+            "scope_id",
+            "view_id",
+            "scope_region",
+            "scope_description",
+            "image_views",
+        }
+        assert "candidate_answer" not in str(calls[0])
+        assert len(enriched.scopes[0].observations) == 3
+        assert enriched.scopes[0].observations[-1].capability == "visible_attribute"
+        assert enriched.scopes[0].observations[-1].verdict == "MET"
+        assert len({item.evidence_id for item in enriched.scopes[0].observations}) == 3
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("invalid", ["wrong_view", "outside_scope", "unknown"])
+def test_attribute_recheck_never_promotes_invalid_or_unknown_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid: str
+) -> None:
+    coordinator, store, _, generator, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "tasks": coordinator.config.tasks.model_copy(update={"attribute_recheck_enabled": True})
+        }
+    )
+    inventory = _attribute_recheck_inventory()
+    model_image = ModelImage("full:test", tmp_path / "image.png", "digest", "image/png")
+
+    def respond(*args, **kwargs):
+        del args, kwargs
+        return AttributeRecheckReport(
+            image_id="image-1",
+            scope_id="subject",
+            view_id="other-view" if invalid == "wrong_view" else "full:test",
+            verdict="UNKNOWN" if invalid == "unknown" else "MET",
+            region=ImageRegion(
+                left=0.2,
+                top=0.2,
+                right=0.9 if invalid == "outside_scope" else 0.5,
+                bottom=0.5,
+            ),
+            detail="Property cannot be verified" if invalid == "unknown" else "White fur",
+        )
+
+    monkeypatch.setattr(coordinator, "_invoke", respond)
+    try:
+        result = coordinator._maybe_recheck_attribute(inventory, generator, model_image, [])
+        added = result.scopes[0].observations[2:]
+        assert not any(item.verdict == "MET" for item in added)
+        assert len(added) == (1 if invalid == "unknown" else 0)
+    finally:
+        store.close()
+
+
+def test_attribute_recheck_is_disabled_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coordinator, store, _, generator, _ = _coordinator(tmp_path)
+    inventory = _attribute_recheck_inventory()
+    model_image = ModelImage("full:test", tmp_path / "image.png", "digest", "image/png")
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("disabled attribute recheck called the model")
+
+    monkeypatch.setattr(coordinator, "_invoke", unexpected)
+    try:
+        assert (
+            coordinator._maybe_recheck_attribute(inventory, generator, model_image, []) == inventory
+        )
+    finally:
+        store.close()
+
+
+def test_attribute_recheck_reports_transport_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coordinator, store, _, generator, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "tasks": coordinator.config.tasks.model_copy(update={"attribute_recheck_enabled": True})
+        }
+    )
+    model_image = ModelImage("full:test", tmp_path / "image.png", "digest", "image/png")
+
+    def unavailable(*args, **kwargs):
+        raise ExecutionError("MODEL_TRANSPORT_FAILED", "server unavailable")
+
+    monkeypatch.setattr(coordinator, "_invoke", unavailable)
+    try:
+        with pytest.raises(ExecutionError) as caught:
+            coordinator._maybe_recheck_attribute(
+                _attribute_recheck_inventory(), generator, model_image, []
+            )
+        assert caught.value.reason == "MODEL_TRANSPORT_FAILED"
+    finally:
+        store.close()
 
 
 def test_batch_synthesis_overlaps_images_and_preserves_input_order(

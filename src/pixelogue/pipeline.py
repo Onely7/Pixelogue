@@ -74,10 +74,13 @@ from pixelogue.serialization import canonical_hash
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import (
+    AttributeRecheckReport,
     CandidateBindingReport,
     CandidateBindingsReport,
+    CapabilityObservation,
     ScopedEvidenceInventory,
     ScopedEvidenceReport,
+    ScopeEvidence,
     alias_evidence_ids,
     out_of_scope_region_feedback,
 )
@@ -343,7 +346,10 @@ class SynthesisCoordinator:
                 result.to_inventory(), model_image.view_id, self.config.tasks
             ),
         )
-        inventory, evidence_aliases = alias_evidence_ids(evidence_report.to_inventory())
+        inventory = self._maybe_recheck_attribute(
+            evidence_report.to_inventory(), generator, model_image, image_views
+        )
+        inventory, evidence_aliases = alias_evidence_ids(inventory)
         if inventory.image_id != image.image_id:
             raise ExecutionError("EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image")
         self.store.write_json_artifact(
@@ -2318,3 +2324,122 @@ class SynthesisCoordinator:
     def _capability_vocabulary() -> dict[str, str]:
         catalog = load_task_catalog()
         return dict(sorted(catalog["capabilities"].items()))
+
+    def _maybe_recheck_attribute(
+        self,
+        inventory: ScopedEvidenceInventory,
+        generator: InferenceClient,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+    ) -> ScopedEvidenceInventory:
+        """Optionally ask about one missing visible property before any answer exists."""
+        if not self.config.tasks.attribute_recheck_enabled:
+            return inventory
+        scope = next(
+            (
+                item
+                for item in inventory.scopes
+                if len(item.observations) < self.config.tasks.max_observations_per_scope
+                and not any(obs.capability == "visible_attribute" for obs in item.observations)
+                and all(
+                    any(
+                        obs.capability == capability and obs.verdict == "MET"
+                        for obs in item.observations
+                    )
+                    for capability in ("visible_entity", "visible_interaction")
+                )
+            ),
+            None,
+        )
+        if scope is None:
+            return inventory
+        try:
+            report = self._invoke(
+                generator,
+                "attribute_recheck",
+                {
+                    "image_id": inventory.image_id,
+                    "scope_id": scope.scope_id,
+                    "view_id": scope.view_id,
+                    "scope_region": scope.region.model_dump(mode="json"),
+                    "scope_description": scope.public_description,
+                    "image_views": image_views,
+                },
+                (model_image,),
+                AttributeRecheckReport,
+                max_tokens=512,
+                temperature=0.0,
+                seed=self.config.seed + 17,
+            )
+            region = report.region
+            parent = scope.region
+            if (
+                report.image_id != inventory.image_id
+                or report.scope_id != scope.scope_id
+                or report.view_id != scope.view_id
+                or not (
+                    parent.left <= region.left < region.right <= parent.right
+                    and parent.top <= region.top < region.bottom <= parent.bottom
+                )
+            ):
+                raise ExecutionError(
+                    "EVIDENCE_RECHECK_SCOPE", "Attribute recheck refers outside its source scope"
+                )
+            used = {obs.evidence_id for item in inventory.scopes for obs in item.observations}
+            index = 1
+            while (evidence_id := f"attribute-recheck-{index}") in used:
+                index += 1
+            updated = ScopeEvidence(
+                scope_id=scope.scope_id,
+                view_id=scope.view_id,
+                public_description=scope.public_description,
+                object_label=scope.object_label,
+                region=scope.region,
+                observations=(
+                    *scope.observations,
+                    CapabilityObservation(
+                        evidence_id=evidence_id,
+                        capability="visible_attribute",
+                        verdict=report.verdict,
+                        region=region,
+                        detail=report.detail,
+                    ),
+                ),
+            )
+            enriched = ScopedEvidenceInventory(
+                image_id=inventory.image_id,
+                scopes=tuple(
+                    updated if item.scope_id == scope.scope_id else item
+                    for item in inventory.scopes
+                ),
+                reason=inventory.reason,
+            )
+            validate_evidence(enriched, model_image.view_id, self.config.tasks)
+            self.store.write_json_artifact(
+                "evidence-attribute-rechecks",
+                {
+                    "image_id": inventory.image_id,
+                    "scope_id": scope.scope_id,
+                    "verdict": report.verdict,
+                    "evidence_id": evidence_id,
+                },
+            )
+            return enriched
+        except ExecutionError as error:
+            self.store.write_json_artifact(
+                "evidence-attribute-rechecks",
+                {
+                    "image_id": inventory.image_id,
+                    "scope_id": scope.scope_id,
+                    "reason": error.reason,
+                    "message": str(error)[:600],
+                },
+            )
+            if error.reason not in {
+                "MODEL_CONTENT_EMPTY",
+                "MODEL_FINISH_REASON",
+                "MODEL_SCHEMA_MISMATCH",
+                "EVIDENCE_RECHECK_SCOPE",
+            }:
+                raise
+            return inventory

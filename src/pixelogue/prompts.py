@@ -162,6 +162,13 @@ so later turns can ask for different facts. If a property is unclear, mark it UN
 do not infer hidden properties.
 Use only capability names from capability_vocabulary. Do not infer domains from source
 names or annotations. Broad discovery is followed by focused binding of eligible operations.""",
+    "attribute_recheck": """Inspect the attached image before any question or answer exists.
+Recheck only the named scope and image view for a directly visible property of its main
+subject, such as color, shape, texture, or a visible part. Return MET only when the
+property and its location are clear in the image. Name separate supported properties
+in the detail without inventing unseen ones. Return UNKNOWN if the subject or property
+is unclear. Keep the property region strictly inside scope_region and copy image_id,
+scope_id, and view_id exactly. Do not answer a question or infer a hidden property.""",
     "candidate_binding": """Bind only the controller-provided candidates to locally supported
 public operation choices BEFORE any answer exists. Return at most one binding per candidate ID.
 Use that candidate's local_evidence_ids only. Include every required_evidence_ids entry in
@@ -591,6 +598,9 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "max_observations_per_scope",
         }
     ),
+    "attribute_recheck": frozenset(
+        {"image_id", "scope_id", "view_id", "scope_region", "scope_description", "image_views"}
+    ),
     "candidate_binding": frozenset(
         {
             "target_language",
@@ -775,6 +785,7 @@ def validate_stage_payload(stage: str, payload: Mapping[str, Any]) -> None:
         "candidate_binding",
         "instruction_selection",
         "evidence_extraction",
+        "attribute_recheck",
         "question_generation",
         "question_intent",
         "question_fit",

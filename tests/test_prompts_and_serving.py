@@ -44,6 +44,21 @@ def test_instruction_selector_information_boundary() -> None:
         validate_stage_payload("rubric_item", {"other_judge_verdict": "MET"})
 
 
+def test_attribute_recheck_cannot_receive_an_answer() -> None:
+    payload = {
+        "image_id": "image-1",
+        "scope_id": "subject",
+        "view_id": "full:test",
+        "scope_region": {"left": 0.1, "top": 0.1, "right": 0.8, "bottom": 0.8},
+        "scope_description": "One visible subject",
+        "image_views": [{"view_id": "full:test"}],
+    }
+    validate_stage_payload("attribute_recheck", payload)
+    with pytest.raises(ExecutionError) as caught:
+        validate_stage_payload("attribute_recheck", {**payload, "candidate_answer": "white"})
+    assert caught.value.reason == "MODEL_INFORMATION_LEAK"
+
+
 def test_text_payload_derives_status_from_public_text() -> None:
     assert TextPayload(text="Visible answer.", reason="Internal note.").status == "OK"
     assert TextPayload(text=None, reason="The request is unsupported.").status == "UNSUPPORTED"

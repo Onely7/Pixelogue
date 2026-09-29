@@ -104,6 +104,8 @@ flowchart TD
 
 モデルはcapability名をキーとするobjectで観察結果を返します。コントローラーは未知の項目と重複を拒否します。定義にも境界があります。例えば、同じ物が一列に並んでいるだけでは、項目同士の明示的な対応を表す `visible_mapping` にはなりません。
 
+比較実験では `tasks.attribute_recheck_enabled: true` を指定すると、あるscopeに `visible_entity` と `visible_interaction` があり、`visible_attribute` が欠けている場合、そのscopeだけを回答を見せずに1回再確認できます。領域と画像viewが元の根拠と一致しない結果は採用しません。`UNKNOWN` はタスクを選択可能にしません。既定値は `false` です。追加呼び出しの時間と効果を同条件の実行で比較してから、通常利用を判断します。
+
 ### 手順2：指示候補を作る
 
 コントローラーが、抽出したcapabilityとGitに含まれるタスクカタログを照合します。各候補には、安定したcandidate ID、task ID、family、プロファイル、画像内の対象範囲、短い説明、必要なcapabilityが入ります。

@@ -104,6 +104,8 @@ The generation model receives the image and a fixed capability vocabulary. It ma
 
 The model returns observations as an object keyed by capability. The controller rejects unknown and repeated capability keys. Definitions are intentionally strict: for example, aligned repeated objects do not establish an explicit `visible_mapping`.
 
+For controlled comparisons, `tasks.attribute_recheck_enabled: true` permits one extra answer-blind image call when a scope has a visible entity and interaction but no `visible_attribute` observation. The call checks that scope only. Its region and view must match the original evidence; `UNKNOWN` does not make a task eligible. The default is `false`. The added call costs time and must be evaluated against an otherwise identical run before enabling it routinely.
+
 ### Step 2: build instruction candidates
 
 The controller matches reported capabilities to the checked-in task catalog. Each candidate has a stable ID, task ID, family, profile, visible scope, summary, and required capabilities.
