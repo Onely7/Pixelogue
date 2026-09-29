@@ -121,3 +121,42 @@ def test_report_rejects_sources_outside_pinned_manifest() -> None:
     manifest = [{"commons_page_id": 1}]
     with pytest.raises(ValueError, match="Unpinned source"):
         build_report(diagnostics, manifest)
+
+
+def test_report_joins_holdout_ids_only_with_explicit_prefix() -> None:
+    manifest = [
+        {
+            "commons_page_id": 7,
+            "category_number": 1,
+            "category": "表",
+            "file_page_url": "https://commons.wikimedia.org/wiki/File:7.png",
+        }
+    ]
+    diagnostics = {
+        "run_id": "holdout-test",
+        "rows": [
+            {
+                "source_id": "commons-holdout:7",
+                "status": "ABSTAINED",
+                "committed_turns": 0,
+                "stop_stage": "question_generation",
+                "stop_category": "EVIDENCE_INSUFFICIENT",
+                "stop_reason": None,
+                "model_calls": 3,
+                "retry_calls": 0,
+                "invalid_calls": 0,
+                "duration_ms": 1000,
+                "input_tokens": 10,
+                "output_tokens": 10,
+            }
+        ],
+        "model_calls": 3,
+        "retry_calls": 0,
+        "invalid_calls": 0,
+        "stage_reach_images": {"evidence_extraction": 1},
+    }
+    with pytest.raises(ValueError, match="Unpinned source"):
+        build_report(diagnostics, manifest)
+    summary, rows = build_report(diagnostics, manifest, source_prefix="commons-holdout")
+    assert summary["attempted"] == 1
+    assert rows[0]["source_id"] == "commons-holdout:7"

@@ -32,10 +32,16 @@ FIELDS = (
 
 
 def build_report(
-    diagnostics: dict, manifest: list[dict], conversations: list[dict] | None = None
+    diagnostics: dict,
+    manifest: list[dict],
+    conversations: list[dict] | None = None,
+    *,
+    source_prefix: str = "commons-eval",
 ) -> tuple[dict, list[dict]]:
     """Produce a complete category ledger from one run's diagnostic rows."""
-    by_source = {f"commons-eval:{item['commons_page_id']}": item for item in manifest}
+    if source_prefix not in {"commons-eval", "commons-holdout"}:
+        raise ValueError(f"Unsupported Commons source prefix: {source_prefix}")
+    by_source = {f"{source_prefix}:{item['commons_page_id']}": item for item in manifest}
     if len(by_source) != len(manifest):
         raise ValueError("The pinned Commons manifest contains duplicate page IDs")
     observed: dict[str, dict] = {}
@@ -128,13 +134,18 @@ def main() -> None:
     parser.add_argument("--conversations", required=True, type=Path)
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--output-stem", required=True, type=Path)
+    parser.add_argument(
+        "--source-prefix", choices=("commons-eval", "commons-holdout"), default="commons-eval"
+    )
     args = parser.parse_args()
     diagnostics = json.loads(args.diagnostics.read_text(encoding="utf-8"))
     conversations = [
         json.loads(line) for line in args.conversations.read_text(encoding="utf-8").splitlines()
     ]
     manifest = [json.loads(line) for line in args.manifest.read_text(encoding="utf-8").splitlines()]
-    summary, rows = build_report(diagnostics, manifest, conversations)
+    summary, rows = build_report(
+        diagnostics, manifest, conversations, source_prefix=args.source_prefix
+    )
     args.output_stem.parent.mkdir(parents=True, exist_ok=True)
     args.output_stem.with_suffix(".json").write_text(
         json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False, indent=2) + "\n",
