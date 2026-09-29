@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from collections import Counter
 from pathlib import Path
@@ -105,14 +106,65 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
 
 
 def main() -> None:
-    """Write a compact JSON comparison beside the private phase diagnostics."""
+    """Write JSON, CSV, and Markdown beside the private phase diagnostics."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("experiment_dir", type=Path)
     args = parser.parse_args()
     result = summarize(args.experiment_dir)
-    destination = args.experiment_dir / "comparison.json"
-    destination.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
-    print(destination)
+    stem = args.experiment_dir / "comparison"
+    stem.with_suffix(".json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+    with stem.with_suffix(".csv").open("w", newline="") as stream:
+        columns = (
+            "phase",
+            "images",
+            "attempted_turns",
+            "committed_turns",
+            "completed_conversations",
+            "zero_committed_images",
+            "model_calls",
+            "retry_calls",
+            "contract_failure_attempts",
+            "candidate_binding_rejections",
+            "output_tokens",
+            "phase_gpu_hours",
+            "human_approved_per_gpu_hour",
+        )
+        writer = csv.DictWriter(stream, fieldnames=columns)
+        writer.writeheader()
+        for name, phase in result["phases"].items():
+            writer.writerow({"phase": name, **{key: phase[key] for key in columns[1:]}})
+    lines = [
+        "# Paired synthesis comparison",
+        "",
+        f"Images per phase: {result['images']}; total allocated GPU hours: "
+        f"{result['total_allocated_gpu_hours']:.3f}.",
+        "",
+        "| Phase | Attempted turns | Committed turns | Completed conversations | "
+        "Zero-commit images | Model calls | Retries | Binding rejections | Phase GPU hours |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        *(
+            f"| {name} | {phase['attempted_turns']} | {phase['committed_turns']} | "
+            f"{phase['completed_conversations']} | {phase['zero_committed_images']} | "
+            f"{phase['model_calls']} | {phase['retry_calls']} | "
+            f"{phase['candidate_binding_rejections']} | {phase['phase_gpu_hours']:.3f} |"
+            for name, phase in result["phases"].items()
+        ),
+        "",
+        "| Comparison | Both | Left only | Right only | Neither |",
+        "|---|---:|---:|---:|---:|",
+        *(
+            f"| {group} {name} | {counts['both']} | {counts['left_only']} | "
+            f"{counts['right_only']} | {counts['neither']} |"
+            for group in ("repeat_overlap", "paired_overlap")
+            for name, counts in result[group].items()
+        ),
+        "",
+        "Human-approved conversations per GPU hour and human error rates are unmeasured "
+        "until independent ballots are resolved. These are automatic quality-candidate outcomes.",
+        "",
+    ]
+    stem.with_suffix(".md").write_text("\n".join(lines), encoding="utf-8")
+    print(stem)
 
 
 if __name__ == "__main__":
