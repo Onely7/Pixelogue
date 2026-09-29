@@ -335,7 +335,7 @@ def exposure_report(plan: ExposurePlan, output_dir: Path) -> dict[str, Any]:
         and group["plausible"].rating is not None
         and group["hidden"].rating is not None
     ]
-    errors: dict[str, dict[str, int]] = {}
+    errors: dict[str, dict[str, int | None]] = {}
     for condition in CONDITIONS:
         false_accept = false_reject = labeled = 0
         for trial in plan.trials:
@@ -350,8 +350,8 @@ def exposure_report(plan: ExposurePlan, output_dir: Path) -> dict[str, Any]:
             false_reject += int(gold and not result.rating.accepted)
         errors[condition] = {
             "labeled": labeled,
-            "false_accept": false_accept,
-            "false_reject": false_reject,
+            "false_accept": false_accept if labeled else None,
+            "false_reject": false_reject if labeled else None,
         }
     return {
         "plan_hash": plan.plan_hash,

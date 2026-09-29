@@ -74,7 +74,7 @@ uv run --locked pixelogue audit-resolve --pack artifacts/audit/pack.json --quest
 `research-ablation` は質問を固定し、ゲートの回答前・回答後・省略、評価者A・B・両方、検証済み履歴のみ・生成済み履歴を保持の18条件を比較します。初回は修復を使わず、回答後はholisticとタスク固有検証を維持します。誤った往復を含む生成済み履歴は研究専用traceへ保存し、通常exportへ混ぜません。報告には各深さの開始件数と到達件数を含めます。初版は質問を固定してゲート時点を比べるもので、質問生成自体の変化は測定しません。
 [2画像の開発用case](../../validation/confirmed_two_image_ablation.jsonl)には、今回のpilot用に画像ごとに異なる可視属性・関係の質問を2つずつ固定しています。質問の人手適格ラベルは未設定です。計画される36条件は、独立監査が済むまでは挙動の観測として扱います。
 
-比較実験の `depth.csv` は、人手ラベルがある場合の誤受理・誤拒否と、両評価者の誤りの重なりを記録します。独立した人手ラベルがない場合、この件数は0です。履歴実験と人手監査の裁定結果は、それぞれJSON・CSV・Markdownで保存します。
+比較実験の `depth.csv` は、人手ラベルがある場合の誤受理・誤拒否と、両評価者の誤りの重なりを記録します。独立した人手ラベルがない場合、件数は未測定（JSONでは `null`、CSVでは空欄）とし、0はラベル付き例を確認して誤りがなかった場合に限ります。回答提示実験も同じ区別を使います。履歴実験と人手監査の裁定結果は、それぞれJSON・CSV・Markdownで保存します。
 
 ```bash
 uv run --locked pixelogue research-history --cases validation/local-history-cases.jsonl --artifact-root artifacts/prepared --output-dir artifacts/research-history

@@ -479,7 +479,7 @@ def ablation_report(plan: AblationPlan, output_dir: Path) -> dict[str, Any]:
             for trial in trials
             for path in [output_dir / "results" / f"{trial.trial_id}.json"]
         ]
-        depth = {
+        depth: dict[int, dict[str, int | None]] = {
             index: {
                 "started": len(trials),
                 "reached": sum(
@@ -536,6 +536,11 @@ def ablation_report(plan: AblationPlan, output_dir: Path) -> dict[str, Any]:
             }
             for index in range(1, max(len(case.turns) for case in plan.cases) + 1)
         }
+        for counts in depth.values():
+            if counts["human_labeled"] == 0:
+                counts["false_accept"] = None
+                counts["false_reject"] = None
+                counts["both_evaluator_errors"] = None
         rows.append(
             {
                 "cell": trials[0].cell.model_dump(mode="json"),

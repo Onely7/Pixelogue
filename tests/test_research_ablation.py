@@ -77,6 +77,8 @@ def test_full_factorial_plan_and_unbiased_depth_denominators(tmp_path: Path) -> 
     assert len(report["cells"]) == 18
     assert all(cell["depth"][1]["started"] == 1 for cell in report["cells"])
     assert all(cell["depth"][1]["reached"] == 0 for cell in report["cells"])
+    assert all(cell["depth"][1]["false_accept"] is None for cell in report["cells"])
+    assert all(cell["depth"][1]["false_reject"] is None for cell in report["cells"])
     assert report["training_export_allowed"] is False
 
 

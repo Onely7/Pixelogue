@@ -98,4 +98,23 @@ def test_frozen_trials_have_distinct_calls_and_paired_missing_report(tmp_path: P
     assert report["paired_plausible_minus_hidden"] == {"pairs": 1, "mean": 1.0}
     assert report["aias_invalid_questions"] == {"pairs": 1, "mean": 1.0}
     assert report["conditions"]["incorrect"]["missing"] == 1
+    assert report["human_labeled_errors"]["hidden"] == {
+        "labeled": 1,
+        "false_accept": 0,
+        "false_reject": 0,
+    }
     assert report["cost_usd"] is None
+
+
+def test_unlabeled_exposure_errors_remain_unmeasured(tmp_path: Path) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    case = _case().model_copy(
+        update={"gold_question_admissible": None, "gold_label_provenance": None}
+    )
+    plan = build_exposure_plan((case,), config, "generator_a", 1, 17)
+    report = exposure_report(plan, tmp_path)
+    assert report["human_labeled_errors"]["hidden"] == {
+        "labeled": 0,
+        "false_accept": None,
+        "false_reject": None,
+    }
