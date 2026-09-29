@@ -454,6 +454,28 @@ def test_length_completion_repairs_only_missing_json_containers() -> None:
     assert caught.value.reason == "MODEL_FINISH_REASON"
 
 
+def test_length_completion_missing_required_field_is_incomplete_not_schema_error() -> None:
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="x")
+    response = {
+        "choices": [{"finish_reason": "length", "message": {"content": '{"verdict":"MET"'}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 20},
+    }
+    try:
+        with pytest.raises(ExecutionError) as caught:
+            client._decode_typed_response(
+                json.dumps(response).encode(), RubricVerdict, max_tokens=20
+            )
+        assert caught.value.reason == "MODEL_FINISH_REASON"
+        response["choices"][0]["finish_reason"] = "stop"
+        with pytest.raises(ExecutionError) as caught:
+            client._decode_typed_response(
+                json.dumps(response).encode(), RubricVerdict, max_tokens=20
+            )
+        assert caught.value.reason == "MODEL_SCHEMA_MISMATCH"
+    finally:
+        client.client.close()
+
+
 @pytest.mark.parametrize("recovers", [True, False])
 def test_malformed_json_uses_bounded_structured_retries(tmp_path, recovers):
     config = load_config(Path("configs/pilot.yaml"))

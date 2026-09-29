@@ -154,6 +154,8 @@ Use `configs/pilot.yaml` and omit the port 8003 check when validating the tempor
 
 Before a 50-image run, send one image through the same structured-output stages. A server can pass the model-list check while its guided-decoding backend rejects a particular JSON Schema.
 
+If a completion stops at its token limit and lacks a required field, the run records an incomplete completion rather than a generic schema mismatch. Evidence extraction retries with a larger output limit, up to 8192 tokens. The retry must still satisfy the full schema and scope checks; missing observations are never filled in as MET.
+
 Qwen receives `enable_thinking=false` in both server defaults and each request. Thinking text and internal control fields must not enter public dialogue.
 
 ## 5. Treat the alternative selector separately

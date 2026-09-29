@@ -470,6 +470,43 @@ def test_incomplete_table_source_gets_a_larger_retry_budget(
     assert budgets == [4096, 8192]
 
 
+def test_incomplete_evidence_extraction_gets_a_larger_retry_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "evidence-length-retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a)
+    original_invoke = client.invoke
+    budgets: list[int] = []
+
+    def truncate_first(*args: Any, **kwargs: Any) -> ModelResponse:
+        budgets.append(kwargs["max_tokens"])
+        if len(budgets) == 1:
+            raise ExecutionError("MODEL_FINISH_REASON", "Completion reached its token limit")
+        return original_invoke(*args, **kwargs)
+
+    monkeypatch.setattr(client, "invoke", truncate_first)
+    coordinator = SynthesisCoordinator(
+        config, "evidence-length-retry", store, client, client, client
+    )
+    try:
+        result = coordinator._invoke(
+            client,
+            "evidence_extraction",
+            {"image_id": "image", "image_views": [{"view_id": "view"}]},
+            (),
+            ScopedEvidenceReport,
+            max_tokens=4096,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        store.close()
+
+    assert result.image_id == "image"
+    assert budgets == [4096, 8192]
+
+
 def test_semantic_contract_failure_retries_without_accepting_invalid_result(
     tmp_path: Path,
 ) -> None:

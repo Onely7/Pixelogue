@@ -361,6 +361,10 @@ class VllmClient:
         try:
             typed = response_model.model_validate_json(cleaned)
         except ValidationError as error:
+            if parsed["choices"][0]["finish_reason"] == "length":
+                raise ExecutionError(
+                    "MODEL_FINISH_REASON", "Completion reached its token limit before the schema"
+                ) from error
             raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
         return typed, hashlib.sha256(raw_response).hexdigest()
 

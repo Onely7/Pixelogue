@@ -2063,7 +2063,10 @@ class SynthesisCoordinator:
                 call_kwargs["seed"] = int(call_kwargs["seed"]) + 100_000 * attempt
                 call_kwargs["bypass_cache"] = True
                 call_kwargs["retry_feedback"] = retry_feedback
-                if stage == "table_source" and prior_error == "MODEL_FINISH_REASON":
+                if (
+                    stage in {"evidence_extraction", "table_source"}
+                    and prior_error == "MODEL_FINISH_REASON"
+                ):
                     original_tokens = int(kwargs["max_tokens"])
                     call_kwargs["max_tokens"] = max(original_tokens, min(original_tokens * 2, 8192))
             response: ModelResponse | None = None
