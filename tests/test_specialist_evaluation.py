@@ -101,6 +101,21 @@ def test_failed_confirmation_cannot_inflate_eligible_certificate() -> None:
     assert len(report["pending"]) == len(results)
 
 
+def test_unlabeled_confirmation_cannot_be_dropped_from_certificate() -> None:
+    results = (
+        *(_result(index, positive=True) for index in range(20)),
+        *(_result(index + 20, positive=False, verdict="NOT_MET") for index in range(60)),
+        _result(80, positive=True).model_copy(update={"gold_accept": None}),
+    )
+    manifest, report = build_calibration_manifest(results)
+    assert not manifest.certificates
+    assert report["eligible"] == 0
+    assert {item["reason"] for item in report["pending"]} == {
+        "missing_gold_label",
+        "incomplete_confirmation_group",
+    }
+
+
 def test_failed_second_evaluator_resumes_from_first_saved_stage(
     tmp_path: Path, image_artifact, monkeypatch
 ) -> None:

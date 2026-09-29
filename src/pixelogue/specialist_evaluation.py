@@ -462,8 +462,8 @@ def build_calibration_manifest(
     incomplete_groups: set[tuple[str, str, tuple[str, str], str]] = set()
     pending: list[dict[str, str]] = []
     for result in results:
-        confirmation = result.split == "confirmation" and result.gold_accept is not None
         key = (result.task_id, result.domain, result.model_locks, result.validator_version)
+        confirmation = result.split == "confirmation"
         if (
             result.status != "COMPLETE"
             or result.verdict is None
@@ -475,6 +475,10 @@ def build_calibration_manifest(
             continue
         if not confirmation:
             pending.append({"case_id": result.case_id, "reason": "development_or_unlabeled"})
+            continue
+        if result.gold_accept is None:
+            pending.append({"case_id": result.case_id, "reason": "missing_gold_label"})
+            incomplete_groups.add(key)
             continue
         observation = CalibrationObservation(
             case_id=result.case_id,
