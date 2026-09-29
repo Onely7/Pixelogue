@@ -61,6 +61,11 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
             for planned, actual in zip(plan["images"], assignments, strict=True)
         ):
             raise ValueError(f"Planned language allocation changed in {name}")
+        if "generator_models" in plan and any(
+            plan["generator_models"][planned["generator_role"]] != actual[0]
+            for planned, actual in zip(plan["images"], assignments, strict=True)
+        ):
+            raise ValueError(f"Planned generator allocation changed in {name}")
         if report["conversations"] != len(rows):
             raise ValueError(f"Diagnostic conversation count changed in {name}")
         accepted[name] = {row["source_id"] for row in rows if row["status"] == "QUALITY_CANDIDATE"}
@@ -109,7 +114,11 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
     return {
         "plan": {
             **{key: plan[key] for key in plan_fields},
-            **{key: plan[key] for key in ("intervention", "variant_config_sha256") if key in plan},
+            **{
+                key: plan[key]
+                for key in ("intervention", "variant_config_sha256", "generator_models")
+                if key in plan
+            },
         },
         "images": len(planned_ids),
         "generator_and_language_assignments_identical": True,

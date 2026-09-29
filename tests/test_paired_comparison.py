@@ -23,7 +23,11 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
         tmp_path / "experiment-plan.json",
         {
             "phase_order": ["baseline-1", "variant-1", "variant-2", "baseline-2"],
-            "images": [{"source_id": "a"}, {"source_id": "b"}],
+            "images": [
+                {"source_id": "a", "generator_role": "generator_a"},
+                {"source_id": "b", "generator_role": "generator_b"},
+            ],
+            "generator_models": {"generator_a": "generator-a", "generator_b": "generator-b"},
             "baseline_commit": "old",
             "variant_commit": "new",
             "config_sha256": "config",
@@ -105,6 +109,7 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
     assert report["human_error_rates"] is None
     assert report["generator_and_language_assignments_identical"]
     assert report["plan"]["variant_config_sha256"] == "variant-config"
+    assert report["plan"]["generator_models"]["generator_a"] == "generator-a"
 
     changed = tmp_path / "variant-2" / "conversations.jsonl"
     original = changed.read_text()
@@ -112,6 +117,14 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
     with pytest.raises(ValueError, match="allocation changed"):
         summarize(tmp_path)
     changed.write_text(original)
+
+    plan = json.loads((tmp_path / "experiment-plan.json").read_text())
+    plan["generator_models"]["generator_a"] = "different-model"
+    _write(tmp_path / "experiment-plan.json", plan)
+    with pytest.raises(ValueError, match="Planned generator allocation changed"):
+        summarize(tmp_path)
+    plan["generator_models"]["generator_a"] = "generator-a"
+    _write(tmp_path / "experiment-plan.json", plan)
 
     progress = json.loads((tmp_path / "progress.json").read_text())
     progress["success"] = False
