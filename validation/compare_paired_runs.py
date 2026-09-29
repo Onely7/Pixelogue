@@ -7,6 +7,7 @@ import csv
 import json
 from collections import Counter
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 PHASES = ("baseline-1", "variant-1", "variant-2", "baseline-2")
@@ -75,6 +76,9 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
             raise ValueError(f"Turn counts disagree in {name}")
         if report["completed_conversations"] != len(accepted[name]):
             raise ValueError(f"Completed conversation count disagrees in {name}")
+        image_durations = [row["duration_ms"] / 1000 for row in rows if "duration_ms" in row]
+        if len(image_durations) != len(rows):
+            raise ValueError(f"Image duration missing in {name}")
         phases[name] = {
             "images": len(rows),
             "status_counts": dict(Counter(row["status"] for row in rows)),
@@ -99,6 +103,8 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
             "candidate_binding_rejections": report["binding_rejections"],
             "output_tokens": sum(row["output_tokens"] for row in rows),
             "missing_token_usage_calls": report["token_usage_missing_calls"],
+            "median_image_duration_seconds": median(image_durations),
+            "max_image_duration_seconds": max(image_durations),
             "phase_gpu_hours": (timing["ended_at"] - timing["started_at"]) / 3600,
             "quality_source_ids": sorted(accepted[name]),
             "human_approved_completed_conversations": None,
@@ -170,6 +176,8 @@ def main() -> None:
             "contract_failure_attempts",
             "candidate_binding_rejections",
             "output_tokens",
+            "median_image_duration_seconds",
+            "max_image_duration_seconds",
             "phase_gpu_hours",
             "human_approved_per_gpu_hour",
         )
@@ -184,14 +192,16 @@ def main() -> None:
         f"{result['total_allocated_gpu_hours']:.3f}.",
         "",
         "| Phase | Attempted turns | Committed turns | Completed conversations | "
-        "Zero-commit images | 2+ committed images | Model calls | Retries | Binding rejections | Phase GPU hours |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "Zero-commit images | 2+ committed images | Model calls | Retries | Binding rejections | Median image seconds | Phase GPU hours |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         *(
             f"| {name} | {phase['attempted_turns']} | {phase['committed_turns']} | "
             f"{phase['completed_conversations']} | {phase['zero_committed_images']} | "
             f"{phase['two_or_more_committed_images']} | "
             f"{phase['model_calls']} | {phase['retry_calls']} | "
-            f"{phase['candidate_binding_rejections']} | {phase['phase_gpu_hours']:.3f} |"
+            f"{phase['candidate_binding_rejections']} | "
+            f"{phase['median_image_duration_seconds']} | "
+            f"{phase['phase_gpu_hours']:.3f} |"
             for name, phase in result["phases"].items()
         ),
         "",

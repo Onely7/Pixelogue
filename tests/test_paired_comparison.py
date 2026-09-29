@@ -90,6 +90,7 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
                         "attempted_turns": 2,
                         "committed_turns": 2 if status == "QUALITY_CANDIDATE" else 0,
                         "output_tokens": 50,
+                        "duration_ms": 1500 if source == "a" else 2500,
                         "stop_stage": None if status == "QUALITY_CANDIDATE" else "question_gate",
                     }
                     for source, status in zip(("a", "b"), statuses, strict=True)
@@ -108,6 +109,8 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
     assert report["paired_overlap"]["first"]["left_only"] == 1
     assert report["phases"]["baseline-1"]["human_approved_per_gpu_hour"] is None
     assert report["phases"]["baseline-1"]["two_or_more_committed_images"] == 1
+    assert report["phases"]["baseline-1"]["median_image_duration_seconds"] == 2.0
+    assert report["phases"]["baseline-1"]["max_image_duration_seconds"] == 2.5
     assert report["phases"]["baseline-1"]["stop_stage_counts"] == {
         "completed": 1,
         "question_gate": 1,
@@ -119,6 +122,15 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
     assert report["generator_and_language_assignments_identical"]
     assert report["plan"]["variant_config_sha256"] == "variant-config"
     assert report["plan"]["generator_models"]["generator_a"] == "generator-a"
+
+    incomplete = tmp_path / "baseline-1" / "diagnostics.json"
+    incomplete_report = json.loads(incomplete.read_text())
+    del incomplete_report["rows"][0]["duration_ms"]
+    _write(incomplete, incomplete_report)
+    with pytest.raises(ValueError, match="Image duration missing"):
+        summarize(tmp_path)
+    incomplete_report["rows"][0]["duration_ms"] = 1500
+    _write(incomplete, incomplete_report)
 
     changed = tmp_path / "variant-2" / "conversations.jsonl"
     original = changed.read_text()
