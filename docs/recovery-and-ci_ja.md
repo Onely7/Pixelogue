@@ -53,3 +53,36 @@ uv run --locked pre-commit run --all-files
 `.github/workflows/quality.yml` も同じ lock 済み環境を使います。ty は GitHub 用の標準出力形式でworkflow annotation を作り、独自 SARIF 変換は行いません。gitleaks は pre-commit に残しています。
 
 `.github/workflows/codeql.yml` は GPU 不要の独立した CodeQL advanced setup です。GitHub の**Code security → Code scanning** で CodeQL default setup を無効にし、workflow setup だけを有効にしてください。両方を有効にすると解析設定が重複します。workflow は[CodeQL Action の現行案内](https://github.com/github/codeql-action)に従い v4 を使います。
+
+## 終了済みのholistic会話
+
+holisticの合成は、最終出力を `conversation_commit` に記録し、変更不能な
+`conversations` artifactへ結び付けます。同じrunを再開すると、保存済みの最終出力と
+合格済み部分を再利用し、再び延長しません。最終記録の前に停止した場合は、
+順序付きの `turn_commit` から再開します。既存DBは開く時に新しいtableを追加します。
+設定hashは、detailedとholisticの結果を同じrunへ混在させることを防ぎます。
+
+2ターン以上の合格後に品質理由で停止した場合、合格済み部分を
+`QUALITY_CANDIDATE` として保持できます。元の停止会話は非公開の
+`conversation-stops` artifactへ残し、棄却ターンをexportへ含めません。
+実行エラーはERRORのままです。予定の長さの完走を求める場合は
+`evaluation.retain_accepted_prefix: false` を指定し、設定変更後は新しいrun IDを使います。
+`rate-existing` は保存Q/Aだけを再評価し、未生成ターンを補いません。
+空の入力や1ターンの入力は品質候補になりません。
+
+再評価は、推論失敗を該当会話へ記録して残りの入力を続行します。
+不正出力の再試行を使い切った場合はABSTAINED、通信・サーバーの失敗はERRORです。
+元の質問と回答を停止ターンに保持し、会話ID・ターン番号・理由を非公開artifactへ保存します。
+失敗したターンをcommitしたり、合格済み部分に含めたりしません。
+
+## 大きな合成run
+
+合成は完了した会話をJSONLへ順次書き出し、ファイル全体を毎回書き換えません。
+概要は最初の1件、100件ごと、終了時に更新します。同じ変更不能な入力manifestと
+設定で再開すると、保存された会話・ターンcommitから出力を復元します。
+
+新しいrequest artifactは、繰り返し現れる画像data URLを内容hashで管理する
+`request-images` へ分離します（`archive_format: image-refs-v1`）。HTTP payloadと
+request hashは変えません。監査には
+`pixelogue.serving.read_request_artifact(store, artifact_hash)` を使い、正確な要求を復元します。
+旧形式の埋め込み画像にも対応します。バックアップには参照先の画像artifactも含めてください。
