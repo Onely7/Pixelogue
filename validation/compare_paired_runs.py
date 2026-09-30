@@ -200,17 +200,19 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
     plan_fields = (
         "baseline_commit",
         "variant_commit",
-        "config_sha256",
         "prepared_manifest_sha256",
         "seed",
         "workers",
     )
+    config_fields = ("config_sha256", "baseline_config_sha256", "variant_config_sha256")
+    if not any(key in plan for key in config_fields[:2]):
+        raise ValueError("Frozen plan is missing its baseline configuration hash")
     return {
         "plan": {
             **{key: plan[key] for key in plan_fields},
             **{
                 key: plan[key]
-                for key in ("intervention", "variant_config_sha256", "generator_models")
+                for key in (*config_fields, "intervention", "generator_models")
                 if key in plan
             },
         },

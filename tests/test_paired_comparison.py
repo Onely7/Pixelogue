@@ -237,3 +237,21 @@ def test_comparison_rejects_invalid_allocation_records(
     _write(path, progress)
     with pytest.raises(ValueError):
         summarize(paired_experiment)
+
+
+def test_comparison_preserves_separately_frozen_configuration_hashes(
+    paired_experiment: Path,
+) -> None:
+    path = paired_experiment / "experiment-plan.json"
+    plan = json.loads(path.read_text())
+    plan["baseline_config_sha256"] = plan.pop("config_sha256")
+    _write(path, plan)
+    report = summarize(paired_experiment)
+    assert report["plan"]["baseline_config_sha256"] == "config"
+    assert report["plan"]["variant_config_sha256"] == "variant-config"
+    assert "config_sha256" not in report["plan"]
+
+    del plan["baseline_config_sha256"]
+    _write(path, plan)
+    with pytest.raises(ValueError, match="baseline configuration hash"):
+        summarize(paired_experiment)
