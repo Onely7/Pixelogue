@@ -30,7 +30,18 @@ STAGE_INSTRUCTIONS = {
 without seeing a proposed answer. Emit only registered facts: printed givens, right-angle marks,
 triangle angle sums, marked parallel equal angles, stated similarity ratios and explicitly marked
 right triangles. Bind each premise to an image region and copied evidence text. Identify the target
-and its length/angle domain. Approximate visual proportions do not establish exact facts. Unsupported
+and its length/angle domain. Use consistent variable IDs of at most 16 characters, beginning with
+a letter and containing only letters, digits and underscores; for example angle_A, never 'angle A'.
+Copy the target ID exactly from those same variables. A given requires one variable and one
+printed numeric constant, for example variables=['angle_A'], constants=['30']; quoting 30 in
+evidence_text does not replace constants. A right_angle requires one variable and no constants.
+triangle_angle_sum requires three distinct angle variables and no constants; include this rule
+for a visibly resolved triangle. parallel_equal_angle needs two variables and no constants.
+similar_ratio needs two variables and two printed constants in corresponding order.
+pythagorean needs three variables in leg, leg, hypotenuse order and no constants.
+Extract the complete supported printed angle/length facts and marked relations in the scope,
+including a printed target value; do not replace visible facts with a bare theorem name.
+Approximate visual proportions do not establish exact facts. Unsupported
 theorems, ambiguous symbols, missing conditions or nonunique geometry are UNKNOWN. Every normalized
 region must have left < right and top < bottom within [0,1]; use {left:0,top:0,right:1,bottom:1}
 for the full view.""",

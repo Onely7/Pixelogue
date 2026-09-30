@@ -68,6 +68,16 @@ def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
             "Always emit answer_quote and reported. For MET, quote an exact "
             "substring of the candidate answer and put its literal number in reported. "
         ),
+        "specialist_geometry_source": (
+            "Use the same valid variable IDs in target and premises, with no spaces. "
+            "given requires one variable and one explicitly printed numeric constant; "
+            "right_angle one variable/no constants; triangle_angle_sum three distinct "
+            "variables/no constants; parallel_equal_angle two/no constants; "
+            "similar_ratio two variables/two printed constants; pythagorean three "
+            "variables/no constants in leg, leg, hypotenuse order. "
+            "A MET extraction must bind target to a premise. If a required visible "
+            "condition cannot be resolved, use UNKNOWN with premises=[]. "
+        ),
         "specialist_chemistry_source": (
             "Return only a blind source object with exactly coverage, domain, scope_id, "
             "view_id, scope_region, notation, atoms, bonds, reason. Coverage must be MET, "

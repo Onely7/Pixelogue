@@ -50,6 +50,35 @@ def _problem() -> GeometryProblem:
     )
 
 
+@pytest.mark.parametrize(
+    ("rule", "variables", "constants"),
+    [
+        ("given", ("angle_A",), ()),
+        ("right_angle", ("angle_D",), ("90",)),
+        ("triangle_angle_sum", ("angle_A", "angle_B"), ()),
+        ("parallel_equal_angle", ("angle_A",), ()),
+        ("similar_ratio", ("a", "b"), ("2",)),
+        ("pythagorean", ("a", "b"), ()),
+    ],
+)
+def test_incomplete_registered_premise_cannot_claim_valid_geometry(
+    rule: str, variables: tuple[str, ...], constants: tuple[str, ...]
+) -> None:
+    with pytest.raises(ValidationError, match="requires"):
+        _premise(rule, variables, constants)
+
+
+def test_geometry_variables_and_target_must_reach_the_symbolic_worker() -> None:
+    with pytest.raises(ValidationError, match="pattern"):
+        _premise("given", ("angle A",), ("30",))
+    with pytest.raises(ValidationError, match="distinct"):
+        _premise("triangle_angle_sum", ("A", "A", "B"))
+    source = _problem().model_dump()
+    source["target"] = "unbound"
+    with pytest.raises(ValidationError, match="bind the target"):
+        GeometryProblem.model_validate(source)
+
+
 def _answer(text: str) -> GeometryNumericAnswer:
     return GeometryNumericAnswer(coverage="MET", answer_quote=text, reported=text, reason="literal")
 

@@ -12,6 +12,8 @@ from pixelogue.errors import ExecutionError
 from pixelogue.specialist_env import call_worker
 from pixelogue.task_evidence import ImageRegion
 
+GeometryVariable = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,15}$")]
+
 
 class GeometryPremise(StrictModel):
     """One printed or explicitly marked theorem premise."""
@@ -24,14 +26,29 @@ class GeometryPremise(StrictModel):
         "similar_ratio",
         "pythagorean",
     ]
-    variables: tuple[str, ...]
+    variables: tuple[GeometryVariable, ...]
     constants: tuple[str, ...] = ()
     evidence_text: str = Field(min_length=1)
     region: ImageRegion
 
     @model_validator(mode="after")
     def check_visible_constant(self) -> GeometryPremise:
-        """Anchor every numerical assumption to explicit visible evidence."""
+        """Require the registered rule's arguments and anchor each numerical assumption."""
+        required = {
+            "given": (1, 1),
+            "right_angle": (1, 0),
+            "triangle_angle_sum": (3, 0),
+            "parallel_equal_angle": (2, 0),
+            "similar_ratio": (2, 2),
+            "pythagorean": (3, 0),
+        }[self.rule]
+        if (len(self.variables), len(self.constants)) != required:
+            raise ValueError(
+                f"Geometry rule {self.rule} requires {required[0]} variables "
+                f"and {required[1]} constants"
+            )
+        if len(set(self.variables)) != len(self.variables):
+            raise ValueError("Geometry rule variables must be distinct")
         if any(value not in self.evidence_text for value in self.constants):
             raise ValueError("Geometry constant is not present in its source evidence")
         return self
@@ -46,7 +63,7 @@ class GeometryProblem(StrictModel):
     view_id: str
     scope_region: ImageRegion
     premises: Annotated[tuple[GeometryPremise, ...], Field(max_length=32)]
-    target: str = Field(min_length=1)
+    target: GeometryVariable
     target_domain: Literal["length", "angle"]
     reason: str = Field(min_length=1)
 
@@ -55,6 +72,11 @@ class GeometryProblem(StrictModel):
         """Reject partial or nonlocal proof inputs."""
         if self.coverage != "MET" and self.premises:
             raise ValueError("Incomplete geometry extraction cannot supply premises")
+        variables = {name for premise in self.premises for name in premise.variables}
+        if len(variables) > 16:
+            raise ValueError("Geometry extraction exceeds sixteen registered variables")
+        if self.coverage == "MET" and self.target not in variables:
+            raise ValueError("Complete geometry extraction must bind the target to a premise")
         fact_keys = [(item.rule, item.variables, item.constants) for item in self.premises]
         if len(fact_keys) != len(set(fact_keys)):
             raise ValueError("Repeated geometry premise")
