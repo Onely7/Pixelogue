@@ -17,6 +17,7 @@ from pixelogue.evaluation import (
     normalized_identification_words,
 )
 from pixelogue.serialization import canonical_hash
+from pixelogue.specialist_chemistry import chemical_domain_conditions
 from pixelogue.task_catalog import TaskDefinition
 from pixelogue.task_evidence import CandidateBindings, ImageRegion, ScopedEvidenceInventory
 from pixelogue.task_registry import REGISTRATIONS, registration
@@ -160,6 +161,9 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
             "The visible source uses the exact certified notation and format domain; "
             "unsupported or unclear conventions are UNKNOWN."
         )
+        if candidate.task_id == "chemical_structure_reading":
+            if conditions := chemical_domain_conditions(candidate.calibrated_domain):
+                checks["calibrated_domain_supported"] += " " + conditions
     if candidate.profile != "normal":
         checks = {
             "scope_resolved": catalog.eligibility_checks["scope_resolved"],

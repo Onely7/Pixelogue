@@ -209,6 +209,8 @@ def _chemistry(request: dict[str, Any]) -> dict[str, Any]:
         molecule.AddBond(indices[bond["a"]], indices[bond["b"]], bond_types[bond["order"]])
     expected_mol = molecule.GetMol()
     Chem.SanitizeMol(expected_mol)
+    if any(atom.GetNumRadicalElectrons() for atom in expected_mol.GetAtoms()):
+        return {"verdict": "UNKNOWN", "reason": "Radical molecular graphs are unsupported"}
     expected_mol = Chem.RemoveHs(expected_mol)
     expected = Chem.MolToSmiles(expected_mol, isomericSmiles=False, canonical=True)
     reported = request["reported_smiles"]
@@ -221,6 +223,8 @@ def _chemistry(request: dict[str, Any]) -> dict[str, Any]:
     observed_mol = Chem.MolFromSmiles(reported)
     if observed_mol is None:
         return {"verdict": "UNKNOWN", "reason": "Candidate SMILES is invalid"}
+    if any(atom.GetIsotope() or atom.GetNumRadicalElectrons() for atom in observed_mol.GetAtoms()):
+        return {"verdict": "UNKNOWN", "reason": "Isotope or radical SMILES are unsupported"}
     observed = Chem.MolToSmiles(observed_mol, isomericSmiles=False, canonical=True)
     return {"verdict": "MET" if observed == expected else "NOT_MET", "expected_smiles": expected}
 
