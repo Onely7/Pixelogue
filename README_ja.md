@@ -49,6 +49,7 @@ uv run --locked pytest
 8. [Qwen3.5-9B 処理速度の検証結果](docs/validation/qwen35-9b-throughput_ja.md)
 9. [品質・速度改善の実測と運用](docs/validation/quality-and-performance_ja.md)
 10. [実装対応表](docs/implementation-map_ja.md)
+11. [2,000画像の合成確認とタスク別実例](docs/validation/synthesis-campaign_ja.md)
 
 ## モデルの役割
 
