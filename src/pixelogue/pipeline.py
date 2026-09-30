@@ -2178,7 +2178,7 @@ class SynthesisCoordinator:
                 call_kwargs["bypass_cache"] = True
                 call_kwargs["retry_feedback"] = retry_feedback
                 if (
-                    stage in {"evidence_extraction", "table_source"}
+                    stage in {"evidence_extraction", "table_source", "chart_source", "graph_source"}
                     and prior_error == "MODEL_FINISH_REASON"
                 ):
                     original_tokens = int(kwargs["max_tokens"])
@@ -2293,6 +2293,15 @@ class SynthesisCoordinator:
                                 " have two; script has three. Operator nodes use value=null."
                                 " If the visual parse is uncertain, return coverage=UNKNOWN,"
                                 " root=null and formula_region=null rather than guessing."
+                            )
+                        elif stage == "chart_source":
+                            retry_feedback += (
+                                " Exact printed values require numeric lower=upper and"
+                                " visible_label containing that literal number. If a requested"
+                                " value is unreadable, use coverage=UNKNOWN, axis=null, marks=[],"
+                                " closed=false, and still include the public query. Never use"
+                                " N/A or unknown as a numeric endpoint. All mark boxes must be"
+                                " positive-extent rectangles inside scope_region."
                             )
                     elif error.reason == "EVIDENCE_IMAGE_MISMATCH":
                         retry_feedback = (

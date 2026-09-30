@@ -89,7 +89,10 @@ Never see the candidate answer or infer a hidden edge from proximity.""",
     "graph_answer": """Parse only the candidate answer and public graph objective, without an image.
 Quote the exact substring and extract one label, neighbor set, edge set or ordered paths. Preserve
 all reported alternatives. Ambiguous or incomplete text is UNKNOWN. Do not infer graph topology
-from an expected route or result.""",
+from an expected route or result. coverage=MET means the answer's literal content was parsed;
+it does not claim that the answer is correct. For a neighbor question, even one reported node
+belongs in members, not label. The controller compares it with a separate blind graph extraction.
+Do not require an image to parse an unambiguous reported node.""",
     "formula_source": """Read the visible two-dimensional formula and public notation without seeing
 the proposed answer. Recover literal symbols, order, parentheses, scripts, stacked fractions and
 radicals as a FormulaNode tree. A missing script uses symbol ∅ in the script node. Do not solve,
@@ -113,11 +116,15 @@ and relations certify the complete relevant series. A missing series or missing 
 for an estimated value means UNKNOWN. Respect linear and log axes. If no numeric ticks are printed
 but all relevant values have exact printed labels, set axis.scale=unmarked and axis.ticks=[]; never
 invent ticks or estimate unlabeled values from that axis. Never inspect or anticipate the candidate
-answer.""",
+answer. If required values cannot be read, use coverage=UNKNOWN, axis=null, marks=[], closed=false
+and describe the requested operation in query. Never put unknown, N/A or an empty string into
+a numeric lower or upper field. Keep regions as positive-extent rectangles inside scope_region.""",
     "chart_answer": """Parse only the candidate answer and public operation, without an image.
 Quote the exact answer substring. Return one numeric value, relation, tied rank groups or trend.
 Keep signs, units and decimal places as written. Ambiguous or multiple interpretations are UNKNOWN.
-Do not infer values or structure from an expected chart result.""",
+Do not infer values or structure from an expected chart result. coverage=MET certifies only an
+unambiguous literal parse, including a wrong reported number. Correctness is checked separately
+against blind chart readings. No image is needed to parse a plainly written number.""",
     "table_source": """Read only the image, public question and bound operation without an answer.
 Reconstruct each relevant table as a complete rectangular grid. Preserve every blank as an explicit
 cell and every merged cell with its exact row/column span, text, kind and image region. Distinguish
@@ -130,7 +137,9 @@ Never use the candidate answer to fill a cell.""",
     "table_answer": """Parse only the candidate answer and public question, with no image.
 Quote the exact answer substring and return only its literal lookup value, selected row labels in
 order, or matched value pairs. Ambiguous, missing or conflicting results are UNKNOWN. Do not infer
-the correct table values or predicate result.""",
+the correct table values or predicate result. coverage=MET means the literal answer was parsed,
+including a wrong value; it does not certify a table lookup. The controller checks correctness
+against blind table readings. No image is needed to parse an unambiguous reported value.""",
     "quantity_source": """Read the image, public history and question without seeing any answer.
 Extract only printed numeric lexemes inside the bound image scope, with exact units and individual
 regions. Identify the public operation and ordered operand IDs. A complete aggregate requires a

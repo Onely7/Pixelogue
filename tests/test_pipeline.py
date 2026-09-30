@@ -10,6 +10,7 @@ import pytest
 from pydantic import BaseModel
 
 from pixelogue.catalog import load_rubric_catalog
+from pixelogue.chart_verifiers import ChartSource
 from pixelogue.config import EvaluationConfig, ModelEndpoint, load_config
 from pixelogue.contracts import (
     AtomicClaim,
@@ -44,6 +45,7 @@ from pixelogue.evaluation import (
 )
 from pixelogue.export import training_record
 from pixelogue.formula_verifier import FormulaSource
+from pixelogue.graph_verifiers import GraphSource
 from pixelogue.ledger import RequirementInventory, RequirementSpec
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.prompts import STAGE_INSTRUCTIONS
@@ -173,6 +175,35 @@ class ScriptedClient:
                     for candidate in payload["candidates"]
                 )
             )
+        elif response_model in {ChartSource, GraphSource}:
+            common = {
+                "task_id": "chart_value_lookup"
+                if response_model is ChartSource
+                else "graph_connectivity",
+                "coverage": "UNKNOWN",
+                "scope_id": "whole",
+                "view_id": "view",
+                "scope_region": {"left": 0, "top": 0, "right": 1, "bottom": 1},
+                "closed": False,
+                "reason": "The requested structure is unreadable.",
+            }
+            structure = (
+                {
+                    "axis": None,
+                    "legend_complete": False,
+                    "encoding": "bar",
+                    "marks": (),
+                    "query": {"operation": "value"},
+                }
+                if response_model is ChartSource
+                else {
+                    "junctions_resolved": False,
+                    "nodes": (),
+                    "edges": (),
+                    "query": {"operation": "neighbors"},
+                }
+            )
+            value = response_model.model_validate({**common, **structure})
         elif response_model is TableSource:
             value = TableSource.model_validate(
                 {
@@ -430,12 +461,13 @@ def test_candidate_wire_partition_rejects_unknown_and_duplicate_ids() -> None:
     [
         ("table_source", TableSource, ("data_rows", "query object", "left < right")),
         ("formula_source", FormulaSource, ("zero children", "script has three", "root=null")),
+        ("chart_source", ChartSource, ("lower=upper", "marks=[]", "N/A")),
     ],
 )
 def test_source_schema_retry_names_nested_contracts(
     tmp_path: Path,
     stage: str,
-    model: type[TableSource] | type[FormulaSource],
+    model: type[TableSource] | type[FormulaSource] | type[ChartSource],
     expected: tuple[str, ...],
 ) -> None:
     config = load_config(Path("configs/pilot.yaml"))
@@ -459,6 +491,44 @@ def test_source_schema_retry_names_nested_contracts(
     assert result.coverage == "UNKNOWN"
     assert client.retry_feedback[0] is None
     assert all(fragment in (client.retry_feedback[1] or "") for fragment in expected)
+
+
+@pytest.mark.parametrize(
+    ("stage", "model"), [("chart_source", ChartSource), ("graph_source", GraphSource)]
+)
+@pytest.mark.parametrize(
+    ("reason", "expected_budgets"),
+    [
+        ("MODEL_FINISH_REASON", [2048, 4096]),
+        ("MODEL_WHITESPACE_RUNAWAY", [2048, 2048]),
+    ],
+)
+def test_structural_source_retry_only_increases_budget_for_truncated_content(
+    tmp_path, monkeypatch, stage, model, reason, expected_budgets
+):
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "structural-retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a)
+    invoke_original = client.invoke
+    budgets = []
+
+    def fail_first(*args, **kwargs):
+        budgets.append(kwargs["max_tokens"])
+        if len(budgets) == 1:
+            raise ExecutionError(reason, "Incomplete structure")
+        return invoke_original(*args, **kwargs)
+
+    monkeypatch.setattr(client, "invoke", fail_first)
+    coordinator = SynthesisCoordinator(config, "structural-retry", store, client, client, client)
+    try:
+        result = coordinator._invoke(
+            client, stage, {}, (), model, max_tokens=2048, temperature=0.0, seed=1
+        )
+    finally:
+        store.close()
+
+    assert result.coverage == "UNKNOWN"
+    assert budgets == expected_budgets
 
 
 def test_incomplete_table_source_gets_a_larger_retry_budget(
