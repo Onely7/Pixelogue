@@ -39,6 +39,9 @@ SPECIALIST_SOURCE_STAGES = frozenset(
         "specialist_geometry_source",
     }
 )
+STRUCTURAL_OUTPUT_STAGES = frozenset(
+    {"table_source", "table_answer", "chart_source", "chart_answer", "graph_source", "graph_answer"}
+)
 
 
 def _bind_specialist_source_schema(
@@ -528,6 +531,19 @@ class VllmClient:
             properties["end_token"]["maximum"] = max(1, count)
             if count == 0:
                 schema["properties"]["claims"]["maxItems"] = 0
+        if stage in STRUCTURAL_OUTPUT_STAGES:
+            if stage.endswith("_answer"):
+                # Nullable result fields must be emitted, even when the parse abstains.
+                # Their omission otherwise permits an acknowledgement-only JSON object.
+                schema["required"] = sorted(schema["properties"])
+            if stage == "chart_source":
+                mark_properties = schema["$defs"]["ChartMark"]["properties"]
+                for endpoint in ("lower", "upper"):
+                    mark_properties[endpoint]["description"] = (
+                        "Bare finite decimal string. No inequality, unit, label or explanation."
+                    )
+            request_text["response_schema"] = schema
+            user_content[0]["text"] = canonical_json(request_text).decode()
         body: dict[str, Any] = {
             "model": self.endpoint.model_name,
             "messages": [

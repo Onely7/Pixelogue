@@ -9,9 +9,11 @@ import httpx
 import pytest
 from pydantic import HttpUrl
 
+from pixelogue.chart_verifiers import ChartAnswer, ChartSource
 from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
 from pixelogue.contracts import ClaimExtraction, EvidenceInventory, RubricVerdict, TextPayload
 from pixelogue.errors import ExecutionError
+from pixelogue.graph_verifiers import GraphAnswer, GraphSource
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.profiling import profile_database
 from pixelogue.prompts import STAGE_INSTRUCTIONS, validate_stage_payload
@@ -26,11 +28,69 @@ from pixelogue.serving import (
 from pixelogue.specialist_chemistry import ChemicalSource
 from pixelogue.specialist_music import MusicSource
 from pixelogue.store import RunStore
+from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_evidence import (
     AttributeRecheckReport,
     CandidateBindingsReport,
     ScopedEvidenceReport,
 )
+
+
+@pytest.mark.parametrize(
+    ("stage", "model"),
+    [
+        ("table_source", TableSource),
+        ("table_answer", TableAnswer),
+        ("chart_source", ChartSource),
+        ("chart_answer", ChartAnswer),
+        ("graph_source", GraphSource),
+        ("graph_answer", GraphAnswer),
+    ],
+)
+def test_structural_reader_sees_the_exact_decoder_contract_without_mutating_models(
+    tmp_path, stage, model
+):
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="schema")
+    original_schema = model.model_json_schema()
+    source = stage.endswith("_source")
+    payload = {
+        "target_language": "en",
+        "question": "Read the requested visible value.",
+        "expected_operation": {},
+    }
+    images = ()
+    if source:
+        path = tmp_path / "image.png"
+        path.write_bytes(b"test image")
+        image = ModelImage(
+            view_id="full:view",
+            path=path,
+            encoded_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            media_type="image/png",
+        )
+        payload.update(public_history=[], image_views=[{"view_id": image.view_id}])
+        images = (image,)
+    else:
+        payload["candidate_answer"] = "Unambiguous reported value"
+    try:
+        validate_stage_payload(stage, payload)
+        body = client._build_body(
+            stage, payload, images, model, max_tokens=2048, temperature=0.0, seed=1
+        )
+    finally:
+        client.client.close()
+    text = json.loads(body["messages"][1]["content"][0]["text"])
+    decoder_schema = body["response_format"]["json_schema"]["schema"]
+    assert text["response_schema"] == decoder_schema
+    assert text["input"] == payload
+    assert model.model_json_schema() == original_schema
+    if source:
+        assert "candidate_answer" not in text["input"]
+        with pytest.raises(ExecutionError, match="candidate_answer"):
+            validate_stage_payload(stage, {**payload, "candidate_answer": "hidden answer"})
+    else:
+        assert set(decoder_schema["required"]) == set(decoder_schema["properties"])
+        assert [part["type"] for part in body["messages"][1]["content"]] == ["text"]
 
 
 def test_instruction_selector_information_boundary() -> None:

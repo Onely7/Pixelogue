@@ -118,7 +118,8 @@ but all relevant values have exact printed labels, set axis.scale=unmarked and a
 invent ticks or estimate unlabeled values from that axis. Never inspect or anticipate the candidate
 answer. If required values cannot be read, use coverage=UNKNOWN, axis=null, marks=[], closed=false
 and describe the requested operation in query. Never put unknown, N/A or an empty string into
-a numeric lower or upper field. Keep regions as positive-extent rectangles inside scope_region.""",
+a numeric lower or upper field. Lower and upper must be bare decimal strings, never inequalities
+such as >= or <=, units or explanations. Keep regions as positive-extent rectangles inside scope_region.""",
     "chart_answer": """Parse only the candidate answer and public operation, without an image.
 Quote the exact answer substring. Return one numeric value, relation, tied rank groups or trend.
 Keep signs, units and decimal places as written. Ambiguous or multiple interpretations are UNKNOWN.

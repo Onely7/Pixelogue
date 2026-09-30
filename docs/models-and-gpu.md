@@ -195,6 +195,12 @@ Expected labels remain in the controller and are never sent to evaluator calls. 
 
 The [detailed pipeline guide](pipeline/README.md) explains how these servers participate in every generation and evaluation stage.
 
+Table, chart and graph readers receive the exact output Schema in model-visible text as well as
+the constrained decoder. Answer parsers emit every nullable result field explicitly; `MET`
+describes a literal parse, and correctness is computed separately against blind image readings.
+Source readers receive no proposed answer, and answer parsers receive no image. Malformed output
+remains rejected after bounded retries.
+
 
 ## Evaluation regression checks
 
