@@ -141,7 +141,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "circuit_graph_validator",
-            "1",
+            "2",
             supported_tasks=frozenset({"circuit_structure_reading"}),
         ),
         ValidatorRegistration(

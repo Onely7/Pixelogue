@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -60,6 +62,19 @@ def test_ambiguous_crossing_abstains() -> None:
         '{"pairs":[]}',
     )
     assert verdict is GateVerdict.UNKNOWN
+
+
+def test_netlist_must_preserve_declared_component_terminal_names() -> None:
+    source = _source()
+    args = ((source, source), source.domain, "two_terminal_netlist", "netlist", "s", "v")
+    answer = {
+        "components": {component.component_id: component.kind for component in source.components},
+        "nets": [list(net.terminals) for net in source.nets],
+    }
+    assert verify_circuit(*args, json.dumps(answer))[0] is GateVerdict.MET
+    answer["nets"][0] = ["R1:a", "R2:b"]
+    answer["nets"][1] = ["R1:b", "R2:a", "R3:a"]
+    assert verify_circuit(*args, json.dumps(answer))[0] is GateVerdict.NOT_MET
 
 
 def test_circuit_error_identifies_missing_duplicate_and_unexpected_terminals() -> None:

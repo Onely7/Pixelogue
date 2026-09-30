@@ -3235,7 +3235,9 @@ tasks:
   label_en: Read a circuit topology
   status: validator_gated_extension
   definition_en: Identify circuit symbols and explicit electrical connections using known junction, crossover,
-    and component conventions.
+    and component conventions. For a two_terminal_netlist, pin a is the left endpoint and b the right;
+    only for vertical components with equal endpoint x, pin a is upper and b lower. State this
+    left-first convention in a netlist question; do not flip pins to follow graph traversal.
   required_capabilities:
   - notation_context
   - graph_nodes_edges
