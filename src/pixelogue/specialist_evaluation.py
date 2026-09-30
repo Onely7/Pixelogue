@@ -385,6 +385,10 @@ def run_specialist_evaluation(
                     return value
 
                 try:
+                    entry = registration(name)
+                    assert entry is not None
+                    if environment_error := entry.environment_error():
+                        raise ExecutionError("VALIDATOR_ENV_MISSING", environment_error)
                     checks = verify_operation(_instruction(case), payload, invoke, image.path)
                     check = next(item for item in checks if item.name == name)
                     verdict = check.verdict.value

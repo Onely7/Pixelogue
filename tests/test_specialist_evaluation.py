@@ -19,6 +19,7 @@ from pixelogue.specialist_evaluation import (
     build_calibration_manifest,
     run_specialist_evaluation,
 )
+from pixelogue.task_registry import ValidatorRegistration
 
 
 def test_specialist_retry_uses_stage_specific_feedback() -> None:
@@ -38,6 +39,62 @@ def test_specialist_retry_uses_stage_specific_feedback() -> None:
     assert "specific atoms[] or bonds[] box outside scope" in chemistry
     assert "explicitly drawn closed ring" in chemistry
     assert "answer_quote and reported" in geometry
+
+
+def test_missing_specialist_environment_fails_before_spending_model_calls(
+    tmp_path: Path, image_artifact, monkeypatch
+) -> None:
+    from pixelogue import specialist_evaluation
+
+    image, root = image_artifact
+    case = SpecialistEvaluationCase(
+        case_id="missing-chemistry",
+        image=image.model_copy(update={"purpose": SourcePurpose.EVALUATION}),
+        task_id="chemical_structure_reading",
+        domain="explicit-atoms",
+        scope_id="molecule",
+        view_id=image.full_view.view_id,
+        visible_scope="whole molecule",
+        public_parameters=(),
+        target_language="en",
+        public_history=(),
+        question="Read the visible molecule",
+        candidate_answer='{"smiles":"CO"}',
+        split="development",
+    )
+    config = load_config(Path("configs/pilot.yaml"))
+    config = config.model_copy(
+        update={
+            "storage": config.storage.model_copy(
+                update={"run_root": tmp_path / "runs", "require_local_wal": False}
+            )
+        }
+    )
+
+    class NeverCalledClient:
+        def __init__(self, *args, **kwargs):
+            self.client = self
+
+        def invoke(self, *args, **kwargs):
+            raise AssertionError("Missing computation environment must stop before model calls")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(specialist_evaluation, "VllmClient", NeverCalledClient)
+    monkeypatch.setattr(
+        ValidatorRegistration,
+        "environment_error",
+        lambda _: "specialist lock environment is not installed",
+    )
+    output = tmp_path / "evaluation"
+    stats = run_specialist_evaluation((case,), config, root, output, "missing-environment")
+    assert stats["failed"] == 1 and stats["completed"] == 0
+    (result_file,) = (output / "results").glob("*.json")
+    result = SpecialistEvaluationResult.model_validate_json(result_file.read_text())
+    assert result.status == "FAILED" and result.verdict is None
+    assert result.response_artifact_hashes is None
+    assert result.error is not None and "not installed" in result.error
 
 
 def _result(
@@ -146,6 +203,8 @@ def test_failed_second_evaluator_resumes_from_first_saved_stage(
     tmp_path: Path, image_artifact, monkeypatch
 ) -> None:
     from pixelogue import specialist_evaluation
+
+    monkeypatch.setattr(ValidatorRegistration, "environment_error", lambda _: None)
 
     image, root = image_artifact
     image = image.model_copy(update={"purpose": SourcePurpose.EVALUATION})
@@ -274,6 +333,8 @@ def test_invalid_specialist_reading_gets_one_bounded_retry(
     uses_json_fallback: bool,
 ) -> None:
     from pixelogue import specialist_evaluation
+
+    monkeypatch.setattr(ValidatorRegistration, "environment_error", lambda _: None)
 
     image, root = image_artifact
     image = image.model_copy(update={"purpose": SourcePurpose.EVALUATION})
