@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 from collections import Counter
 from pathlib import Path
 from statistics import median
@@ -21,12 +22,67 @@ def _read(path: Path) -> dict[str, Any]:
     return value
 
 
+def _interval_seconds(interval: dict[str, Any]) -> float:
+    """Require a finite, positive recorded execution interval."""
+    start, end = interval.get("started_at"), interval.get("ended_at")
+    if (
+        isinstance(start, bool)
+        or isinstance(end, bool)
+        or not isinstance(start, (int, float))
+        or not isinstance(end, (int, float))
+        or not math.isfinite(start)
+        or not math.isfinite(end)
+        or end <= start
+    ):
+        raise ValueError("Invalid recorded execution interval")
+    return end - start
+
+
+def _recorded_seconds(intervals: list[dict[str, Any]]) -> float:
+    """Sum ordered execution intervals while excluding pauses between them."""
+    total = 0.0
+    previous_end: float | None = None
+    for interval in intervals:
+        total += _interval_seconds(interval)
+        if previous_end is not None and interval["started_at"] < previous_end:
+            raise ValueError("Recorded execution intervals overlap or are out of order")
+        previous_end = interval["ended_at"]
+    return total
+
+
+def _allocation_intervals(progress: dict[str, Any]) -> list[dict[str, Any]]:
+    """Read measured single-GPU sessions, retaining the legacy continuous-run format."""
+    intervals = progress.get("allocation_intervals")
+    if intervals is None:
+        if progress.get("prior_attempts"):
+            raise ValueError("Resumed experiments require recorded GPU allocation intervals")
+        return [progress]
+    if not isinstance(intervals, list) or not intervals:
+        raise ValueError("GPU allocation intervals must be a nonempty list")
+    _recorded_seconds(intervals)
+    for interval in intervals:
+        if not isinstance(interval.get("gpu"), int) or isinstance(interval["gpu"], bool):
+            raise ValueError("Each allocation interval must identify one GPU")
+        seconds = interval.get("gpu_seconds")
+        if (
+            isinstance(seconds, bool)
+            or not isinstance(seconds, (int, float))
+            or not math.isfinite(seconds)
+            or not math.isclose(seconds, _interval_seconds(interval), abs_tol=1e-6)
+        ):
+            raise ValueError("GPU seconds disagree with the single-GPU allocation interval")
+    return intervals
+
+
 def summarize(experiment_dir: Path) -> dict[str, Any]:
-    """Compare paired outcomes and repeat variability from one completed model session."""
+    """Compare paired outcomes and variability using recorded GPU allocation intervals."""
     plan = _read(experiment_dir / "experiment-plan.json")
     progress = _read(experiment_dir / "progress.json")
     if plan.get("phase_order") != list(PHASES) or not progress.get("success"):
         raise ValueError("The ABBA experiment has not completed as planned")
+    wall_seconds = _interval_seconds(progress)
+    allocations = _allocation_intervals(progress)
+    allocated_seconds = _recorded_seconds(allocations)
     planned_ids = [image["source_id"] for image in plan["images"]]
     if len(planned_ids) != len(set(planned_ids)):
         raise ValueError("Planned source IDs must be unique")
@@ -38,6 +94,17 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
         timing = progress["phases"].get(name)
         if timing is None or timing.get("status") != "COMPLETED":
             raise ValueError(f"Incomplete phase: {name}")
+        attempts = [*timing.get("prior_attempts", []), timing]
+        phase_seconds = _recorded_seconds(attempts)
+        if any(
+            not any(
+                allocation["started_at"] <= attempt["started_at"]
+                and attempt["ended_at"] <= allocation["ended_at"]
+                for allocation in allocations
+            )
+            for attempt in attempts
+        ):
+            raise ValueError(f"Phase lies outside its GPU allocation intervals: {name}")
         report = _read(experiment_dir / name / "diagnostics.json")
         rows = report["rows"]
         if len(rows) != len(planned_ids) or [row["source_id"] for row in rows] != planned_ids:
@@ -114,7 +181,8 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
             "missing_token_usage_calls": report["token_usage_missing_calls"],
             "median_image_duration_seconds": median(image_durations),
             "max_image_duration_seconds": max(image_durations),
-            "phase_gpu_hours": (timing["ended_at"] - timing["started_at"]) / 3600,
+            "phase_gpu_hours": phase_seconds / 3600,
+            "prior_attempt_count": len(attempts) - 1,
             "quality_source_ids": sorted(accepted[name]),
             "human_approved_completed_conversations": None,
             "human_approved_per_gpu_hour": None,
@@ -148,7 +216,16 @@ def summarize(experiment_dir: Path) -> dict[str, Any]:
         },
         "images": len(planned_ids),
         "generator_and_language_assignments_identical": True,
-        "total_allocated_gpu_hours": (progress["ended_at"] - progress["started_at"]) / 3600,
+        "total_allocated_gpu_hours": allocated_seconds / 3600,
+        "wall_elapsed_hours": wall_seconds / 3600,
+        "model_server_sessions": len(allocations),
+        "timing_interpretation": (
+            "Includes recorded loading, inference, interrupted attempts and teardown; "
+            "excludes gaps between allocated sessions. Multiple sessions do not establish "
+            "a comparison within one model startup session."
+            if len(allocations) > 1
+            else "One continuous GPU allocation, including model loading and teardown."
+        ),
         "phases": phases,
         "repeat_overlap": {
             "baseline": overlap("baseline-1", "baseline-2"),
@@ -199,6 +276,9 @@ def main() -> None:
         "",
         f"Images per phase: {result['images']}; total allocated GPU hours: "
         f"{result['total_allocated_gpu_hours']:.3f}.",
+        f"Model-server sessions: {result['model_server_sessions']}; wall elapsed hours: "
+        f"{result['wall_elapsed_hours']:.3f}.",
+        result["timing_interpretation"],
         "",
         "| Phase | Attempted turns | Committed turns | Completed conversations | "
         "Zero-commit images | 2+ committed images | Model calls | Retries | Binding rejections | Median image seconds | Phase GPU hours |",

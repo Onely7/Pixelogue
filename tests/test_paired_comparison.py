@@ -18,7 +18,9 @@ def _write(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value))
 
 
-def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: Path) -> None:
+@pytest.fixture
+def paired_experiment(tmp_path: Path) -> Path:
+    """Save a complete two-image comparison with distinct automatic outcomes."""
     _write(
         tmp_path / "experiment-plan.json",
         {
@@ -111,6 +113,13 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
                 ],
             },
         )
+    return tmp_path
+
+
+def test_abba_comparison_counts_paired_changes_without_inventing_gold(
+    paired_experiment: Path,
+) -> None:
+    tmp_path = paired_experiment
     report = summarize(tmp_path)
     assert report["total_allocated_gpu_hours"] == 0.05
     assert report["repeat_overlap"]["baseline"] == {
@@ -170,3 +179,61 @@ def test_abba_comparison_counts_paired_changes_without_inventing_gold(tmp_path: 
     _write(tmp_path / "progress.json", progress)
     with pytest.raises(ValueError, match="not completed"):
         summarize(tmp_path)
+
+
+def test_resumed_comparison_counts_allocated_sessions_and_interrupted_work(
+    paired_experiment: Path,
+) -> None:
+    path = paired_experiment / "progress.json"
+    progress = json.loads(path.read_text())
+    progress.update(
+        ended_at=1020,
+        prior_attempts=[{"ended_at": 150, "error": "operator interruption"}],
+        allocation_intervals=[
+            {"gpu": 4, "started_at": 0, "ended_at": 150, "gpu_seconds": 150},
+            {"gpu": 4, "started_at": 900, "ended_at": 1020, "gpu_seconds": 120},
+        ],
+    )
+    progress["phases"]["baseline-2"] = {
+        "status": "COMPLETED",
+        "started_at": 960,
+        "ended_at": 1000,
+        "prior_attempts": [{"status": "INTERRUPTED", "started_at": 120, "ended_at": 140}],
+    }
+    _write(path, progress)
+    report = summarize(paired_experiment)
+    assert report["total_allocated_gpu_hours"] == 270 / 3600
+    assert report["wall_elapsed_hours"] == 1020 / 3600
+    assert report["model_server_sessions"] == 2
+    assert report["phases"]["baseline-2"]["phase_gpu_hours"] == 60 / 3600
+    assert report["phases"]["baseline-2"]["prior_attempt_count"] == 1
+    assert "Multiple sessions" in report["timing_interpretation"]
+
+    del progress["allocation_intervals"]
+    _write(path, progress)
+    with pytest.raises(ValueError, match="require recorded GPU allocation"):
+        summarize(paired_experiment)
+
+
+@pytest.mark.parametrize("failure", ["overlap", "missing", "nonfinite", "disagree"])
+def test_comparison_rejects_invalid_allocation_records(
+    paired_experiment: Path, failure: str
+) -> None:
+    path = paired_experiment / "progress.json"
+    progress = json.loads(path.read_text())
+    intervals: list[dict[str, int | float]] = [
+        {"gpu": 4, "started_at": 0, "ended_at": 180, "gpu_seconds": 180}
+    ]
+    if failure == "overlap":
+        intervals.append({"gpu": 4, "started_at": 170, "ended_at": 180, "gpu_seconds": 10})
+    elif failure == "missing":
+        intervals[0]["ended_at"] = 150
+        intervals[0]["gpu_seconds"] = 150
+    elif failure == "nonfinite":
+        intervals[0]["ended_at"] = float("inf")
+    else:
+        intervals[0]["gpu_seconds"] = 0
+    progress["allocation_intervals"] = intervals
+    _write(path, progress)
+    with pytest.raises(ValueError):
+        summarize(paired_experiment)
