@@ -22,6 +22,7 @@ from pixelogue.contracts import (
     ConversationArtifact,
     EvidenceInventory,
     GateVerdict,
+    HistorySnapshot,
     ImageArtifact,
     InstructionCandidate,
     InstructionSelection,
@@ -892,7 +893,7 @@ class SynthesisCoordinator:
         conversation: ConversationArtifact,
         artifact_root: Path,
     ) -> ConversationArtifact:
-        """Re-evaluate immutable questions and answers with both configured judges."""
+        """Re-evaluate immutable text, preserving conversation-local inference failures."""
         model_image = self._model_image(conversation.image, artifact_root)
         image_views = [self._view_metadata(conversation.image)]
         transcript: tuple[PublicMessage, ...] = ()
@@ -1025,48 +1026,24 @@ class SynthesisCoordinator:
                 or internal_reference
                 else GateVerdict.MET
             )
-            if fit is GateVerdict.MET and (
-                self.config.evaluation.mode == "detailed"
-                or turn.instruction.catalog_version is not None
-            ):
-                fit = self._question_intent(
-                    snapshot.public_history,
-                    turn.question,
-                    turn.instruction,
-                    conversation.target_language,
-                    image_views,
-                    model_image,
-                    turn.turn_index,
+            try:
+                rating = self._rate_existing_fit(
+                    fit, conversation, turn, snapshot, image_views, model_image
                 )
-                if fit is GateVerdict.MET:
-                    fit = self._question_fit(
-                        snapshot.public_history,
-                        turn.question,
-                        turn.instruction,
-                        conversation.target_language,
-                        image_views,
-                        model_image,
-                        turn.turn_index,
-                    )
-            if fit is GateVerdict.MET:
-                rating = self._rate_turn(
-                    conversation.conversation_id,
-                    snapshot.history_hash,
-                    snapshot.public_history,
-                    turn.question,
-                    turn.answer,
-                    turn.instruction,
-                    conversation.target_language,
-                    image_views,
-                    model_image,
-                    turn.turn_index,
-                    turn.requirements,
+            except ExecutionError as error:
+                abstained = error.reason in MODEL_OUTPUT_ABSTENTIONS
+                self.store.write_json_artifact(
+                    "model-output-abstentions" if abstained else "errors",
+                    {
+                        "conversation_id": conversation.conversation_id,
+                        "image_id": conversation.image.image_id,
+                        "turn_index": turn.turn_index,
+                        "reason": error.reason,
+                        "message": str(error),
+                        "operation": "rate-existing",
+                    },
                 )
-            else:
-                rating = TurnRating(
-                    items=(),
-                    aggregate="ABSTAIN" if fit is GateVerdict.UNKNOWN else "FAIL",
-                )
+                rating = TurnRating(items=(), aggregate="ABSTAIN" if abstained else "ERROR")
             status: Literal["COMMITTED", "REJECTED", "ABSTAINED", "ERROR"]
             if rating.aggregate == "PASS":
                 status = "COMMITTED"
@@ -1093,12 +1070,63 @@ class SynthesisCoordinator:
                 break
         if terminal == "QUALITY_CANDIDATE" and len(rated_turns) < self.config.data.min_turns:
             terminal = "REJECTED"
-        if self.config.evaluation.mode == "detailed" and len(rated_turns) != len(
-            conversation.turns
+        if (
+            terminal == "QUALITY_CANDIDATE"
+            and self.config.evaluation.mode == "detailed"
+            and len(rated_turns) != len(conversation.turns)
         ):
             terminal = "REJECTED"
         rated = conversation.model_copy(update={"turns": tuple(rated_turns), "status": terminal})
         return self._finish_conversation(rated, persist=False)
+
+    def _rate_existing_fit(
+        self,
+        fit: GateVerdict,
+        conversation: ConversationArtifact,
+        turn: TurnArtifact,
+        snapshot: HistorySnapshot,
+        image_views: list[dict[str, str]],
+        model_image: ModelImage,
+    ) -> TurnRating:
+        """Apply question and answer gates to one stored turn without changing its text."""
+        if fit is GateVerdict.MET and (
+            self.config.evaluation.mode == "detailed"
+            or turn.instruction.catalog_version is not None
+        ):
+            fit = self._question_intent(
+                snapshot.public_history,
+                turn.question,
+                turn.instruction,
+                conversation.target_language,
+                image_views,
+                model_image,
+                turn.turn_index,
+            )
+            if fit is GateVerdict.MET:
+                fit = self._question_fit(
+                    snapshot.public_history,
+                    turn.question,
+                    turn.instruction,
+                    conversation.target_language,
+                    image_views,
+                    model_image,
+                    turn.turn_index,
+                )
+        if fit is GateVerdict.MET:
+            return self._rate_turn(
+                conversation.conversation_id,
+                snapshot.history_hash,
+                snapshot.public_history,
+                turn.question,
+                turn.answer,
+                turn.instruction,
+                conversation.target_language,
+                image_views,
+                model_image,
+                turn.turn_index,
+                turn.requirements,
+            )
+        return TurnRating(items=(), aggregate="ABSTAIN" if fit is GateVerdict.UNKNOWN else "FAIL")
 
     def _repair_answer(
         self,

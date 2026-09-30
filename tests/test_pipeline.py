@@ -915,6 +915,66 @@ def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_erro
     assert abstention_count == 1
 
 
+@pytest.mark.parametrize("mode", ["holistic", "detailed"])
+@pytest.mark.parametrize("stage", ["_question_intent", "_rate_turn"])
+@pytest.mark.parametrize(
+    ("reason", "expected", "artifact_kind"),
+    [
+        ("MODEL_SCHEMA_MISMATCH", "ABSTAINED", "model-output-abstentions"),
+        ("MODEL_HTTP_STATUS", "ERROR", "errors"),
+    ],
+)
+def test_rerating_keeps_failures_with_their_turn_and_continues_other_conversations(
+    tmp_path, image_artifact, monkeypatch, mode, stage, reason, expected, artifact_kind
+):
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path, evaluation_mode=mode)
+    monkeypatch.setattr("pixelogue.pipeline.planned_turn_count", lambda *args: 2)
+    try:
+        original = coordinator.synthesize_image(image, root)
+        assert len(original.turns) == 2
+        monkeypatch.setattr(coordinator, "_question_intent", lambda *args: GateVerdict.MET)
+        monkeypatch.setattr(coordinator, "_question_fit", lambda *args: GateVerdict.MET)
+        monkeypatch.setattr(
+            coordinator, "_rate_turn", lambda *args: TurnRating(items=(), aggregate="PASS")
+        )
+        evaluate = getattr(coordinator, stage)
+        calls = 0
+
+        def fail_once(*args):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise ExecutionError(reason, "Rejected evaluator output")
+            return evaluate(*args)
+
+        monkeypatch.setattr(coordinator, stage, fail_once)
+        failed = coordinator.rate_existing(original, root)
+        assert calls == 1
+        sibling = coordinator.rate_existing(
+            original.model_copy(update={"conversation_id": "other-conversation"}), root
+        )
+        row = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = ? ORDER BY rowid DESC LIMIT 1",
+            (artifact_kind,),
+        ).fetchone()
+        failure = json.loads(store.read_artifact(row[0]))
+    finally:
+        store.close()
+
+    assert failed.status == expected
+    assert len(failed.turns) == 1
+    assert failed.turns[0].status == expected
+    assert failed.turns[0].question == original.turns[0].question
+    assert failed.turns[0].answer == original.turns[0].answer
+    assert sibling.status == "QUALITY_CANDIDATE"
+    assert len(sibling.turns) == 2
+    assert failure["conversation_id"] == original.conversation_id
+    assert failure["turn_index"] == 1
+    assert failure["reason"] == reason
+    assert failure["operation"] == "rate-existing"
+
+
 class ConcurrencyProbe:
     """Track overlapping scripted model calls across test clients."""
 

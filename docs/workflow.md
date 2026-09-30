@@ -58,6 +58,8 @@ uv run --locked pixelogue rate-existing \
 
 This sends saved questions and answers through fresh dual evaluation. It does not rewrite public text. The result and its source-separated summary are sidecars.
 
+Exhausted malformed evaluator outputs produce `ABSTAINED`; transport and server failures remain `ERROR`. Re-rating records the stopped turn's unchanged question, answer and private failure reason, then continues with other conversations. The failed turn is never committed or accepted.
+
 ## 3. Freeze and select a training pool
 
 Only fully accepted training-purpose conversations become pool candidates.

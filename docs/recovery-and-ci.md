@@ -73,6 +73,12 @@ changing settings, including when migrating configurations created before evalua
 were introduced. `rate-existing` rejudges stored Q/A without generating missing turns; an empty
 or one-turn input cannot become a quality candidate.
 
+Re-rating contains inference failures within the affected conversation and continues with the
+remaining inputs. Exhausted malformed-output retries produce `ABSTAINED`; transport and server
+failures remain `ERROR`. The unchanged question and answer stay attached to the stopped turn,
+and a private failure artifact records its conversation, turn index and reason. A failed turn
+cannot be committed or included in an accepted prefix.
+
 ## Large synthesis runs
 
 Synthesis flushes each completed conversation to JSONL instead of rewriting the entire file.
