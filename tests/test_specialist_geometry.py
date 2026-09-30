@@ -90,6 +90,153 @@ def test_numeric_answer_requires_literal_fields_in_schema() -> None:
         GeometryNumericAnswer.model_validate({"coverage": "MET", "reason": "looks plausible"})
 
 
+@pytest.mark.parametrize(
+    ("reported", "expected"), [("60", GateVerdict.MET), ("70", GateVerdict.NOT_MET)]
+)
+def test_triangle_angle_consensus_preserves_commutativity_and_literal_givens(reported, expected):
+    source = _problem().model_copy(
+        update={
+            "target": "B",
+            "target_domain": "angle",
+            "premises": (
+                _premise("given", ("A",), ("30",)),
+                _premise("right_angle", ("D",)),
+                _premise("triangle_angle_sum", ("A", "B", "D")),
+            ),
+        }
+    )
+    reordered = source.model_copy(
+        update={
+            "premises": (
+                *source.premises[:2],
+                _premise("triangle_angle_sum", ("D", "A", "B")),
+            )
+        }
+    )
+    answer = _answer(reported)
+    assert (
+        verify_geometry_problem(
+            (source, reordered),
+            (answer, answer),
+            source.domain,
+            source.scope_id,
+            source.view_id,
+            reported,
+        )[0]
+        is expected
+    )
+    changed = reordered.model_copy(
+        update={
+            "premises": (
+                _premise("given", ("A",), ("40",)),
+                *reordered.premises[1:],
+            )
+        }
+    )
+    assert (
+        verify_geometry_problem(
+            (source, changed),
+            (answer, answer),
+            source.domain,
+            source.scope_id,
+            source.view_id,
+            reported,
+        )[0]
+        is GateVerdict.UNKNOWN
+    )
+    with_extra = reordered.model_copy(
+        update={"premises": (*reordered.premises, _premise("given", ("B",), ("60",)))}
+    )
+    assert (
+        verify_geometry_problem(
+            (source, with_extra),
+            (answer, answer),
+            source.domain,
+            source.scope_id,
+            source.view_id,
+            reported,
+        )[0]
+        is GateVerdict.UNKNOWN
+    )
+
+
+def test_pythagorean_leg_order_is_exchangeable_but_hypotenuse_is_not():
+    source = _problem()
+    answer = _answer("5")
+
+    def other(variables):
+        return source.model_copy(
+            update={"premises": (*source.premises[:2], _premise("pythagorean", variables))}
+        )
+
+    assert (
+        verify_geometry_problem(
+            (source, other(("b", "a", "c"))),
+            (answer, answer),
+            source.domain,
+            source.scope_id,
+            source.view_id,
+            "5",
+        )[0]
+        is GateVerdict.MET
+    )
+    assert (
+        verify_geometry_problem(
+            (source, other(("a", "c", "b"))),
+            (answer, answer),
+            source.domain,
+            source.scope_id,
+            source.view_id,
+            "5",
+        )[0]
+        is GateVerdict.UNKNOWN
+    )
+
+
+def test_equivalent_premise_permutations_cannot_hide_duplicate_facts():
+    source = _problem().model_dump()
+    source["premises"] = (
+        *source["premises"],
+        _premise("pythagorean", ("b", "a", "c")).model_dump(),
+    )
+    with pytest.raises(ValidationError, match="Repeated geometry premise"):
+        GeometryProblem.model_validate(source)
+
+
+@pytest.mark.parametrize(
+    ("rule", "constants", "reported", "swapped_verdict"),
+    [
+        ("parallel_equal_angle", (), "30", GateVerdict.MET),
+        ("similar_ratio", ("2", "3"), "45", GateVerdict.UNKNOWN),
+    ],
+)
+def test_equality_is_symmetric_but_ratio_argument_order_is_preserved(
+    rule, constants, reported, swapped_verdict
+):
+    source = _problem().model_copy(
+        update={
+            "target": "B",
+            "target_domain": "angle",
+            "premises": (_premise("given", ("A",), ("30",)), _premise(rule, ("A", "B"), constants)),
+        }
+    )
+    swapped = source.model_copy(
+        update={"premises": (source.premises[0], _premise(rule, ("B", "A"), constants))}
+    )
+    answer = _answer(reported)
+    assert (
+        verify_geometry_problem(
+            (source, swapped),
+            (answer, answer),
+            source.domain,
+            source.scope_id,
+            source.view_id,
+            reported,
+        )[0]
+        is swapped_verdict
+    )
+
+
 def test_right_triangle_rule_derives_unique_positive_length() -> None:
     source = _problem()
     answer = _answer("5")

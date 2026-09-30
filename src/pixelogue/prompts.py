@@ -41,6 +41,9 @@ similar_ratio needs two variables and two printed constants in corresponding ord
 pythagorean needs three variables in leg, leg, hypotenuse order and no constants.
 Extract the complete supported printed angle/length facts and marked relations in the scope,
 including a printed target value; do not replace visible facts with a bare theorem name.
+Inspect the requested target's nearby labels for a printed value before declaring MET.
+Keep redundant printed givens even when a smaller premise set could solve the question.
+Never turn a value derived from a theorem into a given premise.
 Approximate visual proportions do not establish exact facts. Unsupported
 theorems, ambiguous symbols, missing conditions or nonunique geometry are UNKNOWN. Every normalized
 region must have left < right and top < bottom within [0,1]; use {left:0,top:0,right:1,bottom:1}

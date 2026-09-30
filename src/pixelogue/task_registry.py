@@ -120,7 +120,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "formal_geometry_validator",
-            "3",
+            "4",
             "symbolic",
             "sympy",
             frozenset({"geometric_constraint_solving"}),

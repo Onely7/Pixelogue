@@ -40,7 +40,15 @@ SPECIALIST_SOURCE_STAGES = frozenset(
     }
 )
 STRUCTURAL_OUTPUT_STAGES = frozenset(
-    {"table_source", "table_answer", "chart_source", "chart_answer", "graph_source", "graph_answer"}
+    {
+        "table_source",
+        "table_answer",
+        "chart_source",
+        "chart_answer",
+        "graph_source",
+        "graph_answer",
+        "specialist_geometry_source",
+    }
 )
 
 

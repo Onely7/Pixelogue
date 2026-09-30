@@ -54,6 +54,12 @@ Each new specialist trial checks its registered computation environment before m
 If a specialist source reaches its token limit before a complete JSON object, it receives the same single bounded blind retry with explicit truncation feedback. Schema and length retries have separate counters. The chemical source alone switches to JSON-object generation on this retry to avoid a measured constrained-decoder whitespace loop; the resulting JSON still must pass the unchanged strict `ChemicalSource` model and two-reader graph check. The original incomplete output is retained, and a second invalid output remains `FAILED`.
 The specialist source schema fixes the public calibrated domain, scope ID, and delivered view ID; music also fixes the requested bar range. Source extraction uses `tasks.evidence_max_tokens` so a truncated molecular graph cannot be accepted as complete.
 
+Geometry agreement treats triangle-angle sums and equal-angle arguments as commutative, and
+allows exchanging the two Pythagorean legs while preserving the hypotenuse. Ratio argument order,
+printed constants, omitted premises and evidence-region checks remain strict. The geometry reader
+also sees its exact output Schema and must retain redundant printed facts, including a visible
+target value. A computed value cannot become a printed `given` premise.
+
 ## Research-only commands
 
 `research-exposure` fixes image, question, public history, operation, plausible answer, incorrect answer and trial order before any calls. It evaluates hidden, plausible and incorrect conditions through a separate five-item question assessment. Each condition and repetition makes an independent model request. Complete trial files are reused on resume; failures and absent prices remain explicit. The paired plausible-minus-hidden result and AIAS on independently labelled invalid questions are reported in JSON, CSV and Markdown. Run generator A and B in separate output directories when only one endpoint can be loaded at a time.

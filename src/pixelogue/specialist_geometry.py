@@ -54,6 +54,16 @@ class GeometryPremise(StrictModel):
         return self
 
 
+def _premise_key(premise: GeometryPremise) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+    """Canonicalize only argument orders that preserve the registered equation."""
+    variables = premise.variables
+    if premise.rule in {"triangle_angle_sum", "parallel_equal_angle"}:
+        variables = tuple(sorted(variables))
+    elif premise.rule == "pythagorean":
+        variables = (*sorted(variables[:2]), variables[2])
+    return premise.rule, variables, premise.constants
+
+
 class GeometryProblem(StrictModel):
     """Complete visual and public geometry problem without proposed answer."""
 
@@ -77,7 +87,7 @@ class GeometryProblem(StrictModel):
             raise ValueError("Geometry extraction exceeds sixteen registered variables")
         if self.coverage == "MET" and self.target not in variables:
             raise ValueError("Complete geometry extraction must bind the target to a premise")
-        fact_keys = [(item.rule, item.variables, item.constants) for item in self.premises]
+        fact_keys = [_premise_key(item) for item in self.premises]
         if len(fact_keys) != len(set(fact_keys)):
             raise ValueError("Repeated geometry premise")
         for premise in self.premises:
@@ -142,8 +152,7 @@ def verify_geometry_problem(
     if comparable(sources[0]) != comparable(sources[1]):
         return GateVerdict.UNKNOWN, {"reason": "Independent premise extractions disagree"}
     premise_maps = [
-        {(item.rule, item.variables, item.constants): item.region for item in source.premises}
-        for source in sources
+        {_premise_key(item): item.region for item in source.premises} for source in sources
     ]
     if premise_maps[0].keys() != premise_maps[1].keys():
         return GateVerdict.UNKNOWN, {"reason": "Independent premise extractions disagree"}
