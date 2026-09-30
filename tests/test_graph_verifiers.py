@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pixelogue.contracts import GateVerdict
 from pixelogue.graph_verifiers import (
     BranchCondition,
@@ -118,6 +120,89 @@ def test_unresolved_crossing_and_source_disagreement_abstain() -> None:
             {},
             source.scope_id,
             source.view_id,
+            answer.answer_quote,
+        )
+        is GateVerdict.UNKNOWN
+    )
+
+
+def _renamed(source: GraphSource) -> GraphSource:
+    data = source.model_dump()
+    names = {node.node_id: "node_" + node.node_id for node in source.nodes}
+    for node in data["nodes"]:
+        node["node_id"] = names[node["node_id"]]
+    for edge in data["edges"]:
+        edge["source"], edge["target"] = names[edge["source"]], names[edge["target"]]
+    for field in ("start", "end", "node_id"):
+        if data["query"][field] is not None:
+            data["query"][field] = names[data["query"][field]]
+    return GraphSource.model_validate(data)
+
+
+@pytest.mark.parametrize("rename_both", [False, True])
+def test_unique_visible_labels_bind_local_ids_without_changing_saved_evidence(rename_both) -> None:
+    original = _source("graph_connectivity", "neighbors", node_id="A")
+    other = _renamed(original)
+    source = other if rename_both else original
+    before = other.model_dump_json()
+    for answer, expected in (
+        (_answer("B and C", members=("B", "C")), GateVerdict.MET),
+        (_answer("B", members=("B",)), GateVerdict.NOT_MET),
+    ):
+        assert (
+            verify_graph(
+                source.task_id,
+                (source, other),
+                (answer, answer),
+                {},
+                "scope",
+                "view",
+                answer.answer_quote,
+            )
+            is expected
+        )
+    assert other.model_dump_json() == before
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    [
+        "duplicate_label",
+        "region",
+        "edge_region",
+        "direction",
+        "query",
+        "missing_reference",
+        "missing_edge",
+    ],
+)
+def test_label_binding_preserves_ambiguity_and_structural_disagreement(mismatch) -> None:
+    source = _source("graph_connectivity", "neighbors", node_id="A")
+    data = _renamed(source).model_dump()
+    if mismatch == "duplicate_label":
+        data["nodes"][1]["label"] = "A"
+    elif mismatch == "region":
+        data["nodes"][0]["region"] = {"left": 0.99, "top": 0.99, "right": 1, "bottom": 1}
+    elif mismatch == "edge_region":
+        data["edges"][0]["region"] = {"left": 0.99, "top": 0.99, "right": 1, "bottom": 1}
+    elif mismatch == "direction":
+        data["edges"][0]["directed"] = False
+    elif mismatch == "query":
+        data["query"]["node_id"] = "node_B"
+    elif mismatch == "missing_reference":
+        data["query"]["node_id"] = "absent"
+    else:
+        data["edges"] = data["edges"][:-1]
+    other = GraphSource.model_validate(data)
+    answer = _answer("B and C", members=("B", "C"))
+    assert (
+        verify_graph(
+            source.task_id,
+            (source, other),
+            (answer, answer),
+            {},
+            "scope",
+            "view",
             answer.answer_quote,
         )
         is GateVerdict.UNKNOWN

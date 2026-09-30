@@ -51,6 +51,20 @@ STRUCTURAL_OUTPUT_STAGES = frozenset(
         "specialist_circuit_source",
     }
 )
+STRUCTURAL_ANSWER_FORMS = {
+    "table_answer": {
+        "table_cell_lookup": frozenset({"value"}),
+        "table_predicate_selection": frozenset({"rows"}),
+        "table_cross_reference": frozenset({"pairs"}),
+    },
+    "graph_answer": {
+        "diagram_element_lookup": frozenset({"label"}),
+        "graph_connectivity": frozenset({"members", "edges"}),
+        "graph_path_tracing": frozenset({"paths"}),
+        "diagram_process_description": frozenset({"edges"}),
+        "diagram_branch_evaluation": frozenset({"paths"}),
+    },
+}
 
 
 def _bind_specialist_source_schema(
@@ -546,11 +560,27 @@ class VllmClient:
                 # Their omission otherwise permits an acknowledgement-only JSON object.
                 schema["required"] = sorted(schema["properties"])
             if stage == "chart_source":
-                mark_properties = schema["$defs"]["ChartMark"]["properties"]
+                mark_schema = schema["$defs"]["ChartMark"]
+                mark_properties = mark_schema["properties"]
+                mark_schema["required"] = sorted(mark_properties)
+                mark_properties["visible_label"]["description"] = (
+                    "Copy the visible numeric value label for explicit_label precision, "
+                    "including the literal lower/upper number. A category name is not "
+                    "a numeric value label. Use null only for an interval estimate."
+                )
                 for endpoint in ("lower", "upper"):
                     mark_properties[endpoint]["description"] = (
                         "Bare finite decimal string. No inequality, unit, label or explanation."
                     )
+            elif stage in STRUCTURAL_ANSWER_FORMS:
+                operation = payload.get("expected_operation")
+                task_id = operation.get("task_id") if isinstance(operation, dict) else None
+                forms = STRUCTURAL_ANSWER_FORMS[stage]
+                allowed = forms.get(task_id)
+                if allowed is not None:
+                    result_fields = set().union(*forms.values())
+                    for field in result_fields - allowed:
+                        schema["properties"][field] = {"type": "null", "const": None}
             elif stage == "specialist_circuit_source":
                 schema["properties"]["closed"]["description"] = (
                     "The visible component and terminal inventory is complete. "

@@ -114,7 +114,9 @@ format is strict structured_json. Never see the proposed answer.""",
 Recover the numeric value axis (horizontal or vertical), units and labeled ticks, legend and
 requested marks. Give each mark its
 series, category, image region, value interval and honest precision. Exact values require visible
-printed labels; pixel estimates need intervals and declared decimal precision. For ranking, trends
+printed labels copied into visible_label, including the number itself, never just the category
+name. Set lower=upper and precision=explicit_label only with that numeric quote. Pixel estimates
+need intervals, precision=interval and visible_label=null. For ranking, trends
 and relations certify the complete relevant series. A missing series or missing numeric calibration
 for an estimated value means UNKNOWN. Respect linear and log axes. If no numeric ticks are printed
 but all relevant values have exact printed labels, set axis.scale=unmarked and axis.ticks=[]; never
@@ -133,14 +135,23 @@ against blind chart readings. No image is needed to parse a plainly written numb
 Reconstruct each relevant table as a complete rectangular grid. Preserve every blank as an explicit
 cell and every merged cell with its exact row/column span, text, kind and image region. Distinguish
 header rows from data rows. Bind the requested lookup, predicate, sort or join to explicit row and
-column indices and keys. Each table needs table_id, rows, cols, cells, data_rows and closed;
+column indices and keys. Assign table IDs table_0, table_1 and so on in top-to-bottom,
+left-to-right reading order. Count row and col from zero including header rows. For operation
+lookup, locate the requested named row and column in the visible grid and set query.row and
+query.col to those indices; predicate and join fields are null. A missing or ambiguous requested
+cell requires UNKNOWN and tables=[], even if some other cells are readable.
+Each table needs table_id, rows, cols, cells, data_rows and closed;
 query is a separate required object with operation and table_ids. Each cell region has positive
 width and height within the scope. Missing headers, obscured cells, ambiguous joins or off-scope
 tables are UNKNOWN. For UNKNOWN use tables=[] and still describe the public operation in query.
 Never use the candidate answer to fill a cell.""",
     "table_answer": """Parse only the candidate answer and public question, with no image.
 Quote the exact answer substring and return only its literal lookup value, selected row labels in
-order, or matched value pairs. Ambiguous, missing or conflicting results are UNKNOWN. Do not infer
+order, or matched value pairs. Use only value for table_cell_lookup, only rows for
+table_predicate_selection, and only pairs for table_cross_reference; all other result fields
+are null. Do not extract a row label from the question into the answer's rows or pairs.
+For UNKNOWN, answer_quote is empty and value, rows and pairs are null.
+Ambiguous, missing or conflicting results are UNKNOWN. Do not infer
 the correct table values or predicate result. coverage=MET means the literal answer was parsed,
 including a wrong value; it does not certify a table lookup. The controller checks correctness
 against blind table readings. No image is needed to parse an unambiguous reported value.""",

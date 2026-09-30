@@ -90,9 +90,60 @@ def test_structural_reader_sees_the_exact_decoder_contract_without_mutating_mode
         assert "candidate_answer" not in text["input"]
         with pytest.raises(ExecutionError, match="candidate_answer"):
             validate_stage_payload(stage, {**payload, "candidate_answer": "hidden answer"})
+        if stage == "chart_source":
+            mark = decoder_schema["$defs"]["ChartMark"]
+            assert "visible_label" in mark["required"]
+            assert "numeric value label" in mark["properties"]["visible_label"]["description"]
     else:
         assert set(decoder_schema["required"]) == set(decoder_schema["properties"])
         assert [part["type"] for part in body["messages"][1]["content"]] == ["text"]
+
+
+@pytest.mark.parametrize(
+    ("stage", "model", "task_id", "allowed"),
+    [
+        ("table_answer", TableAnswer, "table_cell_lookup", {"value"}),
+        ("table_answer", TableAnswer, "table_predicate_selection", {"rows"}),
+        ("table_answer", TableAnswer, "table_cross_reference", {"pairs"}),
+        ("table_answer", TableAnswer, "unknown_operation", None),
+        ("graph_answer", GraphAnswer, "diagram_element_lookup", {"label"}),
+        ("graph_answer", GraphAnswer, "graph_connectivity", {"members", "edges"}),
+        ("graph_answer", GraphAnswer, "graph_path_tracing", {"paths"}),
+        ("graph_answer", GraphAnswer, "diagram_process_description", {"edges"}),
+        ("graph_answer", GraphAnswer, "diagram_branch_evaluation", {"paths"}),
+        ("graph_answer", GraphAnswer, "unknown_operation", None),
+    ],
+)
+def test_parser_schema_limits_forms_using_only_the_public_operation(stage, model, task_id, allowed):
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="forms")
+    original = model.model_json_schema()
+    try:
+        body = client._build_body(
+            stage,
+            {"expected_operation": {"task_id": task_id}, "candidate_answer": "Wrong value"},
+            (),
+            model,
+            max_tokens=2048,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    schema = body["response_format"]["json_schema"]["schema"]
+    text = json.loads(body["messages"][1]["content"][0]["text"])
+    assert text["response_schema"] == schema
+    assert schema["properties"]["coverage"] == original["properties"]["coverage"]
+    fields = (
+        ("value", "rows", "pairs")
+        if model is TableAnswer
+        else ("label", "members", "edges", "paths")
+    )
+    for field in fields:
+        if allowed is None or field in allowed:
+            assert schema["properties"][field] == original["properties"][field]
+        else:
+            assert schema["properties"][field] == {"type": "null", "const": None}
+    assert model.model_json_schema() == original
 
 
 @pytest.mark.parametrize(

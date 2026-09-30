@@ -164,6 +164,63 @@ def _canonical(source: GraphSource) -> dict[str, object]:
     return result
 
 
+def _label_bound_source(source: GraphSource) -> GraphSource | None:
+    """Resolve local references to unique displayed labels without changing evidence."""
+    labels = {node.node_id: node.label for node in source.nodes}
+    if len(set(labels.values())) != len(labels):
+        return None
+    query = source.query.model_dump()
+    for field in ("start", "end", "node_id"):
+        reference = query[field]
+        if reference is not None:
+            if reference not in labels:
+                return None
+            query[field] = labels[reference]
+    return source.model_copy(
+        update={
+            "nodes": tuple(
+                node.model_copy(update={"node_id": node.label}) for node in source.nodes
+            ),
+            "edges": tuple(
+                edge.model_copy(
+                    update={"source": labels[edge.source], "target": labels[edge.target]}
+                )
+                for edge in source.edges
+            ),
+            "query": GraphQuery.model_validate(query),
+        }
+    )
+
+
+def _region_overlap(left: ImageRegion, right: ImageRegion) -> float:
+    """Return intersection over union for two positive image rectangles."""
+    intersection = max(0, min(left.right, right.right) - max(left.left, right.left)) * max(
+        0, min(left.bottom, right.bottom) - max(left.top, right.top)
+    )
+    left_area = (left.right - left.left) * (left.bottom - left.top)
+    right_area = (right.right - right.left) * (right.bottom - right.top)
+    return intersection / (left_area + right_area - intersection)
+
+
+def _regions_agree(left: GraphSource, right: GraphSource) -> bool:
+    """Bind agreed labels and edges to overlapping regions in the same view."""
+    right_nodes = {node.node_id: node for node in right.nodes}
+    if any(
+        _region_overlap(node.region, right_nodes[node.node_id].region) < 0.1 for node in left.nodes
+    ):
+        return False
+    left_edges = sorted(
+        left.edges, key=lambda edge: (edge.source, edge.target, str(edge.condition))
+    )
+    right_edges = sorted(
+        right.edges, key=lambda edge: (edge.source, edge.target, str(edge.condition))
+    )
+    return all(
+        _region_overlap(a.region, b.region) >= 0.1
+        for a, b in zip(left_edges, right_edges, strict=True)
+    )
+
+
 def _neighbors(source: GraphSource, node_id: str, direction: str) -> tuple[str, ...]:
     result: set[str] = set()
     for edge in source.edges:
@@ -273,7 +330,13 @@ def verify_graph(
         or source.scope_id != scope_id
         or source.view_id != view_id
         for source in sources
-    ) or _canonical(sources[0]) != _canonical(sources[1]):
+    ):
+        return GateVerdict.UNKNOWN
+    bound = tuple(_label_bound_source(source) for source in sources)
+    if bound[0] is None or bound[1] is None:
+        return GateVerdict.UNKNOWN
+    sources = (bound[0], bound[1])
+    if _canonical(sources[0]) != _canonical(sources[1]) or not _regions_agree(*sources):
         return GateVerdict.UNKNOWN
     if any(
         answer.coverage != "MET" or answer.answer_quote not in candidate_answer

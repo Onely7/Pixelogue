@@ -86,7 +86,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "graph_check",
-            "1",
+            "2",
             supported_tasks=frozenset(
                 {
                     "diagram_element_lookup",
