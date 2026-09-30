@@ -86,3 +86,11 @@ def test_circuit_error_identifies_missing_duplicate_and_unexpected_terminals() -
     assert "missing=['R2:a']" in message
     assert "duplicate=['R1:a']" in message
     assert "unexpected=['R9:b']" in message
+
+
+def test_inconsistent_complete_flag_is_rejected_without_repairing_the_source() -> None:
+    source = _source().model_dump()
+    source["closed"] = False
+    with pytest.raises(ValidationError, match="Circuit is open"):
+        CircuitSource.model_validate(source)
+    assert source["closed"] is False

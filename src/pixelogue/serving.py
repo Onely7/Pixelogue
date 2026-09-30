@@ -48,6 +48,7 @@ STRUCTURAL_OUTPUT_STAGES = frozenset(
         "graph_source",
         "graph_answer",
         "specialist_geometry_source",
+        "specialist_circuit_source",
     }
 )
 
@@ -550,6 +551,11 @@ class VllmClient:
                     mark_properties[endpoint]["description"] = (
                         "Bare finite decimal string. No inequality, unit, label or explanation."
                     )
+            elif stage == "specialist_circuit_source":
+                schema["properties"]["closed"]["description"] = (
+                    "The visible component and terminal inventory is complete. "
+                    "A fully read passive network with no power source is closed."
+                )
             request_text["response_schema"] = schema
             user_content[0]["text"] = canonical_json(request_text).decode()
         body: dict[str, Any] = {

@@ -60,6 +60,11 @@ def _schema_retry_feedback(stage: str, error: ExecutionError) -> str:
             "for a note event, set a resolved integer staff_step. "
         ),
         "specialist_circuit_source": (
+            "closed means a complete visible component/terminal inventory. A fully "
+            "read passive network without a power source has closed=true. For MET, "
+            "closed and junctions_resolved must both be true after verifying every pin. "
+            "If the inventory is incomplete, return UNKNOWN with closed=false, "
+            "components=[] and nets=[]. "
             "Net terminals may contain only component pins, such as R1:a. "
             "Omit junction names such as n1, and include each listed component's "
             ":a and :b exactly once. "

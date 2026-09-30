@@ -25,6 +25,8 @@ from pixelogue.task_registry import ValidatorRegistration
 def test_specialist_retry_uses_stage_specific_feedback() -> None:
     error = ExecutionError("MODEL_SCHEMA_MISMATCH", "Circuit netlist terminals differ")
     circuit = _schema_retry_feedback("specialist_circuit_source", error)
+    assert "component/terminal inventory" in circuit
+    assert "without a power source" in circuit
     ui = _schema_retry_feedback("specialist_ui_source", error)
     music = _schema_retry_feedback("specialist_music_source", error)
     chemistry = _schema_retry_feedback("specialist_chemistry_source", error)

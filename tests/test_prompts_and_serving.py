@@ -26,6 +26,8 @@ from pixelogue.serving import (
     read_request_artifact,
 )
 from pixelogue.specialist_chemistry import ChemicalSource
+from pixelogue.specialist_circuit import CircuitSource
+from pixelogue.specialist_geometry import GeometryProblem
 from pixelogue.specialist_music import MusicSource
 from pixelogue.store import RunStore
 from pixelogue.table_verifiers import TableAnswer, TableSource
@@ -91,6 +93,44 @@ def test_structural_reader_sees_the_exact_decoder_contract_without_mutating_mode
     else:
         assert set(decoder_schema["required"]) == set(decoder_schema["properties"])
         assert [part["type"] for part in body["messages"][1]["content"]] == ["text"]
+
+
+@pytest.mark.parametrize(
+    ("stage", "model"),
+    [
+        ("specialist_geometry_source", GeometryProblem),
+        ("specialist_circuit_source", CircuitSource),
+    ],
+)
+def test_specialist_structural_reader_sees_the_bound_schema_and_no_answer(tmp_path, stage, model):
+    path = tmp_path / "image.png"
+    path.write_bytes(b"test image")
+    image = ModelImage(
+        view_id="full:view",
+        path=path,
+        encoded_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        media_type="image/png",
+    )
+    payload = {
+        "image_views": [{"view_id": image.view_id}],
+        "expected_operation": {"calibrated_domain": "public-domain", "scope_id": "public-scope"},
+    }
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="schema")
+    try:
+        body = client._build_body(
+            stage, payload, (image,), model, max_tokens=4096, temperature=0.0, seed=1
+        )
+    finally:
+        client.client.close()
+    text = json.loads(body["messages"][1]["content"][0]["text"])
+    schema = body["response_format"]["json_schema"]["schema"]
+    assert text["response_schema"] == schema
+    assert text["input"] == payload
+    assert schema["properties"]["domain"]["const"] == "public-domain"
+    assert "candidate_answer" not in text["input"]
+    assert "const" not in model.model_json_schema()["properties"]["domain"]
+    if stage == "specialist_circuit_source":
+        assert "inventory" in schema["properties"]["closed"]["description"]
 
 
 def test_instruction_selector_information_boundary() -> None:

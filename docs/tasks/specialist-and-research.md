@@ -60,6 +60,11 @@ printed constants, omitted premises and evidence-region checks remain strict. Th
 also sees its exact output Schema and must retain redundant printed facts, including a visible
 target value. A computed value cannot become a printed `given` premise.
 
+Circuit `closed` records a complete inventory of visible components and terminals. A passive
+network with no power source can have complete evidence. `MET` still requires resolved junctions,
+every pin exactly once, region checks and agreement of the two blind netlists. The reader receives
+the same bound output Schema in its text and decoder; invalid flags are never repaired by the controller.
+
 ## Research-only commands
 
 `research-exposure` fixes image, question, public history, operation, plausible answer, incorrect answer and trial order before any calls. It evaluates hidden, plausible and incorrect conditions through a separate five-item question assessment. Each condition and repetition makes an independent model request. Complete trial files are reused on resume; failures and absent prices remain explicit. The paired plausible-minus-hidden result and AIAS on independently labelled invalid questions are reported in JSON, CSV and Markdown. Run generator A and B in separate output directories when only one endpoint can be loaded at a time.
