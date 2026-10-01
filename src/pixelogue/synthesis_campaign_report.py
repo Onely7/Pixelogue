@@ -7,11 +7,11 @@ It reads public dialogue only; human quality and semantic duplication remain unm
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import html
 import json
 import math
-import os
 import re
 import unicodedata
 from collections import Counter, defaultdict
@@ -242,7 +242,9 @@ def write_reports(report: dict[str, Any], artifact_root: Path, destination: Path
                 with Image.open(original) as image:
                     image.thumbnail((640, 480))
                     image.convert("RGB").save(thumbnail, quality=85)
-            relative = Path(os.path.relpath(thumbnail, destination)).as_posix()
+            image_data_uri = "data:image/jpeg;base64," + base64.b64encode(
+                thumbnail.read_bytes()
+            ).decode("ascii")
             kind = (
                 "自動品質候補（人手未確認）"
                 if example["conversation_status"] == "QUALITY_CANDIDATE"
@@ -253,7 +255,7 @@ def write_reports(report: dict[str, Any], artifact_root: Path, destination: Path
                 for message in example["public_history"]
             )
             examples_html.append(
-                f'<article><p class="kind">{kind}</p><img loading="lazy" src="{e(relative, quote=True)}" alt="評価画像">'
+                f'<article><p class="kind">{kind}</p><img loading="lazy" src="{e(image_data_uri, quote=True)}" alt="評価画像">'
                 f"<p><b>指示</b>: {e(example['question'])}</p><p><b>回答</b>: {e(example['answer'])}</p>"
                 f"<details><summary>先行する公開履歴・出典ID</summary>{history}<p>{e(example['source_id'])} / {e(example['conversation_id'])} / turn {example['turn_index']}</p></details></article>"
             )

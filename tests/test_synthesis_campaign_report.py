@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import shutil
+from collections import Counter
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -125,3 +129,64 @@ def test_gallery_rejects_an_image_outside_prepared_root(tmp_path: Path) -> None:
     report = build_report([{"source_id": "sample"}], [candidate], load_task_catalog()["tasks"])
     with pytest.raises(ValueError, match="leaves"):
         write_reports(report, prepared, tmp_path / "report")
+
+
+class ImageSources(HTMLParser):
+    """Collect gallery images as a browser parser sees their source attributes."""
+
+    def __init__(self) -> None:
+        """Start an empty image source collection."""
+        super().__init__()
+        self.sources: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Record image sources while ignoring other gallery content."""
+        if tag == "img":
+            source = dict(attrs).get("src")
+            assert source is not None
+            self.sources.append(source)
+
+
+def test_html_images_survive_moving_only_the_html_file(tmp_path: Path) -> None:
+    """Keep the exact two source thumbnails in a relocated single HTML file."""
+    prepared = tmp_path / "prepared"
+    prepared.mkdir()
+    rows = []
+    for source, color in (("first", "red"), ("second", "blue")):
+        Image.new("RGB", (128, 128), color).save(prepared / f"{source}.png")
+        row = conversation("QUALITY_CANDIDATE", ("COMMITTED", "COMMITTED"), source)
+        row["image"]["full_view"] = {
+            "relative_path": f"{source}.png",
+            "encoded_sha256": source,
+        }
+        rows.append(row)
+    report = build_report(
+        [{"source_id": row["image"]["source_id"]} for row in rows],
+        rows,
+        load_task_catalog()["tasks"],
+    )
+    destination = tmp_path / "report"
+    write_reports(report, prepared, destination)
+    expected = Counter(
+        {
+            (destination / "thumbnails/first.jpg").read_bytes(): 2,
+            (destination / "thumbnails/second.jpg").read_bytes(): 2,
+        }
+    )
+    portable = tmp_path / "portable"
+    portable.mkdir()
+    moved = portable / "examples.html"
+    shutil.copyfile(destination / "examples.html", moved)
+    assert list(portable.iterdir()) == [moved]
+    parser = ImageSources()
+    parser.feed(moved.read_text())
+    prefix = "data:image/jpeg;base64,"
+    assert len(parser.sources) == 4
+    assert all(source.startswith(prefix) for source in parser.sources)
+    assert (
+        Counter(
+            base64.b64decode(source.removeprefix(prefix), validate=True)
+            for source in parser.sources
+        )
+        == expected
+    )

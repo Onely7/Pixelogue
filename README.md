@@ -51,7 +51,7 @@ Read the guides in this order:
 8. [Qwen3.5-9B throughput validation](docs/validation/qwen35-9b-throughput.md)
 9. [Measured quality and synthesis performance](docs/validation/quality-and-performance.md)
 10. [Implementation map](docs/implementation-map.md)
-11. [2,000-image synthesis and examples by task](docs/validation/synthesis-campaign.md)
+11. [Open Images synthesis and examples by task](docs/validation/synthesis-campaign.md)
 
 Japanese documentation begins at [README_ja.md](README_ja.md).
 

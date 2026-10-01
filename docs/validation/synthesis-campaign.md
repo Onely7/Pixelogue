@@ -1,4 +1,4 @@
-# Synthesis validation on 2,000 images and examples by task
+# Open Images synthesis validation and examples by task
 
 The pinned Open Images V7 validation cohort contains 2,000 evaluation-only images.
 Selection excludes the earlier 20 images and follows SHA-256 ranks of `20261001:ImageID`.
@@ -6,6 +6,12 @@ Only download/ingestion failures and exact canonical-pixel duplicates were repla
 Annotations, titles and boxes never enter model payloads. Near-copy detection was not performed.
 [The manifest](../../validation/open_images_v7_eval_2000_manifest.jsonl) records identities,
 attributions and byte hashes; downloaded pixels and generated results stay outside Git.
+
+The completed campaign used 1,400 images after the user reduced the target during execution.
+It retained the first 1,400 entries of the frozen input order, the original model allocation
+and the original run identity. The 2,000-image acquisition and setup below describe that
+original cohort. Scope amendments and final local results are stored under
+`artifacts/open-images-1400/`; they do not change the prepared manifest or training eligibility.
 
 ```sh
 uv run --locked python validation/fetch_open_images_eval_2000.py
@@ -72,10 +78,29 @@ unmeasured without independent ballots. Photographs alone do not establish all-7
 `report/examples.html` lists all 72 tasks, with text and family filtering. The report also writes
 `examples.md`, `examples.jsonl`, `task-coverage.csv` and `report.json`. Each task shows up to three
 actual examples with the original Q/A, preceding public history, source and conversation IDs,
-and thumbnails of the actual canonical model input.
+and thumbnails of the actual canonical model input. HTML embeds those JPEG thumbnails as data
+URLs, so copying only `examples.html` preserves the images. The Markdown version uses the
+separate `thumbnails/` directory.
 
 Automatic candidates and diagnostic prefixes are labeled separately. Tasks without examples stay
 visible; catalog example questions and invented answers are never substituted. This gallery is
 neither a human gold-label audit nor a training export of evaluation images.
+
+## Completed 1,400-image evaluation
+
+The standard Qwen/Gemma pair produced 265 automatic quality candidates (18.9%): 204 with two
+turns, 54 with three and seven with four. The remaining 1,135 images were rejected or abstained.
+Conversation execution errors were zero; 352 malformed model calls and 593 retries remained.
+Candidates covered five tasks in two families, with 48.8% of candidate turns using object
+identification. Thus the campaign demonstrated execution and saved-output reuse, while yield
+and instruction diversity remain limited. Independent human quality is unmeasured.
+
+Local `artifacts/open-images-1400/report/examples.html` lists all 72 tasks and distinguishes
+actual examples from missing coverage. `final-results.md`, `diagnostics.md` and
+`evaluation-public/` contain results, stop reasons and public evaluation conversations.
+The scoped resume used the original full manifest and allocation, bounded work to the amended
+prefix and forbade inference; calls, budget, commits and public bytes stayed identical.
+Generation used revision `86746c6`. Resume it with that frozen revision; the later HTML renderer
+change creates a new code identity for future synthesis runs.
 
 [日本語ガイド](synthesis-campaign_ja.md)

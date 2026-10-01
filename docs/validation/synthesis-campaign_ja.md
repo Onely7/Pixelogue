@@ -1,4 +1,4 @@
-# 2,000画像の合成確認とタスク別実例
+# Open Images合成の確認とタスク別実例
 
 Open Images V7のvalidation splitから選んだ2,000画像は、合成パイプラインの評価用です。
 既存20画像を除き、seed `20261001` によるImageIDのSHA-256順で選択しました。
@@ -8,6 +8,11 @@ Open Images V7のvalidation splitから選んだ2,000画像は、合成パイプ
 
 [固定した2,000画像の出典・ハッシュ](../../validation/open_images_v7_eval_2000_manifest.jsonl)
 を使って復元できます。画像bytesと合成結果はGitへ含めません。
+
+実際の評価は、実行中のユーザー指示により1,400画像へ縮小して完了しました。
+凍結済みの入力順の先頭1,400枚を使い、元のモデル割当とrun識別を保持しています。
+以下の2,000画像の取得・設定は元の画像群の手順です。対象変更と最終結果は
+`artifacts/open-images-1400/` に保存し、取り込み済みmanifestや学習利用の可否は変更していません。
 
 ```sh
 uv run --locked python validation/fetch_open_images_eval_2000.py
@@ -74,10 +79,27 @@ uv run --locked python -m pixelogue.synthesis_campaign_report \
 生成される `report/examples.html` は全72タスクを一覧化し、タスク・指示・回答と分野で検索できます。
 `examples.md`、`examples.jsonl`、`task-coverage.csv`、`report.json` も保存します。
 各タスクで最大3件の実例を、元の質問・回答・先行する公開履歴・会話IDとともに提示します。
-画像は正規化した実入力のローカルthumbnailです。
+画像は正規化した実入力の縮小JPEGです。HTMLには画像をdata URLとして埋め込むため、
+`examples.html` だけを移動しても表示できます。Markdown版では別の `thumbnails/` ディレクトリを使います。
 
 自動品質候補と、未採用会話の診断用prefixを明示します。
 実例がないタスクは「実例なし」と記載し、カタログの例文や人工的な回答で補いません。
 この閲覧資料は人手監査の正解票ではなく、評価画像を学習用にexportするものでもありません。
+
+## 1,400画像の実測結果
+
+標準Qwen/Gemma対で自動品質候補265件（18.9%）を得ました。2ターン204件、3ターン54件、
+4ターン7件です。残る1,135画像は棄却・棄権でした。会話の実行エラーは0件ですが、
+モデルの不正呼び出し352件、再試行593件が残っています。候補は5タスク・2分野に限られ、
+候補ターンの48.8%が物体識別でした。実行と保存済み出力の再利用を確認できた一方、
+採用率と指示の多様性には課題が残ります。独立した人手品質は未測定です。
+
+ローカルの `artifacts/open-images-1400/report/examples.html` は全72タスクを一覧化し、
+実例の有無を明記します。`final-results.md`、`diagnostics.md`、`evaluation-public/` に
+実測結果・停止理由・評価用の公開会話を保存しました。対象範囲の再開では元の全manifestと
+モデル割当を使い、処理を変更後の先頭範囲に限定し、推論を禁止しました。
+呼び出し・費用・確定結果・公開会話のbytesが同一であることを確認しています。
+生成時のコードは `86746c6` です。このrunの再開には凍結済みrevisionを使います。
+後から追加したHTML生成の変更は、今後の合成runでは新しいコード識別となります。
 
 [English guide](synthesis-campaign.md)
