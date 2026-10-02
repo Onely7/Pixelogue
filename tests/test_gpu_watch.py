@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import json
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -22,6 +23,52 @@ def test_idle_device_needs_low_memory_zero_utilization_and_no_compute_process() 
         {"index": 3, "used_mib": 500, "utilization": 0, "compute_process": 1},
     ]
     assert gpu_watch.idle_indices(rows) == {0}
+
+
+def test_unavailable_device_does_not_hide_healthy_or_occupied_devices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = iter(
+        (
+            "0, GPU-broken, 15, 49140, [N/A]\n"
+            "1, GPU-idle, 15, 49140, 0\n"
+            "2, GPU-occupied, 500, 49140, 0\n",
+            "GPU-occupied, 12345\n",
+        )
+    )
+    monkeypatch.setattr(subprocess, "check_output", lambda *_args, **_kwargs: next(responses))
+    assert gpu_watch.idle_indices(gpu_watch._metrics()) == {1}
+
+
+def test_watch_and_handoff_use_the_explicit_host_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote_state = tmp_path / "remote" / "state.json"
+    remote_state.parent.mkdir()
+    remote_state.write_text('{"active":{"pid":12345}}')
+    local_state = tmp_path / "local" / "boot-id" / "state.json"
+    monkeypatch.setattr(gpu_watch, "STATE", remote_state)
+    monkeypatch.setattr(
+        gpu_watch,
+        "_watch",
+        lambda *_args: gpu_watch._save({"active": None, "used_gpu_seconds": 0.0}),
+    )
+    monkeypatch.setattr(sys, "argv", ["gpu_watch.py", "watch", "--state-file", str(local_state)])
+    gpu_watch.main()
+    assert json.loads(local_state.read_text())["active"] is None
+    assert json.loads(remote_state.read_text())["active"] == {"pid": 12345}
+    rows: list[dict[str, int | str]] = [
+        {"index": 4, "used_mib": 15, "utilization": 0, "compute_process": 0}
+    ]
+    monkeypatch.setattr(gpu_watch, "_metrics", lambda: rows)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["gpu_watch.py", "wait-release", "--state-file", str(local_state), "--gpu-index", "4"],
+    )
+    monkeypatch.setattr(gpu_watch.time, "sleep", lambda _seconds: None)
+    gpu_watch.main()
 
 
 def test_handoff_waits_for_reservation_lock_and_idle_device(

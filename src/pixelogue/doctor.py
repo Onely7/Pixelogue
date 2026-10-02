@@ -46,7 +46,7 @@ class GpuDevice(StrictModel):
     total_mib: int = Field(ge=0)
     used_mib: int = Field(ge=0)
     free_mib: int = Field(ge=0)
-    utilization_percent: int = Field(ge=0, le=100)
+    utilization_percent: int | None = Field(ge=0, le=100)
     idle: bool
 
 
@@ -95,6 +95,7 @@ def inspect_gpus() -> tuple[GpuDevice, ...]:
         if len(fields) != 6:
             continue
         index, name, total, used, free, utilization = fields
+        utilization_percent = None if utilization in ("N/A", "[N/A]") else int(utilization)
         devices.append(
             GpuDevice(
                 index=int(index),
@@ -102,8 +103,8 @@ def inspect_gpus() -> tuple[GpuDevice, ...]:
                 total_mib=int(total),
                 used_mib=int(used),
                 free_mib=int(free),
-                utilization_percent=int(utilization),
-                idle=int(used) < 1024 and int(utilization) == 0,
+                utilization_percent=utilization_percent,
+                idle=int(used) < 1024 and utilization_percent == 0,
             )
         )
     return tuple(devices)

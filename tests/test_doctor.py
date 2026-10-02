@@ -1,5 +1,9 @@
+import subprocess
+
+import pytest
 from pydantic import HttpUrl
 
+from pixelogue import doctor
 from pixelogue.config import ModelEndpoint
 from pixelogue.doctor import GpuDevice, _allocate_required_gpus
 
@@ -40,6 +44,26 @@ def test_required_servers_receive_distinct_gpus_or_report_shortfall() -> None:
 
     short = _allocate_required_gpus(endpoints, _gpus(4))
     assert sum(not group for group in short.values()) == 1
+
+
+@pytest.mark.parametrize("missing", ["N/A", "[N/A]"])
+def test_unknown_utilization_is_reported_without_admitting_the_device(
+    missing: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", lambda _name: "nvidia-smi")
+    response = subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout=f"0, faulty, 48000, 15, 47985, {missing}\n1, healthy, 48000, 15, 47985, 0\n",
+    )
+    monkeypatch.setattr(doctor.subprocess, "run", lambda *_args, **_kwargs: response)
+    gpus = doctor.inspect_gpus()
+    assert gpus[0].utilization_percent is None
+    assert not gpus[0].idle
+    assert gpus[1].idle
+    endpoints = (("selector", _endpoint("Qwen/Qwen3.5-2B", 1), True),)
+    assert _allocate_required_gpus(endpoints, gpus) == {"selector": (1,)}
 
 
 def test_quantized_standard_pair_can_share_one_large_idle_gpu() -> None:

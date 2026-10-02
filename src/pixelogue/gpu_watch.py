@@ -193,13 +193,20 @@ def _metrics() -> list[dict[str, int | str]]:
         if len(values) != 5:
             raise ValueError(f"Unexpected nvidia-smi row: {row}")
         index, uuid, used, total, utilization = values
+        try:
+            device_index, used_mib, total_mib, utilization_percent = map(
+                int, (index, used, total, utilization)
+            )
+        except ValueError:
+            print(f"GPU excluded because its measurements are unavailable: {row}", flush=True)
+            continue
         result.append(
             {
-                "index": int(index),
+                "index": device_index,
                 "uuid": uuid,
-                "used_mib": int(used),
-                "total_mib": int(total),
-                "utilization": int(utilization),
+                "used_mib": used_mib,
+                "total_mib": total_mib,
+                "utilization": utilization_percent,
                 "compute_process": int(uuid in occupied),
             }
         )
@@ -272,7 +279,7 @@ def _queue_post_job_reservation(state: dict[str, Any], gpu: int) -> None:
 
 
 def _doctor_ready() -> bool:
-    output = ROOT / "artifacts/gpu-watch/doctor.json"
+    output = STATE.parent / "doctor.json"
     result = subprocess.run(
         [
             "uv",
@@ -557,8 +564,10 @@ def _watch(
 
 def main() -> None:
     """Select the bounded local watcher or its single-device holder mode."""
+    global STATE
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("watch", "hold", "wait-release"))
+    parser.add_argument("--state-file", type=Path)
     parser.add_argument("--poll-seconds", type=int, default=15)
     parser.add_argument("--memory-fraction", type=float, default=0.90)
     parser.add_argument("--parent-pid", type=int)
@@ -570,6 +579,8 @@ def main() -> None:
     parser.add_argument("--retry-failed-pilot", action="store_true")
     parser.add_argument("--rerun-completed-pilot", action="store_true")
     args = parser.parse_args()
+    if args.state_file is not None:
+        STATE = args.state_file.resolve()
     if not 5 <= args.poll_seconds <= 300 or not 0.20 <= args.memory_fraction <= 0.92:
         parser.error("Invalid polling or reservation fraction")
     if not _valid_campaign_extension(args.additional_gpu_hours, args.campaign_id):
