@@ -91,6 +91,38 @@ def test_handoff_waits_for_reservation_lock_and_idle_device(
     assert not gpu_watch.handoff_released(4)
 
 
+def test_shared_admission_lock_rechecks_the_device_and_prevents_simultaneous_claims(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admission = tmp_path / "allocation.lock"
+    monkeypatch.setattr(gpu_watch, "ADMISSION_LOCK", admission)
+    rows: list[dict[str, int | str]] = [
+        {"index": 1, "used_mib": 15, "utilization": 0, "compute_process": 0}
+    ]
+    monkeypatch.setattr(gpu_watch, "_metrics", lambda: rows)
+    claims: list[int] = []
+
+    def start(gpu: int, _state: dict[str, Any], *, memory_fraction: float) -> None:
+        with admission.open("a+") as competing:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(competing, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert memory_fraction == 0.9
+        claims.append(gpu)
+
+    monkeypatch.setattr(gpu_watch, "_start_holder", start)
+    with admission.open("a+") as other:
+        fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert gpu_watch._holder(1, {}) is None
+    assert not claims
+    rows[0]["compute_process"] = 1
+    assert gpu_watch._holder(1, {}) is None
+    assert not claims
+    rows[0]["compute_process"] = 0
+    gpu_watch._holder(1, {})
+    assert claims == [1]
+
+
 def test_handoff_requires_two_consecutive_released_observations(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

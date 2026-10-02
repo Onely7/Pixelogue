@@ -19,6 +19,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 STATE = ROOT / "artifacts/gpu-watch/state.json"
+ADMISSION_LOCK: Path | None = None
 PYTHON_WITH_TORCH = ROOT / "runtime/vllm/.venv/bin/python"
 MAX_GPU_SECONDS = 4 * 3600
 MAX_CAMPAIGN_GPU_HOURS = 24.0
@@ -307,6 +308,22 @@ def _doctor_ready() -> bool:
 def _holder(
     gpu: int, state: dict[str, Any], *, memory_fraction: float = 0.90
 ) -> subprocess.Popen[str] | None:
+    if ADMISSION_LOCK is None:
+        return _start_holder(gpu, state, memory_fraction=memory_fraction)
+    ADMISSION_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with ADMISSION_LOCK.open("a+") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return None
+        if gpu not in idle_indices(_metrics()):
+            return None
+        return _start_holder(gpu, state, memory_fraction=memory_fraction)
+
+
+def _start_holder(
+    gpu: int, state: dict[str, Any], *, memory_fraction: float
+) -> subprocess.Popen[str] | None:
     environment = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "PYTHONUNBUFFERED": "1"}
     process = subprocess.Popen(
         [
@@ -564,10 +581,11 @@ def _watch(
 
 def main() -> None:
     """Select the bounded local watcher or its single-device holder mode."""
-    global STATE
+    global STATE, ADMISSION_LOCK
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("watch", "hold", "wait-release"))
     parser.add_argument("--state-file", type=Path)
+    parser.add_argument("--admission-lock", type=Path)
     parser.add_argument("--poll-seconds", type=int, default=15)
     parser.add_argument("--memory-fraction", type=float, default=0.90)
     parser.add_argument("--parent-pid", type=int)
@@ -581,6 +599,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.state_file is not None:
         STATE = args.state_file.resolve()
+    if args.admission_lock is not None:
+        ADMISSION_LOCK = args.admission_lock.resolve()
     if not 5 <= args.poll_seconds <= 300 or not 0.20 <= args.memory_fraction <= 0.92:
         parser.error("Invalid polling or reservation fraction")
     if not _valid_campaign_extension(args.additional_gpu_hours, args.campaign_id):
