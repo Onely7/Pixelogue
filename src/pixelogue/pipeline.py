@@ -6,7 +6,7 @@ import re
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypeVar
 
@@ -58,6 +58,7 @@ from pixelogue.evaluation import (
     transcription_answer_in_question,
     unverified_transcription_relation,
 )
+from pixelogue.fact_identity import requested_fact_key
 from pixelogue.ledger import (
     Requirement,
     RequirementInventory,
@@ -2006,6 +2007,29 @@ class SynthesisCoordinator:
             if turn.status == "COMMITTED"
             if (key := attribute_fact_key(turn.instruction)) is not None
         }
+        answered_facts = {
+            key
+            for turn in prior_turns
+            if turn.status == "COMMITTED"
+            if (key := requested_fact_key(turn.instruction)) is not None
+        }
+        if self.config.tasks.fact_novelty_enabled:
+            self.store.write_json_artifact(
+                "candidate-fact-identities",
+                {
+                    "conversation_id": conversation_id,
+                    "turn_index": turn_index,
+                    "candidates": [
+                        {
+                            "candidate_id": candidate.candidate_id,
+                            "fact_key": asdict(key)
+                            if (key := requested_fact_key(candidate))
+                            else None,
+                        }
+                        for candidate in candidates
+                    ],
+                },
+            )
         for candidate in candidates:
             if (fact_key := attribute_fact_key(candidate)) is not None and (
                 fact_key in answered_attributes
@@ -2021,6 +2045,21 @@ class SynthesisCoordinator:
                     },
                 )
                 continue
+            if self.config.tasks.fact_novelty_enabled and (
+                (requested := requested_fact_key(candidate)) is not None
+                and requested in answered_facts
+            ):
+                self.store.write_json_artifact(
+                    "candidate-admission-rejections",
+                    {
+                        "conversation_id": conversation_id,
+                        "turn_index": turn_index,
+                        "candidate_id": candidate.candidate_id,
+                        "reason": "REQUESTED_FACT_ALREADY_PUBLIC",
+                        "fact_key": asdict(requested),
+                    },
+                )
+                continue
             target = next(
                 (item.value for item in candidate.public_parameters if item.name == "target"),
                 None,
@@ -2028,6 +2067,7 @@ class SynthesisCoordinator:
             same_scope_messages = tuple(
                 message
                 for turn in prior_turns
+                if turn.status == "COMMITTED"
                 if turn.instruction.scope_id == candidate.scope_id
                 for message in (turn.question, turn.answer)
             )

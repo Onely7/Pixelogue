@@ -268,6 +268,7 @@ class TaskRuntimeConfig(StrictModel):
     evidence_format: Literal["keyed", "array"] = "keyed"
     attribute_recheck_enabled: bool = False
     max_candidate_attempts: Literal[1, 2] = 1
+    fact_novelty_enabled: bool = False
     binding_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
     answer_max_tokens: Annotated[int, Field(ge=256, le=8192)] = 1024
     profiles: tuple[Literal["normal", "limitation", "false_premise"], ...] = ("normal",)

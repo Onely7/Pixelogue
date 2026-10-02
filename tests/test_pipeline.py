@@ -3023,3 +3023,49 @@ def test_candidate_retry_propagates_transport_failure(
     finally:
         store.close()
     assert calls == [priority[0].candidate_id]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_fact_novelty_uses_only_committed_facts_across_operation_labels(
+    tmp_path: Path, image_artifact, enabled: bool
+):
+    coordinator, store, _, _, _ = _coordinator(tmp_path, evaluation_mode="holistic")
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "tasks": coordinator.config.tasks.model_copy(update={"fact_novelty_enabled": enabled})
+        }
+    )
+    image, root = image_artifact
+    try:
+        saved = coordinator.synthesize_image(image, root).turns[0]
+
+        def count(task, name, unit):
+            return InstructionCandidate(
+                candidate_id=name,
+                task_id=task,
+                family="visible_count",
+                visible_scope="the dogs",
+                instruction_summary="Count explicit visible units",
+                required_capabilities=("visible_entity",),
+                scope_id="dogs",
+                view_id="view",
+                public_parameters=(
+                    PublicParameter(name="target", value="the dogs", origin="instruction"),
+                    PublicParameter(name="count_unit", value=unit, origin="instruction"),
+                ),
+            )
+
+        prior = saved.model_copy(update={"instruction": count("visible_count", "old", "dogs")})
+        repeat, novel = (
+            count("entity_count", "repeat", "dogs"),
+            count("entity_count", "novel", "ears"),
+        )
+        kept = coordinator._drop_answered_candidates((repeat, novel), (prior,), "c", 2)
+        assert kept == ((novel,) if enabled else (repeat, novel))
+        uncommitted = prior.model_copy(update={"status": "REJECTED"})
+        assert coordinator._drop_answered_candidates((repeat, novel), (uncommitted,), "c", 2) == (
+            repeat,
+            novel,
+        )
+    finally:
+        store.close()

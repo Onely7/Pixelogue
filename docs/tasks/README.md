@@ -70,6 +70,14 @@ answer failure, transport error, or exhausted budget stops the turn. A normalize
 already judged in the failed attempt cannot be judged again. Private attempt plans and outcomes
 retain stable identities for replay, and the coordinator commits at most one turn.
 
+`tasks.fact_novelty_enabled` defaults to `false` while its effect is compared. When enabled,
+private request identities combine the view, scope, subject, operation, requested property or
+count unit, and public conditions. Formatting alone does not create a new fact. The existing
+attribute filter keeps fur color and nose color distinct; an explicit legacy count and the same
+current count share a fact without relabeling either artifact. Only committed facts are used.
+Broad descriptions, summaries, action requests, arbitrary QA and relations without a declared
+dimension remain unresolved, so this filter does not replace the blind novelty gate.
+
 Public operation contracts include the exact view, original scope box and resolved subject box.
 Binding preserves the subject's entity box for identification, attributes and actions, even if
 the target was an instruction choice. Attribute evidence marked `MET` must lie within the
