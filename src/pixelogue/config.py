@@ -266,7 +266,7 @@ class TaskRuntimeConfig(StrictModel):
     max_scopes: Annotated[int, Field(ge=1, le=8)] = 4
     max_observations_per_scope: Annotated[int, Field(ge=1, le=50)] = 20
     evidence_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
-    evidence_format: Literal["keyed", "array"] = "keyed"
+    evidence_format: Literal["keyed", "array", "compact"] = "keyed"
     attribute_recheck_enabled: bool = False
     max_candidate_attempts: Literal[1, 2] = 1
     fact_novelty_enabled: bool = False

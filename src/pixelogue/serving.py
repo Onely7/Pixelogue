@@ -26,6 +26,7 @@ from pixelogue.task_evidence import (
     ArrayScopedEvidenceReport,
     AttributeRecheckReport,
     CandidateBindingsReport,
+    CompactScopedEvidenceReport,
     ScopedEvidenceInventory,
     ScopedEvidenceReport,
 )
@@ -499,10 +500,23 @@ class VllmClient:
             "instruction": STAGE_INSTRUCTIONS[stage],
             "input": payload,
         }
-        if response_model is ArrayScopedEvidenceReport:
+        if response_model in (ArrayScopedEvidenceReport, CompactScopedEvidenceReport):
             request_text["instruction"] = STAGE_INSTRUCTIONS[stage].replace(
                 "field is an object keyed by capability name, not an array. Each value",
                 "field is an array of observations, each with a capability name from the vocabulary. Each observation",
+            )
+        if response_model is CompactScopedEvidenceReport:
+            request_text["instruction"] = (
+                request_text["instruction"]
+                .replace(
+                    "Each observation has a unique evidence_id,",
+                    "Each observation has a capability,",
+                )
+                .replace(
+                    "Copy image_id and each view_id exactly.",
+                    "The controller supplies image, view, scope and evidence identities. "
+                    "Do not output image_id, view_id, scope_id or evidence_id; return only Schema fields.",
+                )
             )
         if retry_feedback is not None:
             request_text["retry_feedback"] = retry_feedback
@@ -523,18 +537,24 @@ class VllmClient:
             ScopedEvidenceInventory,
             ScopedEvidenceReport,
             ArrayScopedEvidenceReport,
+            CompactScopedEvidenceReport,
         ):
             image_id = payload.get("image_id")
             if not isinstance(image_id, str) or not image_id:
                 raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")
-            schema["properties"]["image_id"]["const"] = image_id
+            if response_model is not CompactScopedEvidenceReport:
+                schema["properties"]["image_id"]["const"] = image_id
         if response_model is AttributeRecheckReport:
             for field in ("image_id", "scope_id", "view_id"):
                 value = payload.get(field)
                 if not isinstance(value, str) or not value:
                     raise ExecutionError("MODEL_PAYLOAD_FIELD", f"Attribute recheck lacks {field}")
                 schema["properties"][field]["const"] = value
-        if response_model in (ScopedEvidenceReport, ArrayScopedEvidenceReport):
+        if response_model in (
+            ScopedEvidenceReport,
+            ArrayScopedEvidenceReport,
+            CompactScopedEvidenceReport,
+        ):
             vocabulary = payload.get("capability_vocabulary")
             limit = payload.get("max_observations_per_scope")
             max_scopes = payload.get("max_scopes")
@@ -552,11 +572,12 @@ class VllmClient:
                 )
             scopes_schema = schema["properties"]["scopes"]
             scopes_schema["maxItems"] = max_scopes
-            scope_type = (
-                "ScopeEvidenceReport"
-                if response_model is ScopedEvidenceReport
-                else "ArrayScopeEvidenceReport"
-            )
+            scope_types: dict[type[BaseModel], str] = {
+                ScopedEvidenceReport: "ScopeEvidenceReport",
+                ArrayScopedEvidenceReport: "ArrayScopeEvidenceReport",
+                CompactScopedEvidenceReport: "CompactScopeEvidenceReport",
+            }
+            scope_type = scope_types[response_model]
             observations_schema = schema["$defs"][scope_type]["properties"]["observations"]
             if response_model is ScopedEvidenceReport:
                 observations_schema["properties"] = {
@@ -566,8 +587,13 @@ class VllmClient:
                 observations_schema["maxProperties"] = limit
             else:
                 observations_schema["maxItems"] = limit
-                schema["$defs"]["CapabilityObservation"]["properties"]["capability"]["enum"] = (
-                    sorted(vocabulary)
+                observation_type = (
+                    "CompactCapabilityObservation"
+                    if response_model is CompactScopedEvidenceReport
+                    else "CapabilityObservation"
+                )
+                schema["$defs"][observation_type]["properties"]["capability"]["enum"] = sorted(
+                    vocabulary
                 )
         if response_model is CandidateBindingsReport:
             candidates = payload.get("candidates")

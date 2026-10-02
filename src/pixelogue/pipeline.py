@@ -84,10 +84,12 @@ from pixelogue.task_evidence import (
     CandidateBindingReport,
     CandidateBindingsReport,
     CapabilityObservation,
+    CompactScopedEvidenceReport,
     ScopedEvidenceInventory,
     ScopedEvidenceReport,
     ScopeEvidence,
     alias_evidence_ids,
+    bind_evidence_identity,
     out_of_scope_region_feedback,
     unsupported_object_label_feedback,
 )
@@ -403,18 +405,25 @@ class SynthesisCoordinator:
                 "image_views": image_views,
             },
             (model_image,),
-            ArrayScopedEvidenceReport
-            if self.config.tasks.evidence_format == "array"
-            else ScopedEvidenceReport,
+            {
+                "keyed": ScopedEvidenceReport,
+                "array": ArrayScopedEvidenceReport,
+                "compact": CompactScopedEvidenceReport,
+            }[self.config.tasks.evidence_format],
             max_tokens=self.config.tasks.evidence_max_tokens,
             temperature=0.0,
             seed=self.config.seed,
             post_validate=lambda result: validate_evidence(
-                result.to_inventory(), model_image.view_id, self.config.tasks
+                bind_evidence_identity(result, image.image_id, model_image.view_id),
+                model_image.view_id,
+                self.config.tasks,
             ),
         )
         inventory = self._maybe_recheck_attribute(
-            evidence_report.to_inventory(), generator, model_image, image_views
+            bind_evidence_identity(evidence_report, image.image_id, model_image.view_id),
+            generator,
+            model_image,
+            image_views,
         )
         inventory, evidence_aliases = alias_evidence_ids(inventory)
         if inventory.image_id != image.image_id:
@@ -2547,7 +2556,8 @@ class SynthesisCoordinator:
                             retry_feedback += (
                                 (
                                     " observations must be an array with a capability name on each observation."
-                                    if model is ArrayScopedEvidenceReport
+                                    if model
+                                    in {ArrayScopedEvidenceReport, CompactScopedEvidenceReport}
                                     else " observations must be an object keyed by each capability name."
                                 )
                                 + " Combine visible instances in one observation per capability and use"
@@ -2557,7 +2567,12 @@ class SynthesisCoordinator:
                                 " never use a point or an all-1 box."
                             )
                             if response is not None and isinstance(
-                                response.value, (ScopedEvidenceReport, ArrayScopedEvidenceReport)
+                                response.value,
+                                (
+                                    ScopedEvidenceReport,
+                                    ArrayScopedEvidenceReport,
+                                    CompactScopedEvidenceReport,
+                                ),
                             ):
                                 retry_feedback += out_of_scope_region_feedback(response.value)
                                 retry_feedback += unsupported_object_label_feedback(response.value)

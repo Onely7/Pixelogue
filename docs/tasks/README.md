@@ -94,6 +94,13 @@ an individual's identity remains excluded. These geometric checks do not establi
 truth, and action, reference, category granularity and closed-set requirements still need the
 blind question and answer checks.
 
+`tasks.evidence_format` accepts `keyed` (default), `array`, or the comparison format `compact`.
+The compact format keeps capability, verdict, visual detail and every region, while the
+controller assigns the image, view, scope and observation IDs. It supplies no visual verdicts
+and fills no missing observations. Unknown extra IDs, duplicate capabilities and invalid
+regions remain rejected. The selected format and Schema participate in the run and call
+identities; changing them requires a new run.
+
 ## Migration and analysis
 
 Use a **new run ID**. The run identity includes configuration, code, prompts, Schemas, catalog, specialist lock, model and processor revisions, seed and the prepared input/rights manifest identity. Old 24-task artifacts retain their original labels; `task_catalog_legacy.yaml` and `legacy_24_migration.json` provide advisory mappings only. In particular, `chart_lookup` requires reclassification from the actual question, not automatic assignment to two new operations. Old stores can still be inspected with `replay` and backed up.

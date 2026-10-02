@@ -3291,3 +3291,74 @@ def test_binding_batches_reach_late_candidates_when_all_earlier_choices_are_inel
     finally:
         store.close()
     assert seen == list(map(str, range(8))) and result == (templates[-1],)
+
+
+def test_compact_discovery_reconstructs_fixed_ids_and_replays_completed_conversation(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+):
+    from pixelogue.task_evidence import CompactScopedEvidenceReport
+
+    coordinator, store, _, generator, _ = _coordinator(tmp_path, evaluation_mode="holistic")
+    coordinator.config = coordinator.config.model_copy(
+        update={"tasks": coordinator.config.tasks.model_copy(update={"evidence_format": "compact"})}
+    )
+    original = generator.invoke
+    discovery = 0
+
+    def compact(stage, payload, images, response_model, **kwargs):
+        nonlocal discovery
+        if response_model is not CompactScopedEvidenceReport:
+            return original(stage, payload, images, response_model, **kwargs)
+        discovery += 1
+        response = original(stage, payload, images, ScopedEvidenceReport, **kwargs)
+        raw = response.value.model_dump(mode="json")
+        value = CompactScopedEvidenceReport.model_validate_json(
+            json.dumps(
+                {
+                    "reason": raw["reason"],
+                    "scopes": [
+                        {
+                            "public_description": scope["public_description"],
+                            "object_label": scope["object_label"],
+                            "region": scope["region"],
+                            "observations": [
+                                {
+                                    "capability": capability,
+                                    **{
+                                        key: value
+                                        for key, value in observation.items()
+                                        if key != "evidence_id"
+                                    },
+                                }
+                                for capability, observation in scope["observations"].items()
+                            ],
+                        }
+                        for scope in raw["scopes"]
+                    ],
+                }
+            )
+        )
+        return ModelResponse(
+            value=value,
+            request_hash=response.request_hash,
+            response_hash=response.response_hash,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+        )
+
+    monkeypatch.setattr(generator, "invoke", compact)
+    image, root = image_artifact
+    try:
+        first = coordinator.synthesize_image(image, root, generator_role="generator_a")
+        calls = len(generator.calls)
+        resumed = coordinator.synthesize_image(image, root, generator_role="generator_a")
+        assert first.status == "QUALITY_CANDIDATE" and len(first.turns) >= 2
+        assert all(
+            turn.instruction.scope_id == "scope_1"
+            and turn.instruction.view_id == image.full_view.view_id
+            for turn in first.turns
+        )
+        assert resumed == first and discovery == 1 and len(generator.calls) == calls
+        assert not any("scope_1" in turn.question.content for turn in first.turns)
+    finally:
+        store.close()

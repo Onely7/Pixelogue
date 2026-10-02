@@ -199,8 +199,76 @@ class ArrayScopedEvidenceReport(StrictModel):
             raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
 
 
+class CompactCapabilityObservation(StrictModel):
+    """Visual content without a controller-owned observation identity."""
+
+    capability: Nonempty
+    verdict: ObservationVerdict
+    region: ImageRegion
+    detail: Nonempty
+
+
+class CompactScopeEvidenceReport(StrictModel):
+    """Scope content without copying fixed image, view or scope identities."""
+
+    public_description: Nonempty
+    object_label: ObjectLabel | None = None
+    region: ImageRegion
+    observations: Annotated[tuple[CompactCapabilityObservation, ...], Field(max_length=50)]
+
+
+class CompactScopedEvidenceReport(StrictModel):
+    """Comparison format retaining visual detail and every observation region."""
+
+    scopes: Annotated[tuple[CompactScopeEvidenceReport, ...], Field(max_length=8)]
+    reason: Nonempty
+
+    def to_inventory(self, *, image_id: str, view_id: str) -> ScopedEvidenceInventory:
+        """Assign deterministic local identities, then apply the full internal contract."""
+        try:
+            return ScopedEvidenceInventory(
+                image_id=image_id,
+                reason=self.reason,
+                scopes=tuple(
+                    ScopeEvidence(
+                        scope_id=f"scope_{index}",
+                        view_id=view_id,
+                        public_description=scope.public_description,
+                        object_label=scope.object_label,
+                        region=scope.region,
+                        observations=tuple(
+                            CapabilityObservation(
+                                evidence_id=f"obs_{index}_{observation_index}",
+                                **observation.model_dump(),
+                            )
+                            for observation_index, observation in enumerate(scope.observations, 1)
+                        ),
+                    )
+                    for index, scope in enumerate(self.scopes, 1)
+                ),
+            )
+        except ValidationError as error:
+            raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
+
+
+def bind_evidence_identity(
+    report: ScopedEvidenceReport | ArrayScopedEvidenceReport | CompactScopedEvidenceReport,
+    image_id: str,
+    view_id: str,
+) -> ScopedEvidenceInventory:
+    """Bind fixed identities only for the compact format; reject mismatches in other formats."""
+    inventory = (
+        report.to_inventory(image_id=image_id, view_id=view_id)
+        if isinstance(report, CompactScopedEvidenceReport)
+        else report.to_inventory()
+    )
+    if inventory.image_id != image_id:
+        raise ExecutionError("EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image")
+    return inventory
+
+
 def unsupported_object_label_feedback(
-    report: ScopedEvidenceReport | ArrayScopedEvidenceReport,
+    report: ScopedEvidenceReport | ArrayScopedEvidenceReport | CompactScopedEvidenceReport,
 ) -> str:
     """Identify invalid labeled scopes without copying model-generated scope text."""
     invalid = [
@@ -226,7 +294,9 @@ def unsupported_object_label_feedback(
     )
 
 
-def out_of_scope_region_feedback(report: ScopedEvidenceReport | ArrayScopedEvidenceReport) -> str:
+def out_of_scope_region_feedback(
+    report: ScopedEvidenceReport | ArrayScopedEvidenceReport | CompactScopedEvidenceReport,
+) -> str:
     """Describe invalid nested boxes without echoing model-generated text."""
     mismatches: list[str] = []
     for scope_index, scope in enumerate(report.scopes, start=1):
