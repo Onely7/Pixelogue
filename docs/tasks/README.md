@@ -70,6 +70,16 @@ answer failure, transport error, or exhausted budget stops the turn. A normalize
 already judged in the failed attempt cannot be judged again. Private attempt plans and outcomes
 retain stable identities for replay, and the coordinator commits at most one turn.
 
+Public operation contracts include the exact view, original scope box and resolved subject box.
+Binding preserves the subject's entity box for identification, attributes and actions, even if
+the target was an instruction choice. Attribute evidence marked `MET` must lie within the
+same subject's entity box; a broad scene box does not authorize borrowing a neighbor's property.
+The optional single attribute recheck uses that subject box and retains unknown or invalid
+evidence without enlarging it. A generic person category is permitted for identification;
+an individual's identity remains excluded. These geometric checks do not establish visual
+truth, and action, reference, category granularity and closed-set requirements still need the
+blind question and answer checks.
+
 ## Migration and analysis
 
 Use a **new run ID**. The run identity includes configuration, code, prompts, Schemas, catalog, specialist lock, model and processor revisions, seed and the prepared input/rights manifest identity. Old 24-task artifacts retain their original labels; `task_catalog_legacy.yaml` and `legacy_24_migration.json` provide advisory mappings only. In particular, `chart_lookup` requires reclassification from the actual question, not automatic assignment to two new operations. Old stores can still be inspected with `replay` and backed up.

@@ -19,7 +19,12 @@ from pixelogue.evaluation import (
 from pixelogue.serialization import canonical_hash
 from pixelogue.specialist_chemistry import chemical_domain_conditions
 from pixelogue.task_catalog import TaskDefinition
-from pixelogue.task_evidence import CandidateBindings, ImageRegion, ScopedEvidenceInventory
+from pixelogue.task_evidence import (
+    CandidateBindings,
+    ImageRegion,
+    ScopedEvidenceInventory,
+    ScopeEvidence,
+)
 from pixelogue.task_registry import REGISTRATIONS, registration
 
 # Keep this public view for existing catalog checks; registrations own implementation status.
@@ -176,6 +181,31 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         "definition": task.definition_en,
         "scope": scope,
         "scope_id": candidate.scope_id,
+        "view_id": candidate.view_id,
+        **(
+            {"scope_region": candidate.scope_region.model_dump(mode="json")}
+            if candidate.scope_region is not None
+            else {}
+        ),
+        "boundary_contract": {
+            "region": "Coordinates are normalized to the exact delivered view. Keep the bound "
+            "subject and scope; do not expand the region or borrow another subject's evidence.",
+            "operation": {
+                "object_identification": "Request a visible category at supported granularity. "
+                "Generic person categories are permitted; individual identity is not.",
+                "attribute_lookup": "Request only the public attribute or object part of the "
+                "bound subject. A neighboring subject's property does not answer this request.",
+                "visible_action_relation": "Request a directly visible action or interaction. "
+                "Body posture alone is an attribute; static placement is a spatial relation. "
+                "Contact can support an interaction, but does not establish intent or motion.",
+                "referring_object_resolution": "Resolve the unique entity satisfying the public "
+                "description; do not replace this operation with naming its category.",
+                "entity_count": "Count the publicly defined units in a closed scope. "
+                "Unclear membership, occlusion, or an incomplete enumeration means UNKNOWN.",
+                "spatial_relation": "State a relation in the public reference frame between "
+                "resolved visible subjects; do not infer an action from static placement.",
+            }.get(task.id, "Preserve the declared operation and its public conditions."),
+        },
         **(
             {"target_region": candidate.target_region.model_dump(mode="json")}
             if candidate.target_region is not None
@@ -356,6 +386,25 @@ def validate_evidence(
             raise ExecutionError("EVIDENCE_OBSERVATION_LIMIT", "Too many scope observations")
         if any(item.capability not in vocabulary for item in scope.observations):
             raise ExecutionError("EVIDENCE_CAPABILITY_UNKNOWN", "Unknown evidence capability")
+        if not _attribute_inside_entity(scope):
+            raise ExecutionError(
+                "EVIDENCE_ATTRIBUTE_SCOPE",
+                "A MET visible_attribute must stay inside its same-scope MET visible_entity "
+                "region; narrow the attribute only if supported, otherwise report UNKNOWN",
+            )
+
+
+def _attribute_inside_entity(scope: ScopeEvidence) -> bool:
+    """Reject a neighboring attribute even if a broad parent scope contains both objects."""
+    met = {item.capability: item for item in scope.observations if item.verdict == "MET"}
+    entity, attribute = met.get("visible_entity"), met.get("visible_attribute")
+    if entity is None or attribute is None:
+        return True
+    parent, child = entity.region, attribute.region
+    return (
+        parent.left <= child.left < child.right <= parent.right
+        and parent.top <= child.top < child.bottom <= parent.bottom
+    )
 
 
 def bind_candidates(
@@ -383,6 +432,10 @@ def bind_candidates(
         if template.scope_id is None:
             raise ExecutionError("CANDIDATE_SCOPE_MISSING", "Candidate has no bound scope")
         scope = scopes[template.scope_id]
+        if template.task_id == "attribute_lookup" and not _attribute_inside_entity(scope):
+            raise ExecutionError(
+                "CANDIDATE_EVIDENCE_SCOPE", "Attribute evidence belongs outside its bound subject"
+            )
         local_refs = {item.evidence_id for item in scope.observations}
         if not set(binding.evidence_refs) <= local_refs:
             raise ExecutionError(
@@ -534,8 +587,21 @@ def bind_candidates(
                 bottom=max(region.bottom for region in target_regions),
             )
             if target_regions
-            else None
+            else scope.region
         )
+        if template.task_id in {
+            "attribute_lookup",
+            "object_identification",
+            "visible_action_relation",
+        }:
+            target_region = next(
+                (
+                    item.region
+                    for item in scope.observations
+                    if item.capability == "visible_entity" and item.verdict == "MET"
+                ),
+                target_region,
+            )
         candidate = template.model_copy(
             update={
                 "public_parameters": tuple(
@@ -544,6 +610,7 @@ def bind_candidates(
                 ),
                 "evidence_refs": binding.evidence_refs,
                 "target_region": target_region,
+                "scope_region": scope.region,
             }
         )
         identity = fingerprint(candidate, inventory.image_id)

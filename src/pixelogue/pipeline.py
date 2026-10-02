@@ -148,6 +148,7 @@ MODEL_OUTPUT_ABSTENTIONS = frozenset(
         "EVIDENCE_SCOPE_LIMIT",
         "EVIDENCE_VIEW_MISMATCH",
         "EVIDENCE_OBSERVATION_LIMIT",
+        "EVIDENCE_ATTRIBUTE_SCOPE",
         "EXTRACTION_SOURCE_INVALID",
     }
 )
@@ -2312,6 +2313,7 @@ class SynthesisCoordinator:
             "EVIDENCE_SCOPE_LIMIT",
             "EVIDENCE_VIEW_MISMATCH",
             "EVIDENCE_OBSERVATION_LIMIT",
+            "EVIDENCE_ATTRIBUTE_SCOPE",
             "CANDIDATE_BINDING_ID",
             "CANDIDATE_EVIDENCE_SCOPE",
             "CANDIDATE_CHECKS_MISMATCH",
@@ -2531,6 +2533,12 @@ class SynthesisCoordinator:
                 "The previous response failed schema validation. Return one complete JSON object "
                 "with every required field, unique array items, and a short non-empty reason."
             )
+        if reason == "EVIDENCE_ATTRIBUTE_SCOPE":
+            return (
+                "The attribute region lies outside its same-scope visible_entity region. "
+                "Keep the subject's entity box fixed. Report a property only inside that box; "
+                "if it belongs to another subject or cannot be resolved, report UNKNOWN."
+            )
         if reason.startswith("EVIDENCE_"):
             return (
                 "Re-examine this image view. Use only names in capability_vocabulary,"
@@ -2633,6 +2641,11 @@ class SynthesisCoordinator:
         )
         if scope is None:
             return inventory
+        subject_region = next(
+            obs.region
+            for obs in scope.observations
+            if obs.capability == "visible_entity" and obs.verdict == "MET"
+        )
         try:
             report = self._invoke(
                 generator,
@@ -2641,7 +2654,7 @@ class SynthesisCoordinator:
                     "image_id": inventory.image_id,
                     "scope_id": scope.scope_id,
                     "view_id": scope.view_id,
-                    "scope_region": scope.region.model_dump(mode="json"),
+                    "scope_region": subject_region.model_dump(mode="json"),
                     "scope_description": scope.public_description,
                     "image_views": image_views,
                 },
@@ -2652,7 +2665,7 @@ class SynthesisCoordinator:
                 seed=self.config.seed + 17,
             )
             region = report.region
-            parent = scope.region
+            parent = subject_region
             if (
                 report.image_id != inventory.image_id
                 or report.scope_id != scope.scope_id
@@ -2721,6 +2734,7 @@ class SynthesisCoordinator:
                 "MODEL_WHITESPACE_RUNAWAY",
                 "MODEL_SCHEMA_MISMATCH",
                 "EVIDENCE_RECHECK_SCOPE",
+                "EVIDENCE_ATTRIBUTE_SCOPE",
             }:
                 raise
             return inventory

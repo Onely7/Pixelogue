@@ -1209,7 +1209,7 @@ def test_attribute_recheck_adds_only_view_bound_visible_property(
         store.close()
 
 
-@pytest.mark.parametrize("invalid", ["wrong_view", "outside_scope", "unknown"])
+@pytest.mark.parametrize("invalid", ["wrong_view", "outside_scope", "neighbor_in_scope", "unknown"])
 def test_attribute_recheck_never_promotes_invalid_or_unknown_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid: str
 ) -> None:
@@ -1220,6 +1220,16 @@ def test_attribute_recheck_never_promotes_invalid_or_unknown_evidence(
         }
     )
     inventory = _attribute_recheck_inventory()
+    if invalid == "neighbor_in_scope":
+        inventory = inventory.model_copy(
+            update={
+                "scopes": (
+                    inventory.scopes[0].model_copy(
+                        update={"region": ImageRegion(left=0, top=0, right=1, bottom=1)}
+                    ),
+                )
+            }
+        )
     model_image = ModelImage("full:test", tmp_path / "image.png", "digest", "image/png")
 
     def respond(*args, **kwargs):
@@ -1232,7 +1242,7 @@ def test_attribute_recheck_never_promotes_invalid_or_unknown_evidence(
             region=ImageRegion(
                 left=0.2,
                 top=0.2,
-                right=0.9 if invalid == "outside_scope" else 0.5,
+                right=0.9 if invalid in {"outside_scope", "neighbor_in_scope"} else 0.5,
                 bottom=0.5,
             ),
             detail="Property cannot be verified" if invalid == "unknown" else "White fur",

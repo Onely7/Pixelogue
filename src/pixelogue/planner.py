@@ -71,6 +71,7 @@ def instruction_candidates(
                     catalog_version=catalog.version,
                     scope_id=scope.scope_id,
                     view_id=scope.view_id,
+                    scope_region=scope.region,
                     evidence_refs=refs,
                     verification_contracts=verifiers,
                     calibrated_domain=(

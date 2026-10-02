@@ -557,8 +557,8 @@ tasks:
   family: visual_description
   label_en: Object identification
   status: core_candidate
-  definition_en: Name a resolved visible object at the finest category supported by its appearance; do
-    not identify a person or infer an exact product model.
+  definition_en: Name a resolved visible entity at the finest category supported by its appearance,
+    including generic person categories; do not infer an individual's identity or an exact product model.
   required_capabilities:
   - visible_entity
   eligibility_checks:

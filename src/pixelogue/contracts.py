@@ -138,6 +138,7 @@ class InstructionCandidate(StrictModel):
     catalog_version: Literal["7.0"] | None = None
     scope_id: str | None = None
     view_id: str | None = None
+    scope_region: ImageRegion | None = None
     target_region: ImageRegion | None = None
     public_parameters: tuple[PublicParameter, ...] = ()
     evidence_refs: tuple[str, ...] = ()
@@ -147,6 +148,13 @@ class InstructionCandidate(StrictModel):
     @model_validator(mode="after")
     def validate_operation(self) -> InstructionCandidate:
         """Validate new contracts while preserving immutable legacy labels."""
+        if self.scope_region is not None and self.target_region is not None:
+            parent, target = self.scope_region, self.target_region
+            if not (
+                parent.left <= target.left < target.right <= parent.right
+                and parent.top <= target.top < target.bottom <= parent.bottom
+            ):
+                raise ValueError("Target region must remain inside the bound scope")
         if self.catalog_version is not None:
             from pixelogue.catalog import task_catalog
 

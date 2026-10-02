@@ -936,3 +936,97 @@ def test_specialist_cannot_bypass_its_validator_by_claiming_a_limitation():
             evidence_refs=("evidence",),
             verification_contracts=("dual_visual_review",),
         )
+
+
+def test_attribute_cannot_borrow_a_neighbor_inside_a_broad_scope():
+    entity_region = ImageRegion(left=0.1, top=0.1, right=0.4, bottom=0.8)
+    neighbor = ImageRegion(left=0.6, top=0.1, right=0.9, bottom=0.8)
+    local = scope("two subjects", visible_entity="MET", visible_attribute="MET")
+    local = local.model_copy(
+        update={
+            "observations": tuple(
+                obs.model_copy(
+                    update={
+                        "region": entity_region if obs.capability == "visible_entity" else neighbor
+                    }
+                )
+                for obs in local.observations
+            )
+        }
+    )
+    data = inventory(local)
+    with pytest.raises(ExecutionError) as error:
+        validate_evidence(data, "view", TaskRuntimeConfig())
+    assert error.value.reason == "EVIDENCE_ATTRIBUTE_SCOPE"
+    template = next(item for item in candidates(data) if item.task_id == "attribute_lookup")
+    response = binding(
+        template,
+        public_parameters=(
+            PublicParameter(name="target", value="the subject", origin="instruction"),
+            PublicParameter(name="attribute", value="color", origin="instruction"),
+        ),
+    )
+    result = bind_candidates_individually(
+        (template,), CandidateBindings(bindings=(response,)), data, (), TaskRuntimeConfig()
+    )
+    assert not result.admitted and result.rejected[0].reason == "CANDIDATE_EVIDENCE_SCOPE"
+    unknown = local.model_copy(
+        update={
+            "observations": tuple(
+                obs.model_copy(update={"verdict": "UNKNOWN"})
+                if obs.capability == "visible_attribute"
+                else obs
+                for obs in local.observations
+            )
+        }
+    )
+    validate_evidence(inventory(unknown), "view", TaskRuntimeConfig())
+    assert not any(item.task_id == "attribute_lookup" for item in candidates(inventory(unknown)))
+
+
+def test_operation_keeps_subject_region_and_public_property_without_answer():
+    subject = ImageRegion(left=0.1, top=0.1, right=0.5, bottom=0.9)
+    part = ImageRegion(left=0.2, top=0.2, right=0.3, bottom=0.4)
+    local = scope("subject", visible_entity="MET", visible_attribute="MET")
+    local = local.model_copy(
+        update={
+            "observations": tuple(
+                obs.model_copy(
+                    update={"region": subject if obs.capability == "visible_entity" else part}
+                )
+                for obs in local.observations
+            )
+        }
+    )
+    data = inventory(local)
+    validate_evidence(data, "view", TaskRuntimeConfig())
+    template = next(item for item in candidates(data) if item.task_id == "attribute_lookup")
+    response = binding(
+        template,
+        public_parameters=(
+            PublicParameter(name="target", value="the red cup", origin="instruction"),
+            PublicParameter(name="attribute", value="handle color", origin="instruction"),
+        ),
+    )
+    (admitted,) = bind_candidates(
+        (template,), CandidateBindings(bindings=(response,)), data, (), TaskRuntimeConfig()
+    )
+    public = operation_contract(admitted)
+    assert admitted.target_region == subject and admitted.scope_region == REGION
+    assert public["view_id"] == "view" and public["target_region"] == subject.model_dump()
+    assert public["scope_region"] == REGION.model_dump()
+    assert b"red cup" not in canonical_json(public) and b"handle color" in canonical_json(public)
+    assert "neighboring subject" in public["boundary_contract"]["operation"]
+    invalid = admitted.model_dump() | {
+        "target_region": ImageRegion(left=0, top=0, right=1, bottom=1),
+        "scope_region": subject,
+    }
+    with pytest.raises(ValidationError, match="inside the bound scope"):
+        InstructionCandidate.model_validate(invalid)
+
+
+def test_generic_person_category_is_distinct_from_individual_identity():
+    task = next(item for item in task_catalog().tasks if item.id == "object_identification")
+    assert "generic person categories" in task.definition_en
+    assert "individual's identity" in task.definition_en
+    assert "named identity" in task.do_not_infer

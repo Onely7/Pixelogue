@@ -93,7 +93,7 @@ Only one source image is assumed. Existing panels can be compared; missing pages
 
 ### 01. object_identification
 
-Name a resolved visible object at the finest category supported by its appearance; do not identify a person or infer an exact product model.
+Name a resolved visible entity at the finest category supported by its appearance, including generic person categories; do not infer an individual's identity or an exact product model.
 
 **Required image capabilities:** `visible_entity`.
 
