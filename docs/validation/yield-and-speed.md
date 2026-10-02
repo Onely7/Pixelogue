@@ -88,6 +88,11 @@ journals, budget totals, public output hashes and commit counts after interrupti
 Campaign GPU costs include loading and every reserved device; union overlapping intervals
 for the same GPU to avoid double counting.
 
+Text-only answer parsers are attributed using the public operation's view ID and the
+exact saved question. Ambiguous question matches retain an unresolved depth. Global
+HTTP totals include calls without resolved image attribution; `unattributed_usage`
+keeps their measured duration, tokens and missing-usage count separately.
+
 ## Separate image distribution from implementation
 
 Open Images validation photographs can exercise visual description, attributes, spatial

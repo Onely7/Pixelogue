@@ -215,6 +215,10 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
     }
     if len(view_to_conversation) != len(conversations):
         raise ExternalInputError("DIAGNOSTIC_INPUT", "Image views must be unique")
+    question_turns: dict[tuple[str, str], set[int]] = defaultdict(set)
+    for conversation in conversations:
+        for turn in conversation.turns:
+            question_turns[conversation.conversation_id, turn.question.content].add(turn.turn_index)
     metrics: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "stage_calls": Counter(),
@@ -233,6 +237,8 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
         }
     )
     unattributed = 0
+    all_calls: Counter[str] = Counter()
+    unattributed_usage: Counter[str] = Counter()
     use_attempts = (
         store.connection.execute("SELECT 1 FROM model_call_attempt LIMIT 1").fetchone() is not None
     )
@@ -246,11 +252,27 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
     )
     for call in store.connection.execute(query):
         payload, retry = _request_input(store, call["request_artifact_hash"])
+        usage = {
+            "model_calls": 1,
+            "duration_ms": call["duration_ms"],
+            "known_input_tokens": call["input_tokens"] or 0,
+            "known_output_tokens": call["output_tokens"] or 0,
+            "token_usage_missing_calls": int(
+                call["input_tokens"] is None or call["output_tokens"] is None
+            ),
+            "retry_calls": int(retry or call["transport_attempt"] > 1),
+            "invalid_calls": int(call["status"] == "INVALID"),
+        }
+        all_calls.update(usage)
         views = payload.get("image_views")
         view_id = views[0].get("view_id") if isinstance(views, list) and views else None
+        operation = payload.get("expected_operation")
+        if view_id is None and isinstance(operation, dict):
+            view_id = operation.get("view_id")
         conversation_id = view_to_conversation.get(view_id)
         if conversation_id is None:
             unattributed += 1
+            unattributed_usage.update(usage)
             continue
         item = metrics[conversation_id]
         item["stage_calls"][call["stage"]] += 1
@@ -263,6 +285,9 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
             if isinstance(history, list)
             else payload.get("turn_index", 1)
         )
+        if not views and isinstance(payload.get("question"), str):
+            matching_turns = question_turns.get((conversation_id, payload["question"]), set())
+            turn_index = next(iter(matching_turns)) if len(matching_turns) == 1 else 0
         item["turn_stage_calls"][str(turn_index)][call["stage"]] += 1
         item["model_calls"] += 1
         item["invalid_calls"] += call["status"] == "INVALID"
@@ -374,18 +399,20 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
         "committed_turn_counts": dict(
             sorted(Counter(row["committed_turns"] for row in rows).items())
         ),
-        "model_calls": sum(row["model_calls"] for row in rows),
+        "model_calls": all_calls["model_calls"],
+        "attributed_model_calls": sum(row["model_calls"] for row in rows),
         "unattributed_model_calls": unattributed,
+        "unattributed_usage": dict(unattributed_usage),
         "call_measurement": "actual_http_attempts" if use_attempts else "legacy_canonical_calls",
-        "sum_http_duration_ms": sum(row["duration_ms"] for row in rows),
+        "sum_http_duration_ms": all_calls["duration_ms"],
         "gpu_allocation_seconds": None,
-        "known_input_tokens": sum(row["known_input_tokens"] for row in rows),
-        "known_output_tokens": sum(row["known_output_tokens"] for row in rows),
+        "known_input_tokens": all_calls["known_input_tokens"],
+        "known_output_tokens": all_calls["known_output_tokens"],
         "cache_accesses": store.connection.execute(
             "SELECT COUNT(*) FROM artifact WHERE kind='cache-accesses'"
         ).fetchone()[0],
-        "retry_calls": sum(row["retry_calls"] for row in rows),
-        "invalid_calls": sum(row["invalid_calls"] for row in rows),
+        "retry_calls": all_calls["retry_calls"],
+        "invalid_calls": all_calls["invalid_calls"],
         "contract_failure_attempts": sum(row["contract_failure_attempts"] for row in rows),
         "binding_rejections": sum(len(row["binding_rejections"]) for row in rows),
         "stage_reach_images": dict(
@@ -401,7 +428,7 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
                 ).items()
             )
         ),
-        "token_usage_missing_calls": sum(row["token_usage_missing_calls"] for row in rows),
+        "token_usage_missing_calls": all_calls["token_usage_missing_calls"],
         "cost_usd": None,
         "rows": rows,
     }
