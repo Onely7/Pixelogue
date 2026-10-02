@@ -122,6 +122,12 @@ tail -f artifacts/gpu-watch/monitor.log
 
 On hosts with a shared home directory, use `--state-file PATH` with a separate parent directory for each host and boot. The ledger lock and `doctor.json` follow that directory; pass the same option to `wait-release`. This prevents another host's reservation or a PID from an earlier boot from being reused. Keep previous boot directories for accounting. The watcher excludes devices with unavailable numeric measurements while continuing to inspect healthy devices. `doctor` reports unavailable utilization as `null` and never marks that device idle.
 
+The watcher resolves the selected physical device to its `nvidia-smi` UUID and uses that UUID
+in `CUDA_VISIBLE_DEVICES` for the holder and pilot. CUDA enumeration can differ from physical
+indices when a device is unavailable. Verify the holder PID and memory on the selected UUID;
+a live process alone does not establish a reservation. Use inspected UUIDs for manual launches
+on such hosts too.
+
 For two reservations on one host, run two reserve-only supervisors with separate ledger directories and the same local `--admission-lock PATH`. The shared lock covers a fresh idle-device check and the holder's startup until memory allocation is confirmed. Each supervisor holds one distinct GPU and accounts for its own allocation; sum their GPU time. Pass the same admission lock to every supervisor on that host.
 
 `tmux` survives an SSH disconnect but does not restart after its own host reboots. For unattended reservations, arrange a host-local boot trigger and periodic restart check, and verify user services survive logout. A restart check must inspect the reservation's GPU process and memory as well as its PID. Disable the restart check before an intentional GPU handoff, then re-enable it after the job, regardless of success or failure.

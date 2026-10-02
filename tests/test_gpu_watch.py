@@ -40,6 +40,35 @@ def test_unavailable_device_does_not_hide_healthy_or_occupied_devices(
     assert gpu_watch.idle_indices(gpu_watch._metrics()) == {1}
 
 
+def test_holder_selects_the_inspected_uuid_when_cuda_indices_differ(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "inherited-device")
+    monkeypatch.setattr(
+        gpu_watch,
+        "_metrics",
+        lambda: [{"index": 3, "uuid": "GPU-physical-three"}],
+    )
+    captured: dict[str, Any] = {}
+
+    def intercept(_arguments: list[str], **kwargs: Any) -> None:
+        captured.update(kwargs)
+        raise RuntimeError("intercepted before spawning")
+
+    monkeypatch.setattr(subprocess, "Popen", intercept)
+    with pytest.raises(RuntimeError, match="intercepted before spawning"):
+        gpu_watch._start_holder(3, {}, memory_fraction=0.9)
+    assert captured["env"]["CUDA_VISIBLE_DEVICES"] == "GPU-physical-three"
+
+
+def test_missing_selected_device_is_rejected_before_starting_a_holder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gpu_watch, "_metrics", lambda: [])
+    with pytest.raises(RuntimeError, match="Selected GPU 3 is no longer available"):
+        gpu_watch._start_holder(3, {}, memory_fraction=0.9)
+
+
 def test_watch_and_handoff_use_the_explicit_host_ledger(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

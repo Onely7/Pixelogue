@@ -225,6 +225,18 @@ def idle_indices(rows: list[dict[str, int | str]]) -> set[int]:
     }
 
 
+def _device_uuid(gpu: int) -> str:
+    """Resolve the inspected physical device without relying on CUDA index order.
+
+    Raises:
+        RuntimeError: The selected device has no usable UUID or measurements.
+    """
+    row = next((row for row in _metrics() if int(row["index"]) == gpu), None)
+    if row is None or not str(row["uuid"]).startswith("GPU-"):
+        raise RuntimeError(f"Selected GPU {gpu} is no longer available")
+    return str(row["uuid"])
+
+
 def handoff_released(gpu: int) -> bool:
     """Require device idleness, a cleared reservation, and an unlocked ledger."""
     if gpu not in idle_indices(_metrics()) or not STATE.is_file():
@@ -324,7 +336,7 @@ def _holder(
 def _start_holder(
     gpu: int, state: dict[str, Any], *, memory_fraction: float
 ) -> subprocess.Popen[str] | None:
-    environment = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "PYTHONUNBUFFERED": "1"}
+    environment = {**os.environ, "CUDA_VISIBLE_DEVICES": _device_uuid(gpu), "PYTHONUNBUFFERED": "1"}
     process = subprocess.Popen(
         [
             str(PYTHON_WITH_TORCH),
@@ -381,7 +393,7 @@ def _pilot(gpu: int, state: dict[str, Any], holder: subprocess.Popen[str]) -> No
     output.mkdir(parents=True, exist_ok=False)
     environment = {
         **os.environ,
-        "CUDA_VISIBLE_DEVICES": str(gpu),
+        "CUDA_VISIBLE_DEVICES": _device_uuid(gpu),
         "PYTHONUNBUFFERED": "1",
         "PIXELOGUE_WATCH_PID": str(os.getpid()),
     }
