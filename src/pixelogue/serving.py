@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from pixelogue.call_usage import measure_usage
 from pixelogue.config import ModelEndpoint, RuntimeConfig
 from pixelogue.contracts import ClaimExtraction, EvidenceInventory, TextPayload
 from pixelogue.errors import ExecutionError, ExternalInputError
@@ -148,8 +149,8 @@ class ModelResponse:
     value: BaseModel
     request_hash: str
     response_hash: str
-    prompt_tokens: int
-    completion_tokens: int
+    prompt_tokens: int | None
+    completion_tokens: int | None
 
 
 class ModelAdapter:
@@ -253,6 +254,7 @@ class VllmClient:
         bypass_cache: bool = False,
         retry_feedback: str | None = None,
         json_object_fallback: bool = False,
+        trial_id: str | None = None,
     ) -> ModelResponse:
         """Send and validate one non-streaming structured-output request.
 
@@ -284,11 +286,55 @@ class VllmClient:
             "quantization": self.endpoint.quantization,
             "max_model_len": self.endpoint.max_model_len,
             "gpu_memory_utilization": self.endpoint.gpu_memory_utilization,
+            "serving_runtime": (
+                self.endpoint.serving_runtime.model_dump(mode="json")
+                if self.endpoint.serving_runtime is not None
+                else None
+            ),
         }
-        request_envelope = {"model_lock": model_lock, "request": body}
+        request_envelope: dict[str, Any] = {"model_lock": model_lock, "request": body}
+        if trial_id is not None:
+            if not trial_id.strip():
+                raise ExecutionError("MODEL_TRIAL_ID", "Trial identity cannot be empty")
+            request_envelope["trial_id"] = trial_id
         request_hash = canonical_hash(request_envelope)
         model_lock_hash = canonical_hash(model_lock)
         if self.store is not None and not bypass_cache:
+            saved = self.store.saved_model_attempt(model_lock_hash, stage, request_hash)
+            if saved is not None:
+                raw_content, prompt_tokens, completion_tokens, attempt_id = saved
+                self.store.write_json_artifact(
+                    "cache-accesses",
+                    {
+                        "stage": stage,
+                        "request_hash": request_hash,
+                        "attempt_id": attempt_id,
+                        "accessed_at": time.time(),
+                    },
+                )
+                try:
+                    typed, response_hash = self._decode_typed_response(
+                        raw_content,
+                        response_model,
+                        max_tokens=max_tokens,
+                    )
+                except ExecutionError:
+                    self.store.finish_model_attempt(attempt_id, "INVALID")
+                    raise
+                self._record(
+                    stage,
+                    request_envelope,
+                    raw_content,
+                    request_hash,
+                    response_hash,
+                    prompt_tokens,
+                    completion_tokens,
+                    0,
+                )
+                self.store.finish_model_attempt(attempt_id, "COMPLETE")
+                return ModelResponse(
+                    typed, request_hash, response_hash, prompt_tokens, completion_tokens
+                )
             cached = self.store.completed_model_call(model_lock_hash, stage, request_hash)
             if cached is not None:
                 cached_response, prompt_tokens, completion_tokens = cached
@@ -304,65 +350,60 @@ class VllmClient:
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                 )
-        reserved = False
-        raw_content: bytes | None = None
-        duration_ms = 0
-        if self.store is not None:
-            self.store.reserve_model_request(
-                max_tokens,
-                request_limit=self.runtime.max_total_requests,
-                output_token_limit=self.runtime.max_total_output_tokens,
-            )
-            reserved = True
+        request_artifact = (
+            self._archive_request(request_envelope) if self.store is not None else None
+        )
+        raw_response, attempt_id, duration_ms = self._request(
+            body,
+            stage=stage,
+            request_hash=request_hash,
+            model_lock_hash=model_lock_hash,
+            request_artifact=request_artifact,
+            max_tokens=max_tokens,
+        )
+        raw_content = raw_response.content
+        usage = measure_usage(raw_content, max_tokens)
         try:
-            request_started = time.perf_counter()
-            raw_response = self._request(body)
-            duration_ms = round((time.perf_counter() - request_started) * 1000)
-            raw_content = raw_response.content
             typed, response_hash = self._decode_typed_response(
                 raw_content,
                 response_model,
                 max_tokens=max_tokens,
             )
-            parsed = _model_json_object(raw_response.content)
-            _, usage = self._validate_completion(parsed)
-            prompt_tokens = int(usage.get("prompt_tokens", 0))
-            completion_tokens = int(usage.get("completion_tokens", 0))
+        except ExecutionError:
             if self.store is not None:
                 self._record(
                     stage,
                     request_envelope,
                     raw_content,
                     request_hash,
-                    response_hash,
-                    prompt_tokens,
-                    completion_tokens,
+                    hashlib.sha256(raw_content).hexdigest(),
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
                     duration_ms,
+                    status="INVALID",
                 )
-                self.store.finalize_model_request(max_tokens, completion_tokens)
-                reserved = False
-        except BaseException:
-            if self.store is not None and reserved:
-                self.store.release_model_reservation(max_tokens)
-                if raw_content is not None:
-                    self._record(
-                        stage,
-                        request_envelope,
-                        raw_content,
-                        request_hash,
-                        hashlib.sha256(raw_content).hexdigest(),
-                        0,
-                        0,
-                        duration_ms,
-                        status="INVALID",
-                    )
+                if attempt_id is not None:
+                    self.store.finish_model_attempt(attempt_id, "INVALID")
             raise
+        if self.store is not None:
+            self._record(
+                stage,
+                request_envelope,
+                raw_content,
+                request_hash,
+                response_hash,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                duration_ms,
+            )
+            if attempt_id is not None:
+                self.store.finish_model_attempt(attempt_id, "COMPLETE")
         return ModelResponse(
             value=typed,
             request_hash=request_hash,
             response_hash=response_hash,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
         )
 
     def _decode_typed_response(
@@ -399,9 +440,7 @@ class VllmClient:
             raise ExecutionError(
                 "MODEL_FINISH_REASON", "Public text must finish before its token limit"
             )
-        prompt_tokens = int(usage.get("prompt_tokens", 0))
-        completion_tokens = int(usage.get("completion_tokens", 0))
-        if prompt_tokens < 0 or completion_tokens < 0 or completion_tokens > max_tokens:
+        if measure_usage(raw_response, max_tokens).status == "INVALID":
             raise ExecutionError("MODEL_USAGE_INVALID", "Token usage is outside request bounds")
         cleaned = self.adapter.clean_content(content)
         try:
@@ -616,11 +655,44 @@ class VllmClient:
         body.update(self.adapter.extra_body())
         return body
 
-    def _request(self, body: dict[str, Any]) -> httpx.Response:
+    def _request(
+        self,
+        body: dict[str, Any],
+        *,
+        stage: str,
+        request_hash: str,
+        model_lock_hash: str,
+        request_artifact: str | None,
+        max_tokens: int,
+    ) -> tuple[httpx.Response, str | None, int]:
         last_error: Exception | None = None
         for attempt in range(self.runtime.transport_max_attempts):
+            attempt_id = None
+            if self.store is not None:
+                assert request_artifact is not None
+                attempt_id = self.store.begin_model_attempt(
+                    stage=stage,
+                    model_repo=self.endpoint.repo_id,
+                    model_revision=self.endpoint.revision,
+                    model_lock_hash=model_lock_hash,
+                    request_hash=request_hash,
+                    request_artifact_hash=request_artifact,
+                    reserved_output_tokens=max_tokens,
+                    request_limit=self.runtime.max_total_requests,
+                    output_token_limit=self.runtime.max_total_output_tokens,
+                    transport_attempt=attempt + 1,
+                )
+            started = time.perf_counter()
             try:
                 response = self.client.post("chat/completions", json=body)
+                duration_ms = round((time.perf_counter() - started) * 1000)
+                if self.store is not None and attempt_id is not None:
+                    self.store.save_model_attempt_response(
+                        attempt_id,
+                        response.content,
+                        duration_ms,
+                        response.status_code,
+                    )
                 if response.status_code == 429 or response.status_code >= 500:
                     if self.store is not None:
                         self.store.write_json_artifact(
@@ -640,10 +712,26 @@ class VllmClient:
                     )
                 else:
                     response.raise_for_status()
-                    return response
+                    return response, attempt_id, duration_ms
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as error:
+                if self.store is not None and attempt_id is not None:
+                    duration_ms = round((time.perf_counter() - started) * 1000)
+                    self.store.finish_model_attempt(attempt_id, "TRANSPORT_FAILED", duration_ms)
+                    self.store.write_json_artifact(
+                        "transport-errors",
+                        {
+                            "request_hash": request_hash,
+                            "attempt_id": attempt_id,
+                            "model_repo": self.endpoint.repo_id,
+                            "attempt": attempt + 1,
+                            "error_type": type(error).__name__,
+                            "reason": str(error),
+                        },
+                    )
                 last_error = error
             except httpx.HTTPStatusError as error:
+                if self.store is not None and attempt_id is not None:
+                    self.store.finish_model_attempt(attempt_id, "HTTP_ERROR")
                 response_body = error.response.text[:2048]
                 if self.store is not None:
                     self.store.write_json_artifact(
@@ -733,11 +821,45 @@ class VllmClient:
         response: bytes,
         request_hash: str,
         response_hash: str,
-        prompt_tokens: int,
-        completion_tokens: int,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
         duration_ms: int,
         status: Literal["COMPLETE", "INVALID"] = "COMPLETE",
     ) -> None:
+        assert self.store is not None
+        request_artifact = self._archive_request(request)
+        response_artifact = self.store.write_artifact("responses", response)
+        model_lock_hash = canonical_hash(request["model_lock"])
+        call_id = canonical_hash({"run": self.run_id, "stage": stage, "request": request_hash})
+        usage = measure_usage(response, request["request"]["max_tokens"])
+        with self.store.transaction() as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO model_call(
+                       call_id, stage, model_repo, model_revision, model_lock_hash,
+                       request_hash, request_artifact_hash, response_artifact_hash,
+                       input_tokens, output_tokens, duration_ms, status, usage_status
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    call_id,
+                    stage,
+                    self.endpoint.repo_id,
+                    self.endpoint.revision,
+                    model_lock_hash,
+                    request_hash,
+                    request_artifact,
+                    response_artifact,
+                    prompt_tokens if prompt_tokens is not None else 0,
+                    completion_tokens if completion_tokens is not None else 0,
+                    duration_ms,
+                    status,
+                    usage.status,
+                ),
+            )
+        if response_artifact != response_hash:
+            raise ExecutionError("MODEL_RESPONSE_HASH", "Stored response identity changed")
+
+    def _archive_request(self, request: dict[str, Any]) -> str:
+        """Keep image bytes deduplicated in private request artifacts."""
         assert self.store is not None
         archived = json.loads(canonical_json(request))
         for message in archived["request"].get("messages", []):
@@ -753,34 +875,7 @@ class VllmClient:
                         )
                         part["image_url"]["url"] = f"pixelogue-image:{image_hash}"
                         archived["archive_format"] = "image-refs-v1"
-        request_artifact = self.store.write_artifact("requests", canonical_json(archived))
-        response_artifact = self.store.write_artifact("responses", response)
-        model_lock_hash = canonical_hash(request["model_lock"])
-        call_id = canonical_hash({"run": self.run_id, "stage": stage, "request": request_hash})
-        with self.store.transaction() as connection:
-            connection.execute(
-                """INSERT OR IGNORE INTO model_call(
-                       call_id, stage, model_repo, model_revision, model_lock_hash,
-                       request_hash, request_artifact_hash, response_artifact_hash,
-                       input_tokens, output_tokens, duration_ms, status
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    call_id,
-                    stage,
-                    self.endpoint.repo_id,
-                    self.endpoint.revision,
-                    model_lock_hash,
-                    request_hash,
-                    request_artifact,
-                    response_artifact,
-                    prompt_tokens,
-                    completion_tokens,
-                    duration_ms,
-                    status,
-                ),
-            )
-        if response_artifact != response_hash:
-            raise ExecutionError("MODEL_RESPONSE_HASH", "Stored response identity changed")
+        return self.store.write_artifact("requests", canonical_json(archived))
 
     def health(self) -> dict[str, Any]:
         """Return the local server's model listing for doctor checks."""

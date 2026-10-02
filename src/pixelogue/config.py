@@ -82,6 +82,27 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
 
+class ServingRuntimeIdentity(StrictModel):
+    """Controlled server manifest bound to actual launch settings and version checks."""
+
+    vllm_version: Annotated[str, Field(min_length=1)]
+    structured_output_backend: Literal[
+        "auto", "xgrammar", "guidance", "outlines", "lm-format-enforcer"
+    ]
+    disable_any_whitespace: bool
+    server_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+    @model_validator(mode="after")
+    def validate_whitespace_control(self) -> ServingRuntimeIdentity:
+        """Require a backend supporting the pinned vLLM whitespace control."""
+        if self.disable_any_whitespace and self.structured_output_backend not in {
+            "xgrammar",
+            "guidance",
+        }:
+            raise ValueError("whitespace suppression requires explicit xgrammar or guidance")
+        return self
+
+
 class ModelEndpoint(StrictModel):
     """Pinned model and local OpenAI-compatible endpoint."""
 
@@ -96,6 +117,7 @@ class ModelEndpoint(StrictModel):
     quantization: Literal["fp8", "compressed-tensors"] | None = None
     max_model_len: Annotated[int, Field(ge=4096)] = 32768
     api_key_env: str = "PIXELLOGUE_API_KEY"
+    serving_runtime: ServingRuntimeIdentity | None = None
 
     @property
     def model_name(self) -> str:
@@ -336,6 +358,8 @@ class PixelogueConfig(StrictModel):
             path
             for path in (
                 project_root / "uv.lock",
+                project_root / "runtime/vllm/pyproject.toml",
+                project_root / "runtime/vllm/uv.lock",
                 project_root / "runtime/validators/pyproject.toml",
                 project_root / "runtime/validators/uv.lock",
                 project_root / "runtime/validators/worker.py",

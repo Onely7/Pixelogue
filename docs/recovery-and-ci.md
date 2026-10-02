@@ -14,6 +14,19 @@ uv run --locked pixelogue replay \
 
 Only one coordinator can open a run at a time. A second process receives `RUN_ALREADY_ACTIVE`. Request and output-token reservations are written before inference. If a process crashes, the reservation remains consumed, preventing a resume from silently exceeding its budget.
 
+Each actual HTTP attempt now has its own `model_call_attempt` record. Received response bytes
+are durably journaled before accounting. Valid reported usage is charged even when model content
+is malformed. Missing or invalid usage stays unknown, with its output capacity reserved.
+Opening an interrupted run settles saved journals once. Replaying the same request or explicit
+`trial_id` reuses its response, including an invalid one. Separate experimental trials must have
+different IDs. Cache reads, transport retries and incomplete attempts have separate records.
+The canonical `model_call` table remains available to older readers.
+
+`profile` includes actual attempts, statuses, cache accesses and known token subtotals. A token
+total with missing measurements is null. Summed HTTP duration includes overlapping calls and
+differs from elapsed inference time. Model loading and GPU allocation are separate operator
+measurements. Historical corrections belong in new reports; preserve the original ledgers.
+
 ## Make a consistent backup
 
 ```sh

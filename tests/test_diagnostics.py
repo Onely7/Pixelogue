@@ -125,7 +125,8 @@ def test_diagnostics_join_image_calls_and_private_stop_without_loading_image(
     assert row["stop_stage_evidence"] == "binding_stop_record"
     assert row["stop_reason"] == "CANDIDATE_CHECKS_MISMATCH"
     assert row["recorded_stops"][0]["reason"] == "CANDIDATE_CHECKS_MISMATCH"
-    assert row["input_tokens"] == 0
+    assert row["input_tokens"] is None
+    assert row["known_input_tokens"] == 0
     assert row["token_usage_missing_calls"] == 1
     assert row["contract_failure_attempts"] == 1
     assert report["binding_rejections"] == 1

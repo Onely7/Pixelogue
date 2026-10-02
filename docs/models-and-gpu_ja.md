@@ -213,3 +213,8 @@ PIXELOGUE_LIVE_RUBRIC=1 PIXELOGUE_LIVE_CONFIG=configs/paired-one-gpu-pilot.yaml 
 ```
 
 1 GPU用設定ではport 18102と18103へ接続します。モデルの識別と量子化は標準構成のままです。
+
+
+## サーバー条件を実行識別に固定する
+
+実験用endpointの `serving_runtime` には `vllm_version`、`structured_output_backend`、`disable_any_whitespace`、`server_manifest_sha256` を指定できます。manifestには実際の起動設定・固定したruntime lock・起動コマンド・版確認を保存します。これらを変更するとrunと応答キャッシュの識別が変わります。宣言だけでは実サーバーの設定を確認したことにならないため、制御された起動とログで照合します。固定vLLMで空白抑制を使うには `xgrammar` または `guidance` を明示し、backendも変えた条件は設定一式の比較として扱います。

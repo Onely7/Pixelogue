@@ -46,8 +46,11 @@ class DiagnosticRow(TypedDict):
     attempt_failures: list[dict[str, Any]]
     binding_rejections: list[dict[str, Any]]
     retry_calls: int
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    output_tokens: int | None
+    known_input_tokens: int
+    known_output_tokens: int
+    status_counts: dict[str, int]
     duration_ms: int
     token_usage_missing_calls: int
     recorded_stops: list[dict[str, Any]]
@@ -224,13 +227,24 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
             "output_tokens": 0,
             "duration_ms": 0,
             "token_usage_missing_calls": 0,
+            "missing_input_calls": 0,
+            "missing_output_calls": 0,
+            "status_counts": Counter(),
         }
     )
     unattributed = 0
-    for call in store.connection.execute(
-        """SELECT stage, status, request_artifact_hash, input_tokens,
-                  output_tokens, duration_ms FROM model_call ORDER BY rowid"""
-    ):
+    use_attempts = (
+        store.connection.execute("SELECT 1 FROM model_call_attempt LIMIT 1").fetchone() is not None
+    )
+    query = (
+        "SELECT stage, status, request_artifact_hash, input_tokens, output_tokens, duration_ms, transport_attempt FROM model_call_attempt ORDER BY rowid"
+        if use_attempts
+        else """SELECT stage, status, request_artifact_hash,
+                  CASE WHEN status='COMPLETE' THEN input_tokens END AS input_tokens,
+                  CASE WHEN status='COMPLETE' THEN output_tokens END AS output_tokens,
+                  duration_ms, 1 AS transport_attempt FROM model_call ORDER BY rowid"""
+    )
+    for call in store.connection.execute(query):
         payload, retry = _request_input(store, call["request_artifact_hash"])
         views = payload.get("image_views")
         view_id = views[0].get("view_id") if isinstance(views, list) and views else None
@@ -251,13 +265,20 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
         )
         item["turn_stage_calls"][str(turn_index)][call["stage"]] += 1
         item["model_calls"] += 1
-        item["invalid_calls"] += call["status"] != "COMPLETE"
-        item["retry_calls"] += retry
-        if call["status"] == "COMPLETE":
+        item["invalid_calls"] += call["status"] == "INVALID"
+        item["status_counts"][call["status"]] += 1
+        item["retry_calls"] += retry or call["transport_attempt"] > 1
+        if call["input_tokens"] is not None:
             item["input_tokens"] += call["input_tokens"]
+        else:
+            item["missing_input_calls"] += 1
+        if call["output_tokens"] is not None:
             item["output_tokens"] += call["output_tokens"]
         else:
-            item["token_usage_missing_calls"] += 1
+            item["missing_output_calls"] += 1
+        item["token_usage_missing_calls"] += (
+            call["input_tokens"] is None or call["output_tokens"] is None
+        )
         item["duration_ms"] += call["duration_ms"]
     stops = _stop_records(store)
     attempts = _attempt_records(store, view_to_conversation)
@@ -331,8 +352,11 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
                 "attempt_failures": attempts.get(conversation.conversation_id, []),
                 "binding_rejections": binding_rejections.get(conversation.conversation_id, []),
                 "retry_calls": item["retry_calls"],
-                "input_tokens": item["input_tokens"],
-                "output_tokens": item["output_tokens"],
+                "input_tokens": None if item["missing_input_calls"] else item["input_tokens"],
+                "output_tokens": None if item["missing_output_calls"] else item["output_tokens"],
+                "known_input_tokens": item["input_tokens"],
+                "known_output_tokens": item["output_tokens"],
+                "status_counts": dict(sorted(item["status_counts"].items())),
                 "duration_ms": item["duration_ms"],
                 "token_usage_missing_calls": item["token_usage_missing_calls"],
                 "recorded_stops": recorded_stops,
@@ -352,6 +376,14 @@ def build_diagnostic_report(store: RunStore, conversations_path: Path) -> dict[s
         ),
         "model_calls": sum(row["model_calls"] for row in rows),
         "unattributed_model_calls": unattributed,
+        "call_measurement": "actual_http_attempts" if use_attempts else "legacy_canonical_calls",
+        "sum_http_duration_ms": sum(row["duration_ms"] for row in rows),
+        "gpu_allocation_seconds": None,
+        "known_input_tokens": sum(row["known_input_tokens"] for row in rows),
+        "known_output_tokens": sum(row["known_output_tokens"] for row in rows),
+        "cache_accesses": store.connection.execute(
+            "SELECT COUNT(*) FROM artifact WHERE kind='cache-accesses'"
+        ).fetchone()[0],
         "retry_calls": sum(row["retry_calls"] for row in rows),
         "invalid_calls": sum(row["invalid_calls"] for row in rows),
         "contract_failure_attempts": sum(row["contract_failure_attempts"] for row in rows),

@@ -744,7 +744,9 @@ def test_malformed_json_uses_bounded_structured_retries(tmp_path, recovers):
 
 
 @pytest.mark.parametrize("recovers", [True, False])
-def test_server_disconnect_retries_and_releases_budget(tmp_path, monkeypatch, recovers):
+def test_server_disconnect_retries_and_keeps_unmeasured_cost_reserved(
+    tmp_path, monkeypatch, recovers
+):
     calls = 0
     delays = []
     monkeypatch.setattr("pixelogue.serving.time.sleep", delays.append)
@@ -808,8 +810,16 @@ def test_server_disconnect_retries_and_releases_budget(tmp_path, monkeypatch, re
                 assert isinstance(caught.value.__cause__, httpx.RemoteProtocolError)
         assert calls == 3
         assert delays == [1, 2]
-        assert (
-            store.connection.execute("SELECT reserved_output_tokens FROM budget").fetchone()[0] == 0
+        budget = store.connection.execute("SELECT * FROM budget").fetchone()
+        assert budget["request_count"] == 3
+        assert budget["reserved_output_tokens"] == (64 if recovers else 96)
+        assert budget["output_tokens"] == (1 if recovers else 0)
+        unknown = store.connection.execute(
+            "SELECT output_tokens, usage_status FROM model_call_attempt WHERE status='TRANSPORT_FAILED'"
+        ).fetchall()
+        assert len(unknown) == (2 if recovers else 3)
+        assert all(
+            row["output_tokens"] is None and row["usage_status"] == "MISSING" for row in unknown
         )
 
 
@@ -878,7 +888,15 @@ def test_http_500_records_bounded_response_body_without_headers(tmp_path, monkey
                 client=http,
             )
             with pytest.raises(ExecutionError, match="500"):
-                client._request({"model": "test", "messages": []})
+                client.invoke(
+                    "rubric_item",
+                    _rubric_payload(),
+                    (),
+                    RubricVerdict,
+                    max_tokens=32,
+                    temperature=0.0,
+                    seed=1,
+                )
         artifacts = store.connection.execute(
             "SELECT artifact_hash FROM artifact WHERE kind='transport-errors'"
         ).fetchall()
@@ -944,6 +962,7 @@ def test_request_images_are_deduplicated_and_restore_exact_envelope(tmp_path):
                 envelope = {
                     "model_lock": {"repo": "test"},
                     "request": {
+                        "max_tokens": 32,
                         "messages": [
                             {"role": "system", "content": "fixed"},
                             {
@@ -953,7 +972,7 @@ def test_request_images_are_deduplicated_and_restore_exact_envelope(tmp_path):
                                     {"type": "image_url", "image_url": {"url": uri}},
                                 ],
                             },
-                        ]
+                        ],
                     },
                 }
                 envelopes.append(envelope)
@@ -1212,7 +1231,15 @@ def test_bad_request_keeps_server_schema_reason():
             client=http,
         )
         with pytest.raises(ExecutionError) as caught:
-            client._request({"model": "test"})
+            client.invoke(
+                "rubric_item",
+                _rubric_payload(),
+                (),
+                RubricVerdict,
+                max_tokens=32,
+                temperature=0.0,
+                seed=1,
+            )
     assert caught.value.reason == "MODEL_REQUEST_REJECTED"
     assert "propertyNames is not supported" in str(caught.value)
 

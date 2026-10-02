@@ -223,3 +223,14 @@ Ordinary test runs skip these external checks. The holistic checks include both 
 and deliberately false image claims. `rate-existing` can compare holistic review on immutable
 saved questions and answers; it does not regenerate previously missing turns. Compare against
 human-reviewed defects, not acceptance rate alone, before adopting a large production corpus.
+
+
+## Bind controlled server settings to a run
+
+Experimental endpoints may set `serving_runtime` with `vllm_version`,
+`structured_output_backend`, `disable_any_whitespace` and `server_manifest_sha256`.
+The manifest records the actual launch configuration, pinned runtime lock, command and version
+check. These fields change both run and response-cache identities. A declaration alone does
+not prove the remote server used it. Verify the controlled launch and preserve its logs.
+For the pinned vLLM, whitespace suppression requires explicit `xgrammar` or `guidance`;
+compare changes in backend and whitespace as a combined condition.
