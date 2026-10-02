@@ -347,7 +347,7 @@ def run_specialist_evaluation(
                             max_tokens=max_tokens,
                             temperature=0.0,
                             seed=config.seed,
-                            bypass_cache=judge > 0,
+                            trial_id=f"blind-judge:{judge}",
                         )
                     except ExecutionError as error:
                         if error.reason == "MODEL_SCHEMA_MISMATCH":
@@ -368,7 +368,7 @@ def run_specialist_evaluation(
                             max_tokens=max_tokens,
                             temperature=0.0,
                             seed=config.seed,
-                            bypass_cache=True,
+                            trial_id=f"blind-judge:{judge}",
                             retry_feedback=_schema_retry_feedback(stage, error),
                             json_object_fallback=(
                                 error.reason in {"MODEL_FINISH_REASON", "MODEL_WHITESPACE_RUNAWAY"}

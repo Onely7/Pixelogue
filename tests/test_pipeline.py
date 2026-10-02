@@ -116,8 +116,9 @@ class ScriptedClient:
         seed: int,
         bypass_cache: bool = False,
         retry_feedback: str | None = None,
+        trial_id: str | None = None,
     ) -> ModelResponse:
-        del images, max_tokens, temperature, seed, bypass_cache
+        del images, max_tokens, temperature, seed, bypass_cache, trial_id
         self.retry_feedback.append(retry_feedback)
         if self.fail_first_schema and not self.schema_failed:
             self.schema_failed = True

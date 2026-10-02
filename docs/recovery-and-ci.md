@@ -20,6 +20,10 @@ is malformed. Missing or invalid usage stays unknown, with its output capacity r
 Opening an interrupted run settles saved journals once. Replaying the same request or explicit
 `trial_id` reuses its response, including an invalid one. Separate experimental trials must have
 different IDs. Cache reads, transport retries and incomplete attempts have separate records.
+
+Blind judges use distinct stable trial IDs, including when a pilot maps both judges to one
+endpoint. Their requests remain separate, and resuming reuses each judge's own saved response.
+The trial ID is private operational metadata and is not included in the model-visible payload.
 The canonical `model_call` table remains available to older readers.
 
 `profile` includes actual attempts, statuses, cache accesses and known token subtotals. A token

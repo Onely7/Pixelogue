@@ -7,8 +7,9 @@ import httpx
 import pytest
 
 from pixelogue.config import ModelEndpoint, RuntimeConfig, ServingRuntimeIdentity, load_config
-from pixelogue.contracts import RubricVerdict
+from pixelogue.contracts import GateVerdict, InstructionCandidate, PublicMessage, RubricVerdict
 from pixelogue.errors import ExecutionError
+from pixelogue.pipeline import SynthesisCoordinator
 from pixelogue.profiling import profile_database
 from pixelogue.serving import VllmClient
 from pixelogue.store import RunStore
@@ -258,3 +259,74 @@ def test_server_configuration_changes_run_and_call_identity(tmp_path: Path) -> N
                 invoke(client)
     assert calls == 2
     assert config_hashes[0] != config_hashes[1]
+
+
+def test_two_blind_judges_using_same_endpoint_replay_independently(
+    tmp_path, image_artifact
+) -> None:
+    image, root = image_artifact
+    config = load_config(Path("configs/pilot.yaml"))
+    calls = []
+
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json=completion(
+                json.dumps(
+                    {
+                        "local_anchor": "MET",
+                        "operation_coherent": "MET",
+                        "useful_request": "MET",
+                        "reason": "Visible request.",
+                    }
+                ),
+                {"prompt_tokens": 12, "completion_tokens": 9},
+            ),
+        )
+
+    instruction = InstructionCandidate(
+        candidate_id="candidate",
+        task_id="attribute_lookup",
+        family="visual_description",
+        visible_scope="Visible subject",
+        instruction_summary="Read color",
+        required_capabilities=(),
+    )
+    question = PublicMessage(
+        message_id="q", turn_index=1, role="user", content="What color is the subject?"
+    )
+    with httpx.Client(
+        base_url="http://localhost/v1/", transport=httpx.MockTransport(handler)
+    ) as http:
+        for _ in range(2):
+            with RunStore(tmp_path, "blind-resume", require_local_wal=False) as store:
+                store.initialize_run("blind-resume", config.config_hash, config.profile)
+                clients = [
+                    VllmClient(
+                        endpoint, config.runtime, run_id="blind-resume", store=store, client=http
+                    )
+                    for endpoint in [
+                        config.models.active_selector_endpoint,
+                        config.models.generator_a,
+                        config.models.generator_b,
+                    ]
+                ]
+                coordinator = SynthesisCoordinator(config, "blind-resume", store, *clients)
+                for _ in range(2):
+                    assert (
+                        coordinator._question_fit(
+                            (),
+                            question,
+                            instruction,
+                            "en",
+                            [coordinator._view_metadata(image)],
+                            coordinator._model_image(image, root),
+                            1,
+                        )
+                        is GateVerdict.MET
+                    )
+                budget = store.connection.execute("SELECT * FROM budget").fetchone()
+                assert budget["request_count"] == 2 and budget["output_tokens"] == 18
+    assert len(calls) == 2
+    assert calls[0] == calls[1]

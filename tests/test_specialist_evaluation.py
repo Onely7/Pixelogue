@@ -247,7 +247,7 @@ def test_failed_second_evaluator_resumes_from_first_saved_stage(
             pass
 
         def invoke(self, stage, body, images, model, **kwargs):
-            judge = int(kwargs["bypass_cache"])
+            judge = int(kwargs["trial_id"].rsplit(":", 1)[1])
             calls[judge] += 1
             if judge and not second_online:
                 raise ExecutionError("MODEL_OFFLINE", "Second evaluator is offline")

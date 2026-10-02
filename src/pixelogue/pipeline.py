@@ -187,6 +187,7 @@ class InferenceClient(Protocol):
         seed: int,
         bypass_cache: bool = False,
         retry_feedback: str | None = None,
+        trial_id: str | None = None,
     ) -> ModelResponse:
         """Return one schema-validated response."""
 
@@ -1243,7 +1244,7 @@ class SynthesisCoordinator:
                 max_tokens=1024,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
-                bypass_cache=judge_index > 0,
+                trial_id=f"blind-judge:{judge_index}",
             )
             for judge_index, client in enumerate(self.generators.values())
         ]
@@ -1373,7 +1374,7 @@ class SynthesisCoordinator:
                 max_tokens=128,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
-                bypass_cache=judge_index > 0,
+                trial_id=f"blind-judge:{judge_index}",
             )
             for judge_index, client in enumerate(self.generators.values())
         ]
@@ -1424,7 +1425,7 @@ class SynthesisCoordinator:
                 max_tokens=256,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
-                bypass_cache=judge_index > 0,
+                trial_id=f"blind-judge:{judge_index}",
             )
             for judge_index, client in enumerate(self.generators.values())
         ]
@@ -1504,7 +1505,7 @@ class SynthesisCoordinator:
                 max_tokens=max_tokens,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
-                bypass_cache=judge > 0,
+                trial_id=f"blind-judge:{judge}",
             )
 
         items = list(rating.items)
@@ -1585,7 +1586,7 @@ class SynthesisCoordinator:
                 max_tokens=2048,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
-                bypass_cache=judge_index > 0,
+                trial_id=f"blind-judge:{judge_index}",
             )
             for judge_index, client in enumerate(self.generators.values())
         ]
@@ -1690,7 +1691,7 @@ class SynthesisCoordinator:
                             max_tokens=256,
                             temperature=0.0,
                             seed=self.config.seed + turn_index,
-                            bypass_cache=judge_index > 0,
+                            trial_id=f"blind-judge:{judge_index}",
                         )
                     )
                 verdict = consensus([GateVerdict(vote.verdict) for vote in votes])
@@ -1800,7 +1801,7 @@ class SynthesisCoordinator:
                     max_tokens=384,
                     temperature=0.0,
                     seed=self.config.seed + turn_index,
-                    bypass_cache=index > 0,
+                    trial_id=f"blind-judge:{index}",
                 )
                 for index, client in enumerate(self.generators.values())
             ]
@@ -2045,7 +2046,7 @@ class SynthesisCoordinator:
                 max_tokens=2048,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
-                bypass_cache=judge_index > 0,
+                trial_id=f"blind-judge:{judge_index}",
             )
             for judge_index, client in enumerate(self.generators.values())
         ]
@@ -2077,7 +2078,7 @@ class SynthesisCoordinator:
                 max_tokens=1024,
                 temperature=0.0,
                 seed=self.config.seed + turn_index,
-                bypass_cache=judge_index > 0,
+                trial_id=f"blind-judge:{judge_index}",
             )
             for judge_index, client in enumerate(self.generators.values())
         ]

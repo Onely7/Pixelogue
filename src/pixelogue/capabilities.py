@@ -36,6 +36,7 @@ class CapabilityClient(Protocol):
         temperature: float,
         seed: int,
         bypass_cache: bool = False,
+        trial_id: str | None = None,
     ) -> ModelResponse:
         """Return one schema-validated response."""
 
@@ -110,7 +111,7 @@ def evaluate_capabilities(
                 max_tokens=256,
                 temperature=0.0,
                 seed=seed + index,
-                bypass_cache=judge_index > 0,
+                trial_id=f"blind-judge:{judge_index}",
             ).value
             for judge_index, judge in enumerate(judges)
         ]
