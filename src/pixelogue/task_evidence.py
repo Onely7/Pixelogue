@@ -173,7 +173,35 @@ class AttributeRecheckReport(StrictModel):
     detail: Nonempty
 
 
-def unsupported_object_label_feedback(report: ScopedEvidenceReport) -> str:
+class ArrayScopeEvidenceReport(StrictModel):
+    """Wire scope with capability names carried by observations in any order."""
+
+    scope_id: Nonempty
+    view_id: Nonempty
+    public_description: Nonempty
+    object_label: ObjectLabel | None = None
+    region: ImageRegion
+    observations: Annotated[tuple[CapabilityObservation, ...], Field(max_length=50)]
+
+
+class ArrayScopedEvidenceReport(StrictModel):
+    """Alternative routing contract preserving the existing internal evidence rules."""
+
+    image_id: Nonempty
+    scopes: Annotated[tuple[ArrayScopeEvidenceReport, ...], Field(max_length=8)]
+    reason: Nonempty
+
+    def to_inventory(self) -> ScopedEvidenceInventory:
+        """Reject duplicates and invalid regions without depending on observation order."""
+        try:
+            return ScopedEvidenceInventory.model_validate(self.model_dump())
+        except ValidationError as error:
+            raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
+
+
+def unsupported_object_label_feedback(
+    report: ScopedEvidenceReport | ArrayScopedEvidenceReport,
+) -> str:
     """Identify invalid labeled scopes without copying model-generated scope text."""
     invalid = [
         index
@@ -181,7 +209,11 @@ def unsupported_object_label_feedback(report: ScopedEvidenceReport) -> str:
         if scope.object_label is not None
         and not any(
             capability == "visible_entity" and observation.verdict == "MET"
-            for capability, observation in scope.observations.items()
+            for capability, observation in (
+                scope.observations.items()
+                if isinstance(scope.observations, dict)
+                else ((item.capability, item) for item in scope.observations)
+            )
         )
     ]
     if not invalid:
@@ -194,12 +226,17 @@ def unsupported_object_label_feedback(report: ScopedEvidenceReport) -> str:
     )
 
 
-def out_of_scope_region_feedback(report: ScopedEvidenceReport) -> str:
+def out_of_scope_region_feedback(report: ScopedEvidenceReport | ArrayScopedEvidenceReport) -> str:
     """Describe invalid nested boxes without echoing model-generated text."""
     mismatches: list[str] = []
     for scope_index, scope in enumerate(report.scopes, start=1):
         parent = scope.region
-        for observation_index, observation in enumerate(scope.observations.values(), start=1):
+        observations = (
+            scope.observations.values()
+            if isinstance(scope.observations, dict)
+            else scope.observations
+        )
+        for observation_index, observation in enumerate(observations, start=1):
             region = observation.region
             if (
                 parent.left <= region.left < region.right <= parent.right

@@ -218,3 +218,7 @@ PIXELOGUE_LIVE_RUBRIC=1 PIXELOGUE_LIVE_CONFIG=configs/paired-one-gpu-pilot.yaml 
 ## サーバー条件を実行識別に固定する
 
 実験用endpointの `serving_runtime` には `vllm_version`、`structured_output_backend`、`disable_any_whitespace`、`server_manifest_sha256` を指定できます。manifestには実際の起動設定・固定したruntime lock・起動コマンド・版確認を保存します。これらを変更するとrunと応答キャッシュの識別が変わります。宣言だけでは実サーバーの設定を確認したことにならないため、制御された起動とログで照合します。固定vLLMで空白抑制を使うには `xgrammar` または `guidance` を明示し、backendも変えた条件は設定一式の比較として扱います。
+
+## 根拠の出力形式を比較する
+
+比較用設定で `tasks.evidence_format: array` を指定すると、能力名を列挙型で制限した観測配列を使います。比較結果を確認するまで既定は `keyed` です。両形式は説明文・領域・能力上限・内部検証を共通にし、欠測はUNKNOWNのまま保持します。能力や根拠IDの重複、異なるview、親領域外の観測は拒否します。

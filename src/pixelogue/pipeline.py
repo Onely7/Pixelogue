@@ -77,6 +77,7 @@ from pixelogue.serialization import canonical_hash
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import (
+    ArrayScopedEvidenceReport,
     AttributeRecheckReport,
     CandidateBindingReport,
     CandidateBindingsReport,
@@ -345,7 +346,9 @@ class SynthesisCoordinator:
                 "image_views": image_views,
             },
             (model_image,),
-            ScopedEvidenceReport,
+            ArrayScopedEvidenceReport
+            if self.config.tasks.evidence_format == "array"
+            else ScopedEvidenceReport,
             max_tokens=self.config.tasks.evidence_max_tokens,
             temperature=0.0,
             seed=self.config.seed,
@@ -2189,7 +2192,12 @@ class SynthesisCoordinator:
                 if (
                     isinstance(
                         response.value,
-                        (EvidenceInventory, ScopedEvidenceInventory, ScopedEvidenceReport),
+                        (
+                            EvidenceInventory,
+                            ScopedEvidenceInventory,
+                            ScopedEvidenceReport,
+                            ArrayScopedEvidenceReport,
+                        ),
                     )
                     and response.value.image_id != payload["image_id"]
                 ):
@@ -2242,15 +2250,19 @@ class SynthesisCoordinator:
                         retry_feedback += " Required top-level fields: " + ", ".join(required) + "."
                         if stage == "evidence_extraction":
                             retry_feedback += (
-                                " observations must be an object keyed by each capability name."
-                                " Combine visible instances in that key's single value and use"
+                                (
+                                    " observations must be an array with a capability name on each observation."
+                                    if model is ArrayScopedEvidenceReport
+                                    else " observations must be an object keyed by each capability name."
+                                )
+                                + " Combine visible instances in one observation per capability and use"
                                 " only capability_vocabulary. Every scope and observation region"
                                 " must satisfy 0 <= left < right <= 1 and"
                                 " 0 <= top < bottom <= 1. Keep each observation inside its scope;"
                                 " never use a point or an all-1 box."
                             )
                             if response is not None and isinstance(
-                                response.value, ScopedEvidenceReport
+                                response.value, (ScopedEvidenceReport, ArrayScopedEvidenceReport)
                             ):
                                 retry_feedback += out_of_scope_region_feedback(response.value)
                                 retry_feedback += unsupported_object_label_feedback(response.value)

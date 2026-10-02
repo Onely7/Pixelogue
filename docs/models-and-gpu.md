@@ -234,3 +234,11 @@ check. These fields change both run and response-cache identities. A declaration
 not prove the remote server used it. Verify the controlled launch and preserve its logs.
 For the pinned vLLM, whitespace suppression requires explicit `xgrammar` or `guidance`;
 compare changes in backend and whitespace as a combined condition.
+
+## Compare evidence wire formats
+
+Set `tasks.evidence_format: array` in an experimental configuration to return observations
+with a bounded capability enum. The default remains `keyed` until controlled comparisons
+justify a change. Both formats use the same descriptions, regions, capability limits and
+internal validation. Missing observations remain UNKNOWN. Duplicate capability or evidence
+IDs, unrelated views and observations outside the parent region remain rejected.

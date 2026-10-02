@@ -23,6 +23,7 @@ from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import (
+    ArrayScopedEvidenceReport,
     AttributeRecheckReport,
     CandidateBindingsReport,
     ScopedEvidenceInventory,
@@ -498,6 +499,11 @@ class VllmClient:
             "instruction": STAGE_INSTRUCTIONS[stage],
             "input": payload,
         }
+        if response_model is ArrayScopedEvidenceReport:
+            request_text["instruction"] = STAGE_INSTRUCTIONS[stage].replace(
+                "field is an object keyed by capability name, not an array. Each value",
+                "field is an array of observations, each with a capability name from the vocabulary. Each observation",
+            )
         if retry_feedback is not None:
             request_text["retry_feedback"] = retry_feedback
         user_content: list[dict[str, Any]] = [
@@ -512,7 +518,12 @@ class VllmClient:
         schema = response_model.model_json_schema()
         if stage in SPECIALIST_SOURCE_STAGES:
             _bind_specialist_source_schema(schema, stage, payload)
-        if response_model in (EvidenceInventory, ScopedEvidenceInventory, ScopedEvidenceReport):
+        if response_model in (
+            EvidenceInventory,
+            ScopedEvidenceInventory,
+            ScopedEvidenceReport,
+            ArrayScopedEvidenceReport,
+        ):
             image_id = payload.get("image_id")
             if not isinstance(image_id, str) or not image_id:
                 raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")
@@ -523,7 +534,7 @@ class VllmClient:
                 if not isinstance(value, str) or not value:
                     raise ExecutionError("MODEL_PAYLOAD_FIELD", f"Attribute recheck lacks {field}")
                 schema["properties"][field]["const"] = value
-        if response_model is ScopedEvidenceReport:
+        if response_model in (ScopedEvidenceReport, ArrayScopedEvidenceReport):
             vocabulary = payload.get("capability_vocabulary")
             limit = payload.get("max_observations_per_scope")
             max_scopes = payload.get("max_scopes")
@@ -541,14 +552,23 @@ class VllmClient:
                 )
             scopes_schema = schema["properties"]["scopes"]
             scopes_schema["maxItems"] = max_scopes
-            observations_schema = schema["$defs"]["ScopeEvidenceReport"]["properties"][
-                "observations"
-            ]
-            observations_schema["properties"] = {
-                name: {"$ref": "#/$defs/CapabilityReport"} for name in sorted(vocabulary)
-            }
-            observations_schema["additionalProperties"] = False
-            observations_schema["maxProperties"] = limit
+            scope_type = (
+                "ScopeEvidenceReport"
+                if response_model is ScopedEvidenceReport
+                else "ArrayScopeEvidenceReport"
+            )
+            observations_schema = schema["$defs"][scope_type]["properties"]["observations"]
+            if response_model is ScopedEvidenceReport:
+                observations_schema["properties"] = {
+                    name: {"$ref": "#/$defs/CapabilityReport"} for name in sorted(vocabulary)
+                }
+                observations_schema["additionalProperties"] = False
+                observations_schema["maxProperties"] = limit
+            else:
+                observations_schema["maxItems"] = limit
+                schema["$defs"]["CapabilityObservation"]["properties"]["capability"]["enum"] = (
+                    sorted(vocabulary)
+                )
         if response_model is CandidateBindingsReport:
             candidates = payload.get("candidates")
             if not isinstance(candidates, list) or not candidates:
