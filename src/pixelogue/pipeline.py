@@ -400,47 +400,16 @@ class SynthesisCoordinator:
                 used_task_ids=frozenset(turn.instruction.task_id for turn in turns),
             )
             if candidates:
-
-                def validate_bindings(
-                    result: CandidateBindingsReport,
-                    templates: tuple[InstructionCandidate, ...] = candidates,
-                    public_history: tuple[PublicMessage, ...] = snapshot.public_history,
-                ) -> None:
-                    parsed, parse_rejections = result.partition_bindings(
-                        frozenset(template.candidate_id for template in templates)
-                    )
-                    result_batch = bind_candidates_individually(
-                        templates,
-                        parsed,
-                        inventory,
-                        public_history,
-                        self.config.tasks,
-                        frozenset(turn.instruction.candidate_id for turn in turns),
-                    )
-                    if not result_batch.admitted and (parse_rejections or result_batch.rejected):
-                        first = (*parse_rejections, *result_batch.rejected)[0]
-                        raise ExecutionError(first.reason, first.message)
-
                 try:
-                    bindings_report = self._invoke(
+                    candidates = self._bind_candidate_batch(
+                        candidates,
+                        inventory,
+                        snapshot,
                         generator,
-                        "candidate_binding",
-                        {
-                            "target_language": target_language,
-                            "public_history": self._history(snapshot.public_history),
-                            "candidates": [
-                                binding_candidate(candidate, inventory) for candidate in candidates
-                            ],
-                            "scope_evidence": inventory.model_dump(mode="json", exclude_none=True),
-                            "answer_max_tokens": self.config.tasks.answer_max_tokens,
-                            "image_views": image_views,
-                        },
-                        (model_image,),
-                        CandidateBindingsReport,
-                        max_tokens=self.config.tasks.binding_max_tokens,
-                        temperature=0.0,
-                        seed=self.config.seed + turn_index,
-                        post_validate=validate_bindings,
+                        target_language,
+                        model_image,
+                        image_views,
+                        frozenset(turn.instruction.candidate_id for turn in turns),
                     )
                 except ExecutionError as error:
                     if error.reason not in {
@@ -470,38 +439,6 @@ class SynthesisCoordinator:
                     terminal_stage = "candidate_binding"
                     terminal_reason = error.reason
                     break
-                bindings, parse_rejections = bindings_report.partition_bindings(
-                    frozenset(candidate.candidate_id for candidate in candidates)
-                )
-                self.store.write_json_artifact(
-                    "candidate-bindings", bindings.model_dump(mode="json")
-                )
-                binding_result = bind_candidates_individually(
-                    candidates,
-                    bindings,
-                    inventory,
-                    snapshot.public_history,
-                    self.config.tasks,
-                    frozenset(turn.instruction.candidate_id for turn in turns),
-                )
-                rejected_bindings = (*parse_rejections, *binding_result.rejected)
-                if rejected_bindings:
-                    self.store.write_json_artifact(
-                        "candidate-binding-rejections",
-                        {
-                            "conversation_id": conversation_id,
-                            "turn_index": turn_index,
-                            "rejections": [
-                                {
-                                    "candidate_id": item.candidate_id,
-                                    "reason": item.reason,
-                                    "message": item.message,
-                                }
-                                for item in rejected_bindings
-                            ],
-                        },
-                    )
-                candidates = binding_result.admitted
                 candidates = self._drop_answered_candidates(
                     candidates, turns, conversation_id, turn_index
                 )
@@ -584,6 +521,90 @@ class SynthesisCoordinator:
             status=terminal_status,
         )
         return self._finish_conversation(conversation, persist=True)
+
+    def _bind_candidate_batch(
+        self,
+        candidates: tuple[InstructionCandidate, ...],
+        inventory: ScopedEvidenceInventory,
+        snapshot: HistorySnapshot,
+        generator: InferenceClient,
+        target_language: str,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+        used_fingerprints: frozenset[str],
+    ) -> tuple[InstructionCandidate, ...]:
+        """Bind one fixed set without changing its local validation and retry contract."""
+        conversation_id = snapshot.conversation_id
+        turn_index = snapshot.turn_index
+
+        def validate_bindings(
+            result: CandidateBindingsReport,
+            templates: tuple[InstructionCandidate, ...] = candidates,
+            public_history: tuple[PublicMessage, ...] = snapshot.public_history,
+        ) -> None:
+            parsed, parse_rejections = result.partition_bindings(
+                frozenset(template.candidate_id for template in templates)
+            )
+            result_batch = bind_candidates_individually(
+                templates,
+                parsed,
+                inventory,
+                public_history,
+                self.config.tasks,
+                used_fingerprints,
+            )
+            if not result_batch.admitted and (parse_rejections or result_batch.rejected):
+                first = (*parse_rejections, *result_batch.rejected)[0]
+                raise ExecutionError(first.reason, first.message)
+
+        bindings_report = self._invoke(
+            generator,
+            "candidate_binding",
+            {
+                "target_language": target_language,
+                "public_history": self._history(snapshot.public_history),
+                "candidates": [binding_candidate(candidate, inventory) for candidate in candidates],
+                "scope_evidence": inventory.model_dump(mode="json", exclude_none=True),
+                "answer_max_tokens": self.config.tasks.answer_max_tokens,
+                "image_views": image_views,
+            },
+            (model_image,),
+            CandidateBindingsReport,
+            max_tokens=self.config.tasks.binding_max_tokens,
+            temperature=0.0,
+            seed=self.config.seed + turn_index,
+            post_validate=validate_bindings,
+        )
+        bindings, parse_rejections = bindings_report.partition_bindings(
+            frozenset(candidate.candidate_id for candidate in candidates)
+        )
+        self.store.write_json_artifact("candidate-bindings", bindings.model_dump(mode="json"))
+        binding_result = bind_candidates_individually(
+            candidates,
+            bindings,
+            inventory,
+            snapshot.public_history,
+            self.config.tasks,
+            used_fingerprints,
+        )
+        rejected_bindings = (*parse_rejections, *binding_result.rejected)
+        if rejected_bindings:
+            self.store.write_json_artifact(
+                "candidate-binding-rejections",
+                {
+                    "conversation_id": conversation_id,
+                    "turn_index": turn_index,
+                    "rejections": [
+                        {
+                            "candidate_id": item.candidate_id,
+                            "reason": item.reason,
+                            "message": item.message,
+                        }
+                        for item in rejected_bindings
+                    ],
+                },
+            )
+        return binding_result.admitted
 
     def _attempt_candidates(
         self,
