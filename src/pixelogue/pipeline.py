@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypeVar
@@ -225,8 +225,9 @@ class SynthesisCoordinator:
     ) -> Iterator[ConversationArtifact]:
         """Synthesize independent images concurrently and yield input order.
 
-        At most ``max_workers`` jobs are submitted at once. Conversation-local history remains
-        sequential, while independent model requests can be continuously batched by the server.
+        The default submits at most ``max_workers`` jobs. Optional completion-based refill keeps
+        at most twice that many submitted or buffered results, with at most ``max_workers``
+        active jobs. Conversation-local history remains sequential in either mode.
 
         Raises:
             ValueError: If ``max_workers`` is outside the configured image concurrency range.
@@ -240,6 +241,9 @@ class SynthesisCoordinator:
             for job in iterator:
                 yield self._synthesize_job(job, artifact_root)
             return
+        if self.config.runtime.refill_completed_images:
+            yield from self._synthesize_with_refill(iterator, artifact_root, max_workers)
+            return
 
         with ThreadPoolExecutor(
             max_workers=max_workers,
@@ -252,6 +256,7 @@ class SynthesisCoordinator:
                 except StopIteration:
                     break
                 pending.append(executor.submit(self._synthesize_job, job, artifact_root))
+
             while pending:
                 yield pending.popleft().result()
                 try:
@@ -259,6 +264,42 @@ class SynthesisCoordinator:
                 except StopIteration:
                     continue
                 pending.append(executor.submit(self._synthesize_job, job, artifact_root))
+
+    def _synthesize_with_refill(
+        self,
+        jobs: Iterator[SynthesisJob],
+        artifact_root: Path,
+        max_workers: int,
+    ) -> Iterator[ConversationArtifact]:
+        """Refill finished slots within a bounded window, then return input order."""
+        window = 2 * max_workers
+        next_submit = next_return = 0
+        exhausted = False
+        ready: dict[int, Future[ConversationArtifact]] = {}
+        with ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="pixelogue-image"
+        ) as executor:
+            pending: dict[Future[ConversationArtifact], int] = {}
+            while pending or ready or not exhausted:
+                while (
+                    not exhausted
+                    and len(pending) < max_workers
+                    and len(pending) + len(ready) < window
+                ):
+                    try:
+                        job = next(jobs)
+                    except StopIteration:
+                        exhausted = True
+                        break
+                    pending[executor.submit(self._synthesize_job, job, artifact_root)] = next_submit
+                    next_submit += 1
+                if pending:
+                    completed, _ = wait(pending, return_when=FIRST_COMPLETED)
+                    for future in completed:
+                        ready[pending.pop(future)] = future
+                while next_return in ready:
+                    yield ready.pop(next_return).result()
+                    next_return += 1
 
     def _synthesize_job(
         self,

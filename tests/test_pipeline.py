@@ -3069,3 +3069,108 @@ def test_fact_novelty_uses_only_committed_facts_across_operation_labels(
         )
     finally:
         store.close()
+
+
+def test_completed_slots_refill_but_slow_head_bounds_buffer_and_output_order(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from pixelogue.contracts import ConversationArtifact
+    from pixelogue.serialization import canonical_hash
+
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "runtime": coordinator.config.runtime.model_copy(
+                update={"max_concurrent_images": 2, "refill_completed_images": True}
+            )
+        }
+    )
+    image, root = image_artifact
+    release_head, fourth_finished = threading.Event(), threading.Event()
+    probe = ConcurrencyProbe()
+    consumed = []
+
+    def jobs():
+        for index in range(8):
+            consumed.append(index)
+            yield SynthesisJob(
+                image=image.model_copy(update={"image_id": f"{index:064x}"}),
+                target_language="en",
+                generator_role="generator_a",
+            )
+
+    def synthesize(job, artifact_root):
+        index = int(job.image.image_id, 16)
+        probe.enter()
+        try:
+            if index == 0:
+                assert release_head.wait(5), "Consumer did not release the held first image"
+            if index == 3:
+                fourth_finished.set()
+            return ConversationArtifact(
+                conversation_id=canonical_hash(index),
+                image=job.image,
+                target_language="en",
+                generation_model=coordinator.config.models.generator_a.repo_id,
+                turns=(),
+                status="ERROR",
+            )
+        finally:
+            probe.exit()
+
+    monkeypatch.setattr(coordinator, "_synthesize_job", synthesize)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                lambda: list(coordinator.synthesize_batch(jobs(), root, max_workers=2))
+            )
+            try:
+                assert fourth_finished.wait(3), (
+                    "Finished slots were not refilled behind the held head"
+                )
+                assert consumed == [0, 1, 2, 3]
+                assert not future.done()
+            finally:
+                release_head.set()
+            results = future.result(timeout=5)
+        assert [int(result.image.image_id, 16) for result in results] == list(range(8))
+        assert probe.peak == 2 and probe.active == 0
+    finally:
+        release_head.set()
+        store.close()
+
+
+def test_refill_keeps_saved_conversation_replay_and_store_serialization(
+    tmp_path: Path, image_artifact
+):
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, evaluation_mode="holistic"
+    )
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "runtime": coordinator.config.runtime.model_copy(
+                update={"max_concurrent_images": 2, "refill_completed_images": True}
+            )
+        }
+    )
+    image, root = image_artifact
+    jobs = [
+        SynthesisJob(
+            image=image.model_copy(update={"image_id": f"{index + 1:064x}"}),
+            target_language="en",
+            generator_role="generator_a",
+        )
+        for index in range(4)
+    ]
+    try:
+        first = list(coordinator.synthesize_batch(jobs, root, max_workers=2))
+        calls = len(generator_a.calls) + len(generator_b.calls)
+        resumed = list(coordinator.synthesize_batch(jobs, root, max_workers=2))
+        assert resumed == first
+        assert len(generator_a.calls) + len(generator_b.calls) == calls
+        assert [row.image.image_id for row in first] == [job.image.image_id for job in jobs]
+        assert store.verify()["artifacts"] > 0
+    finally:
+        store.close()

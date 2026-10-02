@@ -103,6 +103,12 @@ The summary is refreshed after the first record, every 100 records, and on exit.
 rebuilds the output from the run's saved conversation/turn commits; use the same immutable input
 manifest and configuration.
 
+`runtime.refill_completed_images` defaults to `false`. With `true`, synthesis refills a finished
+image slot before waiting for a slower earlier image, while yielding results in input order.
+Active jobs stay within `runtime.max_concurrent_images`; submitted and buffered results are
+bounded by twice the requested worker count. Public histories remain conversation-local and
+database transactions remain serialized. Use a new run identity for a scheduling comparison.
+
 New request artifacts externalize repeated image data URLs into content-addressed
 `request-images` artifacts (`archive_format: image-refs-v1`). The HTTP payload and request hash
 remain unchanged. Use `pixelogue.serving.read_request_artifact(store, artifact_hash)` to restore
