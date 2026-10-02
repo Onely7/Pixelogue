@@ -426,7 +426,7 @@ def test_visual_cache_keeps_image_operation_processor_schema_history_and_judges_
         "target_language": "en",
         "public_history": [],
         "question": "What color is visible?",
-        "expected_operation": {
+        "selected_instruction": {
             "scope_id": "subject",
             "public_parameters": [{"name": "attribute", "value": "color"}],
         },
@@ -460,7 +460,7 @@ def test_visual_cache_keeps_image_operation_processor_schema_history_and_judges_
             ask(
                 body=payload
                 | {
-                    "expected_operation": {
+                    "selected_instruction": {
                         "scope_id": "other",
                         "public_parameters": [{"name": "attribute", "value": "shape"}],
                     }
