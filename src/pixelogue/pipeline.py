@@ -442,7 +442,7 @@ class SynthesisCoordinator:
             )
             if candidates:
                 try:
-                    candidates = self._bind_candidate_batch(
+                    candidates = self._bind_candidate_batches(
                         candidates,
                         inventory,
                         snapshot,
@@ -450,7 +450,7 @@ class SynthesisCoordinator:
                         target_language,
                         model_image,
                         image_views,
-                        frozenset(turn.instruction.candidate_id for turn in turns),
+                        tuple(turns),
                     )
                 except ExecutionError as error:
                     if error.reason not in {
@@ -480,9 +480,6 @@ class SynthesisCoordinator:
                     terminal_stage = "candidate_binding"
                     terminal_reason = error.reason
                     break
-                candidates = self._drop_answered_candidates(
-                    candidates, turns, conversation_id, turn_index
-                )
             if not candidates:
                 terminal_status = "REJECTED"
                 terminal_stage = "candidate_admission"
@@ -562,6 +559,49 @@ class SynthesisCoordinator:
             status=terminal_status,
         )
         return self._finish_conversation(conversation, persist=True)
+
+    def _bind_candidate_batches(
+        self,
+        candidates: tuple[InstructionCandidate, ...],
+        inventory: ScopedEvidenceInventory,
+        snapshot: HistorySnapshot,
+        generator: InferenceClient,
+        target_language: str,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+        previous_turns: tuple[TurnArtifact, ...],
+    ) -> tuple[InstructionCandidate, ...]:
+        """Bind a fixed prefix and extend only when no admissible new fact remains."""
+        size = self.config.tasks.initial_binding_batch_size
+        used = frozenset(turn.instruction.candidate_id for turn in previous_turns)
+        for offset in range(0, len(candidates), size):
+            batch = candidates[offset : offset + size]
+            admitted = self._bind_candidate_batch(
+                batch,
+                inventory,
+                snapshot,
+                generator,
+                target_language,
+                model_image,
+                image_views,
+                used,
+            )
+            admitted = self._drop_answered_candidates(
+                admitted, previous_turns, snapshot.conversation_id, snapshot.turn_index
+            )
+            self.store.write_json_artifact(
+                "candidate-binding-batches",
+                {
+                    "conversation_id": snapshot.conversation_id,
+                    "turn_index": snapshot.turn_index,
+                    "offset": offset,
+                    "candidate_ids": [candidate.candidate_id for candidate in batch],
+                    "admitted_ids": [candidate.candidate_id for candidate in admitted],
+                },
+            )
+            if admitted:
+                return admitted
+        return ()
 
     def _bind_candidate_batch(
         self,

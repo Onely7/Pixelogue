@@ -78,6 +78,12 @@ current count share a fact without relabeling either artifact. Only committed fa
 Broad descriptions, summaries, action requests, arbitrary QA and relations without a declared
 dimension remain unresolved, so this filter does not replace the blind novelty gate.
 
+`tasks.initial_binding_batch_size` defaults to `8`. The comparison value `2` binds the first
+two scheduled candidates, extending by two only when none remains admissible and new. It never
+exceeds the original eight-candidate pool. A malformed response or execution failure stops the
+binding stage. Batch membership and admitted IDs are saved privately; task coverage must be
+measured because accepting the early batch can omit a later specialized opportunity.
+
 Public operation contracts include the exact view, original scope box and resolved subject box.
 Binding preserves the subject's entity box for identification, attributes and actions, even if
 the target was an instruction choice. Attribute evidence marked `MET` must lie within the

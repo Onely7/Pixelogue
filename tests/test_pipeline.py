@@ -3174,3 +3174,120 @@ def test_refill_keeps_saved_conversation_replay_and_store_serialization(
         assert store.verify()["artifacts"] > 0
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("batch_size", [2, 8])
+def test_binding_batches_extend_when_first_choices_have_no_new_fact(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch, batch_size: int
+):
+
+    coordinator, store, _, generator, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "tasks": coordinator.config.tasks.model_copy(
+                update={"initial_binding_batch_size": batch_size}
+            )
+        }
+    )
+    base, snapshot, model_image, views = _candidate_retry_inputs(coordinator, image_artifact)
+    templates = tuple(base[0].model_copy(update={"candidate_id": str(index)}) for index in range(8))
+    batches = []
+
+    def bind(batch, *args, **kwargs):
+        batches.append(tuple(candidate.candidate_id for candidate in batch))
+        return batch
+
+    def novelty(batch, *args, **kwargs):
+        return tuple(candidate for candidate in batch if candidate.candidate_id not in {"0", "1"})
+
+    monkeypatch.setattr(coordinator, "_bind_candidate_batch", bind)
+    monkeypatch.setattr(coordinator, "_drop_answered_candidates", novelty)
+    try:
+        result = coordinator._bind_candidate_batches(
+            templates,
+            _attribute_recheck_inventory(),
+            snapshot,
+            generator,
+            "en",
+            model_image,
+            views,
+            (),
+        )
+    finally:
+        store.close()
+    expected = (
+        [("0", "1"), ("2", "3")] if batch_size == 2 else [tuple(str(index) for index in range(8))]
+    )
+    assert batches == expected
+    assert tuple(candidate.candidate_id for candidate in result) == (
+        ("2", "3") if batch_size == 2 else tuple(str(index) for index in range(2, 8))
+    )
+
+
+def test_binding_batches_stop_on_transport_or_malformed_response(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+):
+    coordinator, store, _, generator, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "tasks": coordinator.config.tasks.model_copy(update={"initial_binding_batch_size": 2})
+        }
+    )
+    base, snapshot, model_image, views = _candidate_retry_inputs(coordinator, image_artifact)
+    templates = tuple(base[0].model_copy(update={"candidate_id": str(index)}) for index in range(8))
+    calls = []
+
+    def fail(batch, *args, **kwargs):
+        calls.append(batch)
+        raise ExecutionError("MODEL_SCHEMA_MISMATCH", "No trustworthy parsed response")
+
+    monkeypatch.setattr(coordinator, "_bind_candidate_batch", fail)
+    try:
+        with pytest.raises(ExecutionError, match="trustworthy"):
+            coordinator._bind_candidate_batches(
+                templates,
+                _attribute_recheck_inventory(),
+                snapshot,
+                generator,
+                "en",
+                model_image,
+                views,
+                (),
+            )
+    finally:
+        store.close()
+    assert len(calls) == 1 and len(calls[0]) == 2
+
+
+def test_binding_batches_reach_late_candidates_when_all_earlier_choices_are_ineligible(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+):
+    coordinator, store, _, generator, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "tasks": coordinator.config.tasks.model_copy(update={"initial_binding_batch_size": 2})
+        }
+    )
+    base, snapshot, model_image, views = _candidate_retry_inputs(coordinator, image_artifact)
+    templates = tuple(base[0].model_copy(update={"candidate_id": str(index)}) for index in range(8))
+    seen = []
+
+    def bind(batch, *args, **kwargs):
+        seen.extend(candidate.candidate_id for candidate in batch)
+        return (batch[-1],) if batch[-1].candidate_id == "7" else ()
+
+    monkeypatch.setattr(coordinator, "_bind_candidate_batch", bind)
+    try:
+        result = coordinator._bind_candidate_batches(
+            templates,
+            _attribute_recheck_inventory(),
+            snapshot,
+            generator,
+            "en",
+            model_image,
+            views,
+            (),
+        )
+    finally:
+        store.close()
+    assert seen == list(map(str, range(8))) and result == (templates[-1],)
