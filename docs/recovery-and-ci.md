@@ -24,6 +24,13 @@ different IDs. Cache reads, transport retries and incomplete attempts have separ
 Blind judges use distinct stable trial IDs, including when a pilot maps both judges to one
 endpoint. Their requests remain separate, and resuming reuses each judge's own saved response.
 The trial ID is private operational metadata and is not included in the model-visible payload.
+
+Routing discovery already runs once before the turn loop and retains its inventory for the
+conversation, with bounded malformed-output recovery. Task-specific blind source extraction
+still includes its public question, operation and history conditions. Do not remove these from
+cache identities without a contract proving they are irrelevant. Exact reuse distinguishes
+image bytes and view, model and processor revisions, Schema, prompts, operation, public history
+and judge trial ID. Each judge reuses only its own response.
 The canonical `model_call` table remains available to older readers.
 
 `profile` includes actual attempts, statuses, cache accesses and known token subtotals. A token

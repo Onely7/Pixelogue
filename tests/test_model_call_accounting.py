@@ -375,3 +375,119 @@ def test_structured_retry_replays_each_saved_attempt_after_reopen(tmp_path: Path
             budget = store.connection.execute("SELECT * FROM budget").fetchone()
             assert budget["request_count"] == 2 and budget["output_tokens"] == 6
     assert len(calls) == 2 and calls[0]["seed"] != calls[1]["seed"]
+
+
+def test_visual_cache_keeps_image_operation_processor_schema_history_and_judges_separate(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+):
+    import hashlib
+
+    from PIL import Image
+
+    from pixelogue.contracts import QuestionFit
+    from pixelogue.prompts import STAGE_INSTRUCTIONS
+    from pixelogue.serving import ModelImage
+
+    image, root = image_artifact
+    original_image = ModelImage(
+        image.full_view.view_id,
+        root / image.full_view.relative_path,
+        image.full_view.encoded_sha256,
+        "image/png",
+    )
+    other_path = tmp_path / "other.png"
+    Image.new("RGB", (256, 192), "red").save(other_path)
+    other_image = ModelImage(
+        original_image.view_id,
+        other_path,
+        hashlib.sha256(other_path.read_bytes()).hexdigest(),
+        "image/png",
+    )
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json=completion(
+                '{"local_anchor":"MET","operation_coherent":"MET","useful_request":"MET","reason":"Visible."}',
+                {"prompt_tokens": 4, "completion_tokens": 3},
+            ),
+        )
+
+    class OtherQuestionFit(QuestionFit):
+        pass
+
+    endpoint = ModelEndpoint(
+        repo_id="Qwen/Qwen3.5-2B", revision="a" * 40, processor_revision="a" * 40
+    )
+    payload = {
+        "target_language": "en",
+        "public_history": [],
+        "question": "What color is visible?",
+        "expected_operation": {
+            "scope_id": "subject",
+            "public_parameters": [{"name": "attribute", "value": "color"}],
+        },
+        "image_views": [{"view_id": original_image.view_id}],
+    }
+    with RunStore(tmp_path, "visual-identity", require_local_wal=False) as store:
+        with httpx.Client(
+            base_url="http://localhost/v1/", transport=httpx.MockTransport(handler)
+        ) as http:
+
+            def ask(
+                body=payload, visual=original_image, model=QuestionFit, lock=endpoint, trial=None
+            ):
+                client = VllmClient(
+                    lock, RuntimeConfig(), run_id="visual-identity", store=store, client=http
+                )
+                return client.invoke(
+                    "question_fit",
+                    body,
+                    (visual,),
+                    model,
+                    max_tokens=32,
+                    temperature=0.0,
+                    seed=1,
+                    trial_id=trial,
+                )
+
+            ask()
+            ask()
+            ask(visual=other_image)
+            ask(
+                body=payload
+                | {
+                    "expected_operation": {
+                        "scope_id": "other",
+                        "public_parameters": [{"name": "attribute", "value": "shape"}],
+                    }
+                }
+            )
+            ask(lock=endpoint.model_copy(update={"processor_revision": "b" * 40}))
+            ask(lock=endpoint.model_copy(update={"revision": "b" * 40}))
+            ask(model=OtherQuestionFit)
+            ask(
+                body=payload
+                | {
+                    "public_history": [
+                        {"message_id": "m", "role": "user", "content": "Use the left subject."}
+                    ]
+                }
+            )
+            for judge in ("blind-judge:0", "blind-judge:1"):
+                ask(trial=judge)
+                ask(trial=judge)
+            monkeypatch.setitem(
+                STAGE_INSTRUCTIONS,
+                "question_fit",
+                STAGE_INSTRUCTIONS["question_fit"] + " Updated contract.",
+            )
+            ask()
+        assert (
+            store.connection.execute("SELECT COUNT(*) FROM model_call_attempt").fetchone()[0] == 10
+        )
+        assert store.connection.execute("SELECT request_count FROM budget").fetchone()[0] == 10
+    assert calls == 10
