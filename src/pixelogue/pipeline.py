@@ -160,6 +160,16 @@ class SynthesisJob:
     generator_role: Literal["generator_a", "generator_b"]
 
 
+@dataclass(frozen=True)
+class TurnAttemptResult:
+    """Private outcome before a turn is appended or committed by its coordinator."""
+
+    turn: TurnArtifact | None
+    status: Literal["COMMITTED", "REJECTED", "ABSTAINED", "ERROR"]
+    stage: str
+    reason: str
+
+
 class InferenceClient(Protocol):
     """Interface implemented by vLLM and scripted contract-test clients."""
 
@@ -507,357 +517,30 @@ class SynthesisCoordinator:
                 terminal_stage = "instruction_selection"
                 terminal_reason = "NO_SUPPORTED_NEW_INSTRUCTION"
                 break
-            target_value = next(
-                (
-                    parameter.value
-                    for parameter in selected.public_parameters
-                    if parameter.name == "target"
-                ),
-                None,
-            )
-
-            def validate_question_draft(
-                result: TextPayload,
-                *,
-                history: tuple[PublicMessage, ...] = snapshot.public_history,
-                selected_instruction: InstructionCandidate = selected,
-                target: str | int | bool | tuple[str, ...] | None = target_value,
-                previous_turns: tuple[TurnArtifact, ...] = tuple(turns),
-                current_turn: int = turn_index,
-            ) -> None:
-                if result.text is None:
-                    return
-                if internal_reference_in_question(result.text):
-                    reason = "INTERNAL_REFERENCE_IN_QUESTION"
-                elif repeated_public_question(result.text, history):
-                    reason = "REPEATED_PUBLIC_QUESTION"
-                elif (
-                    selected_instruction.task_id == "object_identification"
-                    and isinstance(target, str)
-                    and identification_label_in_question(result.text, target)
-                ):
-                    reason = "IDENTIFICATION_TARGET_IN_QUESTION"
-                elif (
-                    selected_instruction.task_id == "object_identification"
-                    and isinstance(target, str)
-                    and reciprocal_identification_disclosure(
-                        result.text,
-                        target,
-                        tuple(
-                            (turn.question, turn.answer)
-                            for turn in previous_turns
-                            if turn.status == "COMMITTED"
-                            and turn.instruction.task_id == "object_identification"
-                        ),
-                    )
-                ):
-                    reason = "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC"
-                elif selected_instruction.task_id == "visible_action_relation" and (
-                    action_affordance_question(result.text)
-                ):
-                    reason = "ACTION_AFFORDANCE_NOT_VISIBLE"
-                elif selected_instruction.task_id == "text_transcription" and (
-                    unverified_transcription_relation(result.text)
-                ):
-                    reason = "TEXT_RELATION_UNVERIFIED"
-                elif selected_instruction.task_id == "scene_categorization" and not (
-                    isinstance(
-                        options := next(
-                            (
-                                parameter.value
-                                for parameter in selected_instruction.public_parameters
-                                if parameter.name == "category_set"
-                            ),
-                            None,
-                        ),
-                        tuple,
-                    )
-                    and scene_options_in_question(result.text, options)
-                ):
-                    reason = "CATEGORY_OPTIONS_NOT_PUBLIC"
-                else:
-                    return
-                self._record_public_text_rejection(
-                    conversation_id,
-                    current_turn,
-                    field="question",
-                    reason=reason,
-                    content=result.text,
-                )
-                raise ExecutionError(
-                    reason, "Question draft discloses or repeats its requested fact"
-                )
-
-            try:
-                question_payload = self._invoke(
-                    generator,
-                    "question_generation",
-                    {
-                        "target_language": target_language,
-                        "turn_index": turn_index,
-                        "public_history": self._history(snapshot.public_history),
-                        "selected_instruction": operation_contract(selected),
-                        "image_views": image_views,
-                    },
-                    (model_image,),
-                    TextPayload,
-                    max_tokens=256,
-                    temperature=0.7,
-                    seed=self.config.seed + turn_index,
-                    post_validate=validate_question_draft,
-                )
-            except ExecutionError as error:
-                if error.reason not in {
-                    "INTERNAL_REFERENCE_IN_QUESTION",
-                    "REPEATED_PUBLIC_QUESTION",
-                    "IDENTIFICATION_TARGET_IN_QUESTION",
-                    "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC",
-                    "ACTION_AFFORDANCE_NOT_VISIBLE",
-                    "TEXT_RELATION_UNVERIFIED",
-                    "CATEGORY_OPTIONS_NOT_PUBLIC",
-                }:
-                    raise
-                terminal_status = "REJECTED"
-                terminal_stage = "question_generation"
-                terminal_reason = error.reason
-                break
-            if question_payload.status != "OK":
-                terminal_status = "REJECTED"
-                terminal_stage = "question_generation"
-                terminal_reason = "QUESTION_NOT_GENERATED"
-                break
-            assert question_payload.text is not None
-            question = PublicMessage(
-                message_id=f"{conversation_id}:q:{turn_index}",
-                turn_index=turn_index,
-                role="user",
-                content=question_payload.text,
-            )
-            if is_private_prompt_echo(question.content):
-                self._record_public_text_rejection(
-                    conversation_id,
-                    turn_index,
-                    field="question",
-                    reason="PRIVATE_PROMPT_ECHO",
-                    content=question.content,
-                )
-                terminal_status = "REJECTED"
-                terminal_stage = "question_generation"
-                terminal_reason = "PRIVATE_PROMPT_ECHO"
-                break
-            if internal_reference_in_question(question.content):
-                self._record_public_text_rejection(
-                    conversation_id,
-                    turn_index,
-                    field="question",
-                    reason="INTERNAL_REFERENCE_IN_QUESTION",
-                    content=question.content,
-                )
-                terminal_status = "REJECTED"
-                terminal_stage = "question_generation"
-                terminal_reason = "INTERNAL_REFERENCE_IN_QUESTION"
-                break
-            if repeated_public_question(question.content, snapshot.public_history):
-                self._record_public_text_rejection(
-                    conversation_id,
-                    turn_index,
-                    field="question",
-                    reason="REPEATED_PUBLIC_QUESTION",
-                    content=question.content,
-                )
-                terminal_status = "REJECTED"
-                terminal_stage = "question_generation"
-                terminal_reason = "REPEATED_PUBLIC_QUESTION"
-                break
-            requirements: tuple[Requirement, ...] = ()
-            if self.config.evaluation.mode == "detailed" or selected.catalog_version is not None:
-                fit = self._question_intent(
-                    snapshot.public_history,
-                    question,
-                    selected,
-                    target_language,
-                    image_views,
-                    model_image,
-                    turn_index,
-                )
-                if fit is GateVerdict.MET:
-                    fit = self._question_fit(
-                        snapshot.public_history,
-                        question,
-                        selected,
-                        target_language,
-                        image_views,
-                        model_image,
-                        turn_index,
-                    )
-                if fit is not GateVerdict.MET:
-                    terminal_status = "ABSTAINED" if fit is GateVerdict.UNKNOWN else "REJECTED"
-                    terminal_stage = "question_gate"
-                    terminal_reason = f"QUESTION_GATE_{fit.value}"
-                    break
-            if self.config.evaluation.mode == "detailed":
-                requirement_status, requirements = self._extract_requirements(
-                    snapshot.public_history,
-                    question,
-                    target_language,
-                    turn_index,
-                )
-                if requirement_status is not GateVerdict.MET:
-                    terminal_status = (
-                        "REJECTED" if requirement_status is GateVerdict.NOT_MET else "ABSTAINED"
-                    )
-                    terminal_stage = "requirement_extraction"
-                    terminal_reason = f"REQUIREMENT_{requirement_status.value}"
-                    break
-            answer_payload = self._invoke(
-                generator,
-                "answer_generation",
-                {
-                    "target_language": target_language,
-                    "public_history": self._history(snapshot.public_history),
-                    "question": question.content,
-                    "expected_operation": operation_contract(selected),
-                    "active_requirements": [
-                        requirement.model_dump(mode="json") for requirement in requirements
-                    ],
-                    "image_views": image_views,
-                },
-                (model_image,),
-                TextPayload,
-                max_tokens=self.config.tasks.answer_max_tokens,
-                temperature=0.0,
-                seed=self.config.seed + turn_index,
-            )
-            if answer_payload.status != "OK":
-                terminal_status = "REJECTED"
-                terminal_stage = "answer_generation"
-                terminal_reason = "ANSWER_NOT_GENERATED"
-                break
-            assert answer_payload.text is not None
-            answer = PublicMessage(
-                message_id=f"{conversation_id}:a:{turn_index}",
-                turn_index=turn_index,
-                role="assistant",
-                content=answer_payload.text,
-            )
-            if is_private_prompt_echo(answer.content):
-                self._record_public_text_rejection(
-                    conversation_id,
-                    turn_index,
-                    field="answer",
-                    reason="PRIVATE_PROMPT_ECHO",
-                    content=answer.content,
-                )
-                terminal_status = "REJECTED"
-                terminal_stage = "answer_generation"
-                terminal_reason = "PRIVATE_PROMPT_ECHO"
-                break
-            if repeated_answered_request(question.content, answer.content, snapshot.public_history):
-                self._record_public_text_rejection(
-                    conversation_id,
-                    turn_index,
-                    field="answer",
-                    reason="REPEATED_ANSWERED_REQUEST",
-                    content=answer.content,
-                )
-                terminal_status = "REJECTED"
-                terminal_stage = "answer_generation"
-                terminal_reason = "REPEATED_ANSWERED_REQUEST"
-                break
-            disclosure = self._answer_disclosure_reason(
-                selected, question.content, answer.content, turns
-            )
-            if disclosure is not None:
-                self._record_public_text_rejection(
-                    conversation_id,
-                    turn_index,
-                    field="answer",
-                    reason=disclosure,
-                    content=answer.content,
-                )
-                terminal_status = "REJECTED"
-                terminal_stage = "answer_generation"
-                terminal_reason = disclosure
-                break
-            rating = self._rate_turn(
-                conversation_id,
-                snapshot.history_hash,
-                snapshot.public_history,
-                question,
-                answer,
+            outcome = self._attempt_turn(
                 selected,
+                snapshot,
+                generator,
                 target_language,
-                image_views,
                 model_image,
-                turn_index,
-                requirements,
+                image_views,
+                tuple(turns),
             )
-            if rating.aggregate == "FAIL" and self.config.evaluation.mode == "detailed":
-                self.store.write_json_artifact(
-                    "answer-attempts",
-                    {
-                        "conversation_id": conversation_id,
-                        "turn_index": turn_index,
-                        "attempt": 0,
-                        "answer": answer.model_dump(mode="json"),
-                        "rating": rating.model_dump(mode="json"),
-                    },
-                )
-                repaired = self._repair_answer(
-                    generator,
-                    snapshot.public_history,
-                    question,
-                    answer,
-                    rating,
-                    target_language,
-                    image_views,
-                    model_image,
-                    turn_index,
-                    requirements,
-                )
-                if repaired is not None:
-                    answer = repaired
-                    rating = self._rate_turn(
-                        conversation_id,
-                        snapshot.history_hash,
-                        snapshot.public_history,
-                        question,
-                        answer,
-                        selected,
-                        target_language,
-                        image_views,
-                        model_image,
-                        turn_index,
-                        requirements,
-                    )
-            turn_status: Literal["COMMITTED", "REJECTED", "ABSTAINED", "ERROR"]
-            if rating.aggregate == "PASS":
-                turn_status = "COMMITTED"
-            elif rating.aggregate == "FAIL":
-                turn_status = "REJECTED"
-            elif rating.aggregate == "ABSTAIN":
-                turn_status = "ABSTAINED"
-            else:
-                turn_status = "ERROR"
-            turn = TurnArtifact(
-                turn_index=turn_index,
-                instruction=selected,
-                question=question,
-                answer=answer,
-                history_hash=snapshot.history_hash,
-                generation_model=generator.endpoint.repo_id,
-                selector_model=self.selector.endpoint.repo_id,
-                requirements=requirements,
-                rating=rating,
-                status=turn_status,
-            )
+            turn = outcome.turn
+            if turn is None:
+                assert outcome.status != "COMMITTED"
+                terminal_status = outcome.status
+                terminal_stage = outcome.stage
+                terminal_reason = outcome.reason
+                break
+            turn_status = outcome.status
             turns.append(turn)
             if turn_status != "COMMITTED":
                 terminal_status = turn_status
                 terminal_stage = "answer_verification"
-                terminal_reason = f"RATING_{rating.aggregate}"
+                terminal_reason = outcome.reason
                 break
-            transcript = (*transcript, question, answer)
+            transcript = (*transcript, turn.question, turn.answer)
             artifact_hash = self.store.write_json_artifact("turns", turn.model_dump(mode="json"))
             with self.store.transaction() as connection:
                 connection.execute(
@@ -890,6 +573,367 @@ class SynthesisCoordinator:
             status=terminal_status,
         )
         return self._finish_conversation(conversation, persist=True)
+
+    def _attempt_turn(
+        self,
+        selected: InstructionCandidate,
+        snapshot: HistorySnapshot,
+        generator: InferenceClient,
+        target_language: str,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+        previous_turns: tuple[TurnArtifact, ...],
+    ) -> TurnAttemptResult:
+        """Generate and verify one selected operation against its unchanged public prefix."""
+        conversation_id = snapshot.conversation_id
+        turn_index = snapshot.turn_index
+        turns = previous_turns
+        terminal_status: Literal["REJECTED", "ABSTAINED", "ERROR"]
+        target_value = next(
+            (
+                parameter.value
+                for parameter in selected.public_parameters
+                if parameter.name == "target"
+            ),
+            None,
+        )
+
+        def validate_question_draft(
+            result: TextPayload,
+            *,
+            history: tuple[PublicMessage, ...] = snapshot.public_history,
+            selected_instruction: InstructionCandidate = selected,
+            target: str | int | bool | tuple[str, ...] | None = target_value,
+            previous_turns: tuple[TurnArtifact, ...] = tuple(turns),
+            current_turn: int = turn_index,
+        ) -> None:
+            if result.text is None:
+                return
+            if internal_reference_in_question(result.text):
+                reason = "INTERNAL_REFERENCE_IN_QUESTION"
+            elif repeated_public_question(result.text, history):
+                reason = "REPEATED_PUBLIC_QUESTION"
+            elif (
+                selected_instruction.task_id == "object_identification"
+                and isinstance(target, str)
+                and identification_label_in_question(result.text, target)
+            ):
+                reason = "IDENTIFICATION_TARGET_IN_QUESTION"
+            elif (
+                selected_instruction.task_id == "object_identification"
+                and isinstance(target, str)
+                and reciprocal_identification_disclosure(
+                    result.text,
+                    target,
+                    tuple(
+                        (turn.question, turn.answer)
+                        for turn in previous_turns
+                        if turn.status == "COMMITTED"
+                        and turn.instruction.task_id == "object_identification"
+                    ),
+                )
+            ):
+                reason = "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC"
+            elif selected_instruction.task_id == "visible_action_relation" and (
+                action_affordance_question(result.text)
+            ):
+                reason = "ACTION_AFFORDANCE_NOT_VISIBLE"
+            elif selected_instruction.task_id == "text_transcription" and (
+                unverified_transcription_relation(result.text)
+            ):
+                reason = "TEXT_RELATION_UNVERIFIED"
+            elif selected_instruction.task_id == "scene_categorization" and not (
+                isinstance(
+                    options := next(
+                        (
+                            parameter.value
+                            for parameter in selected_instruction.public_parameters
+                            if parameter.name == "category_set"
+                        ),
+                        None,
+                    ),
+                    tuple,
+                )
+                and scene_options_in_question(result.text, options)
+            ):
+                reason = "CATEGORY_OPTIONS_NOT_PUBLIC"
+            else:
+                return
+            self._record_public_text_rejection(
+                conversation_id,
+                current_turn,
+                field="question",
+                reason=reason,
+                content=result.text,
+            )
+            raise ExecutionError(reason, "Question draft discloses or repeats its requested fact")
+
+        try:
+            question_payload = self._invoke(
+                generator,
+                "question_generation",
+                {
+                    "target_language": target_language,
+                    "turn_index": turn_index,
+                    "public_history": self._history(snapshot.public_history),
+                    "selected_instruction": operation_contract(selected),
+                    "image_views": image_views,
+                },
+                (model_image,),
+                TextPayload,
+                max_tokens=256,
+                temperature=0.7,
+                seed=self.config.seed + turn_index,
+                post_validate=validate_question_draft,
+            )
+        except ExecutionError as error:
+            if error.reason not in {
+                "INTERNAL_REFERENCE_IN_QUESTION",
+                "REPEATED_PUBLIC_QUESTION",
+                "IDENTIFICATION_TARGET_IN_QUESTION",
+                "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC",
+                "ACTION_AFFORDANCE_NOT_VISIBLE",
+                "TEXT_RELATION_UNVERIFIED",
+                "CATEGORY_OPTIONS_NOT_PUBLIC",
+            }:
+                raise
+            terminal_status = "REJECTED"
+            terminal_stage = "question_generation"
+            terminal_reason = error.reason
+            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        if question_payload.status != "OK":
+            terminal_status = "REJECTED"
+            terminal_stage = "question_generation"
+            terminal_reason = "QUESTION_NOT_GENERATED"
+            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        assert question_payload.text is not None
+        question = PublicMessage(
+            message_id=f"{conversation_id}:q:{turn_index}",
+            turn_index=turn_index,
+            role="user",
+            content=question_payload.text,
+        )
+        if is_private_prompt_echo(question.content):
+            self._record_public_text_rejection(
+                conversation_id,
+                turn_index,
+                field="question",
+                reason="PRIVATE_PROMPT_ECHO",
+                content=question.content,
+            )
+            terminal_status = "REJECTED"
+            terminal_stage = "question_generation"
+            terminal_reason = "PRIVATE_PROMPT_ECHO"
+            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        if internal_reference_in_question(question.content):
+            self._record_public_text_rejection(
+                conversation_id,
+                turn_index,
+                field="question",
+                reason="INTERNAL_REFERENCE_IN_QUESTION",
+                content=question.content,
+            )
+            terminal_status = "REJECTED"
+            terminal_stage = "question_generation"
+            terminal_reason = "INTERNAL_REFERENCE_IN_QUESTION"
+            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        if repeated_public_question(question.content, snapshot.public_history):
+            self._record_public_text_rejection(
+                conversation_id,
+                turn_index,
+                field="question",
+                reason="REPEATED_PUBLIC_QUESTION",
+                content=question.content,
+            )
+            terminal_status = "REJECTED"
+            terminal_stage = "question_generation"
+            terminal_reason = "REPEATED_PUBLIC_QUESTION"
+            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        requirements: tuple[Requirement, ...] = ()
+        if self.config.evaluation.mode == "detailed" or selected.catalog_version is not None:
+            fit = self._question_intent(
+                snapshot.public_history,
+                question,
+                selected,
+                target_language,
+                image_views,
+                model_image,
+                turn_index,
+            )
+            if fit is GateVerdict.MET:
+                fit = self._question_fit(
+                    snapshot.public_history,
+                    question,
+                    selected,
+                    target_language,
+                    image_views,
+                    model_image,
+                    turn_index,
+                )
+            if fit is not GateVerdict.MET:
+                terminal_status = "ABSTAINED" if fit is GateVerdict.UNKNOWN else "REJECTED"
+                terminal_stage = "question_gate"
+                terminal_reason = f"QUESTION_GATE_{fit.value}"
+                return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        if self.config.evaluation.mode == "detailed":
+            requirement_status, requirements = self._extract_requirements(
+                snapshot.public_history,
+                question,
+                target_language,
+                turn_index,
+            )
+            if requirement_status is not GateVerdict.MET:
+                terminal_status = (
+                    "REJECTED" if requirement_status is GateVerdict.NOT_MET else "ABSTAINED"
+                )
+                terminal_stage = "requirement_extraction"
+                terminal_reason = f"REQUIREMENT_{requirement_status.value}"
+                return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        answer_payload = self._invoke(
+            generator,
+            "answer_generation",
+            {
+                "target_language": target_language,
+                "public_history": self._history(snapshot.public_history),
+                "question": question.content,
+                "expected_operation": operation_contract(selected),
+                "active_requirements": [
+                    requirement.model_dump(mode="json") for requirement in requirements
+                ],
+                "image_views": image_views,
+            },
+            (model_image,),
+            TextPayload,
+            max_tokens=self.config.tasks.answer_max_tokens,
+            temperature=0.0,
+            seed=self.config.seed + turn_index,
+        )
+        if answer_payload.status != "OK":
+            terminal_status = "REJECTED"
+            terminal_stage = "answer_generation"
+            terminal_reason = "ANSWER_NOT_GENERATED"
+            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        assert answer_payload.text is not None
+        answer = PublicMessage(
+            message_id=f"{conversation_id}:a:{turn_index}",
+            turn_index=turn_index,
+            role="assistant",
+            content=answer_payload.text,
+        )
+        if is_private_prompt_echo(answer.content):
+            self._record_public_text_rejection(
+                conversation_id,
+                turn_index,
+                field="answer",
+                reason="PRIVATE_PROMPT_ECHO",
+                content=answer.content,
+            )
+            terminal_status = "REJECTED"
+            terminal_stage = "answer_generation"
+            terminal_reason = "PRIVATE_PROMPT_ECHO"
+            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        if repeated_answered_request(question.content, answer.content, snapshot.public_history):
+            self._record_public_text_rejection(
+                conversation_id,
+                turn_index,
+                field="answer",
+                reason="REPEATED_ANSWERED_REQUEST",
+                content=answer.content,
+            )
+            terminal_status = "REJECTED"
+            terminal_stage = "answer_generation"
+            terminal_reason = "REPEATED_ANSWERED_REQUEST"
+            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        disclosure = self._answer_disclosure_reason(
+            selected, question.content, answer.content, turns
+        )
+        if disclosure is not None:
+            self._record_public_text_rejection(
+                conversation_id,
+                turn_index,
+                field="answer",
+                reason=disclosure,
+                content=answer.content,
+            )
+            terminal_status = "REJECTED"
+            terminal_stage = "answer_generation"
+            terminal_reason = disclosure
+            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        rating = self._rate_turn(
+            conversation_id,
+            snapshot.history_hash,
+            snapshot.public_history,
+            question,
+            answer,
+            selected,
+            target_language,
+            image_views,
+            model_image,
+            turn_index,
+            requirements,
+        )
+        if rating.aggregate == "FAIL" and self.config.evaluation.mode == "detailed":
+            self.store.write_json_artifact(
+                "answer-attempts",
+                {
+                    "conversation_id": conversation_id,
+                    "turn_index": turn_index,
+                    "attempt": 0,
+                    "answer": answer.model_dump(mode="json"),
+                    "rating": rating.model_dump(mode="json"),
+                },
+            )
+            repaired = self._repair_answer(
+                generator,
+                snapshot.public_history,
+                question,
+                answer,
+                rating,
+                target_language,
+                image_views,
+                model_image,
+                turn_index,
+                requirements,
+            )
+            if repaired is not None:
+                answer = repaired
+                rating = self._rate_turn(
+                    conversation_id,
+                    snapshot.history_hash,
+                    snapshot.public_history,
+                    question,
+                    answer,
+                    selected,
+                    target_language,
+                    image_views,
+                    model_image,
+                    turn_index,
+                    requirements,
+                )
+        turn_status: Literal["COMMITTED", "REJECTED", "ABSTAINED", "ERROR"]
+        if rating.aggregate == "PASS":
+            turn_status = "COMMITTED"
+        elif rating.aggregate == "FAIL":
+            turn_status = "REJECTED"
+        elif rating.aggregate == "ABSTAIN":
+            turn_status = "ABSTAINED"
+        else:
+            turn_status = "ERROR"
+        turn = TurnArtifact(
+            turn_index=turn_index,
+            instruction=selected,
+            question=question,
+            answer=answer,
+            history_hash=snapshot.history_hash,
+            generation_model=generator.endpoint.repo_id,
+            selector_model=self.selector.endpoint.repo_id,
+            requirements=requirements,
+            rating=rating,
+            status=turn_status,
+        )
+        return TurnAttemptResult(
+            turn, turn_status, "answer_verification", f"RATING_{rating.aggregate}"
+        )
 
     def rate_existing(
         self,
