@@ -55,6 +55,8 @@ Read the guides in this order:
 
 Japanese documentation begins at [README_ja.md](README_ja.md).
 
+[Yield and speed comparison procedure](docs/validation/yield-and-speed.md) documents the controlled comparison and audit procedure.
+
 ## Model roles
 
 | Role | Default repository |

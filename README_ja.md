@@ -51,6 +51,8 @@ uv run --locked pytest
 10. [実装対応表](docs/implementation-map_ja.md)
 11. [Open Images合成の確認とタスク別実例](docs/validation/synthesis-campaign_ja.md)
 
+[採用率と合成速度の比較手順](docs/validation/yield-and-speed_ja.md)に、比較条件・計測・監査・実例HTMLの解釈をまとめています。
+
 ## モデルの役割
 
 | 役割 | 既定のリポジトリ |
