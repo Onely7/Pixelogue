@@ -62,6 +62,14 @@ For action questions on still images, lack of motion blur alone is insufficient 
 The model-facing action contract hides the free-form target and scope description, which may themselves contain the requested posture. Question generation must identify the subject with non-action cues and abstain if that is impossible.
 Text-transcription questions use an absolute image region or public scope. Relative locators such as "below the logo" are rejected before judging because the current transcript evidence has no coordinates to verify the relation; rerating applies the same gate.
 
+`tasks.max_candidate_attempts` defaults to `1`. An evaluation configuration may set it to `2`
+to try one additional admitted candidate after a local question-generation failure or a
+`NOT_MET` question gate. The controller fixes the order before either attempt. Both candidates
+see the same committed public prefix; rejected text and votes remain private. An unknown gate,
+answer failure, transport error, or exhausted budget stops the turn. A normalized question
+already judged in the failed attempt cannot be judged again. Private attempt plans and outcomes
+retain stable identities for replay, and the coordinator commits at most one turn.
+
 ## Migration and analysis
 
 Use a **new run ID**. The run identity includes configuration, code, prompts, Schemas, catalog, specialist lock, model and processor revisions, seed and the prepared input/rights manifest identity. Old 24-task artifacts retain their original labels; `task_catalog_legacy.yaml` and `legacy_24_migration.json` provide advisory mappings only. In particular, `chart_lookup` requires reclassification from the actual question, not automatic assignment to two new operations. Old stores can still be inspected with `replay` and backed up.

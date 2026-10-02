@@ -2837,3 +2837,179 @@ def test_v7_holistic_wrong_operation_stops_before_answer_generation(
         )
     finally:
         store.close()
+
+
+def _candidate_retry_inputs(coordinator, image_artifact):
+    from pixelogue.contracts import build_history_snapshot
+
+    image, root = image_artifact
+    snapshot = build_history_snapshot("candidate-retry", 1, ())
+    candidates = tuple(
+        InstructionCandidate(
+            candidate_id=name,
+            task_id="attribute_lookup",
+            family="visual_description",
+            visible_scope=name,
+            instruction_summary="Ask about one directly visible property.",
+            required_capabilities=("visible_entity",),
+        )
+        for name in ("first target", "second target")
+    )
+    return (
+        candidates,
+        snapshot,
+        coordinator._model_image(image, root),
+        [coordinator._view_metadata(image)],
+    )
+
+
+@pytest.mark.parametrize("first_failure", ["generation", "gate"])
+def test_candidate_retry_preserves_blind_prefix_and_fixed_order(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch, first_failure: str
+):
+    coordinator, store, selector, generator_a, generator_b = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={"tasks": coordinator.config.tasks.model_copy(update={"max_candidate_attempts": 2})}
+    )
+    priority, snapshot, model_image, views = _candidate_retry_inputs(coordinator, image_artifact)
+    original = generator_a.invoke
+    questions = 0
+
+    def fail_once(stage, payload, images, response_model, **kwargs):
+        nonlocal questions
+        response = original(stage, payload, images, response_model, **kwargs)
+        if stage == "question_generation":
+            questions += 1
+            assert payload["public_history"] == []
+            assert "QUESTION_GATE_NOT_MET" not in str(payload)
+            assert "failed" not in str(payload)
+            text = "What shape is visible?" if questions == 1 else "What color is visible?"
+            generator_a.intent_by_question[(model_image.view_id, text)] = "attribute_lookup"
+            value = (
+                TextPayload(text=None, reason="The requested fact is not available.")
+                if questions == 1 and first_failure == "generation"
+                else TextPayload(text=text)
+            )
+            return ModelResponse(
+                value=value,
+                request_hash=response.request_hash,
+                response_hash=response.response_hash,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+            )
+        return response
+
+    monkeypatch.setattr(generator_a, "invoke", fail_once)
+    gate_calls = 0
+    original_gate = coordinator._question_fit
+
+    def gate(*args, **kwargs):
+        nonlocal gate_calls
+        gate_calls += 1
+        if first_failure == "gate" and gate_calls == 1:
+            return GateVerdict.NOT_MET
+        return original_gate(*args, **kwargs)
+
+    monkeypatch.setattr(coordinator, "_question_fit", gate)
+    try:
+        outcome = coordinator._attempt_candidates(
+            priority, snapshot, generator_a, "en", model_image, views, ()
+        )
+        plans = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind='candidate-attempt-plans'"
+        ).fetchall()
+        plan = json.loads(store.read_artifact(plans[0][0]))
+    finally:
+        store.close()
+    assert outcome.status == "COMMITTED" and outcome.turn is not None
+    assert outcome.turn.instruction == priority[1]
+    assert questions == 2 and not selector.calls
+    assert [item["candidate_id"] for item in plan["attempts"]] == [c.candidate_id for c in priority]
+    assert len({item["attempt_id"] for item in plan["attempts"]}) == 2
+
+
+@pytest.mark.parametrize(
+    ("status", "stage", "reason"),
+    [
+        ("ABSTAINED", "question_gate", "QUESTION_GATE_UNKNOWN"),
+        ("REJECTED", "answer_generation", "ANSWER_NOT_GENERATED"),
+        ("REJECTED", "answer_verification", "NOT_MET"),
+    ],
+)
+def test_candidate_retry_does_not_retry_unknown_or_answer_failure(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch, status, stage, reason
+):
+    from pixelogue.pipeline import TurnAttemptResult
+
+    coordinator, store, _, generator_a, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={"tasks": coordinator.config.tasks.model_copy(update={"max_candidate_attempts": 2})}
+    )
+    priority, snapshot, model_image, views = _candidate_retry_inputs(coordinator, image_artifact)
+    calls = []
+    expected = TurnAttemptResult(None, status, stage, reason)
+
+    def attempt(candidate, *args, **kwargs):
+        calls.append(candidate.candidate_id)
+        return expected
+
+    monkeypatch.setattr(coordinator, "_attempt_turn", attempt)
+    try:
+        result = coordinator._attempt_candidates(
+            priority, snapshot, generator_a, "en", model_image, views, ()
+        )
+    finally:
+        store.close()
+    assert result is expected and calls == [priority[0].candidate_id]
+
+
+def test_candidate_retry_never_revotes_same_question(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+):
+    coordinator, store, _, generator_a, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={"tasks": coordinator.config.tasks.model_copy(update={"max_candidate_attempts": 2})}
+    )
+    priority, snapshot, model_image, views = _candidate_retry_inputs(coordinator, image_artifact)
+    gates = 0
+
+    def reject_gate(*args, **kwargs):
+        nonlocal gates
+        gates += 1
+        return GateVerdict.NOT_MET
+
+    monkeypatch.setattr(coordinator, "_question_fit", reject_gate)
+    try:
+        result = coordinator._attempt_candidates(
+            priority, snapshot, generator_a, "en", model_image, views, ()
+        )
+    finally:
+        store.close()
+    assert result.status == "REJECTED" and result.reason == "REPEATED_REJECTED_QUESTION"
+    assert gates == 1
+    assert not any(stage == "answer_generation" for stage, _ in generator_a.calls)
+
+
+def test_candidate_retry_propagates_transport_failure(
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+):
+    coordinator, store, _, generator_a, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={"tasks": coordinator.config.tasks.model_copy(update={"max_candidate_attempts": 2})}
+    )
+    priority, snapshot, model_image, views = _candidate_retry_inputs(coordinator, image_artifact)
+    calls = []
+
+    def offline(candidate, *args, **kwargs):
+        calls.append(candidate.candidate_id)
+        raise ExecutionError("MODEL_OFFLINE", "Unavailable")
+
+    monkeypatch.setattr(coordinator, "_attempt_turn", offline)
+    try:
+        with pytest.raises(ExecutionError, match="Unavailable"):
+            coordinator._attempt_candidates(
+                priority, snapshot, generator_a, "en", model_image, views, ()
+            )
+    finally:
+        store.close()
+    assert calls == [priority[0].candidate_id]

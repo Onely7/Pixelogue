@@ -49,6 +49,7 @@ from pixelogue.evaluation import (
     identification_answer_in_question,
     identification_label_in_question,
     item_id,
+    question_fingerprint,
     question_fit_consensus,
     reciprocal_identification_disclosure,
     repeated_answered_request,
@@ -114,6 +115,7 @@ type PublicTextRejectionReason = Literal[
     "ACTION_ALREADY_PUBLIC",
     "ACTION_AFFORDANCE_NOT_VISIBLE",
     "CATEGORY_OPTIONS_NOT_PUBLIC",
+    "REPEATED_REJECTED_QUESTION",
 ]
 _INTERNAL_QUESTION_REFERENCE = re.compile(
     r"(?<![A-Za-z0-9])(?:"
@@ -168,6 +170,7 @@ class TurnAttemptResult:
     status: Literal["COMMITTED", "REJECTED", "ABSTAINED", "ERROR"]
     stage: str
     reason: str
+    question_fingerprint: str | None = None
 
 
 class InferenceClient(Protocol):
@@ -518,8 +521,13 @@ class SynthesisCoordinator:
                 terminal_stage = "instruction_selection"
                 terminal_reason = "NO_SUPPORTED_NEW_INSTRUCTION"
                 break
-            outcome = self._attempt_turn(
-                selected,
+            priority = (selected,) + tuple(
+                candidate
+                for candidate in candidates
+                if candidate.candidate_id != selected.candidate_id
+            )[: self.config.tasks.max_candidate_attempts - 1]
+            outcome = self._attempt_candidates(
+                priority,
                 snapshot,
                 generator,
                 target_language,
@@ -575,6 +583,94 @@ class SynthesisCoordinator:
         )
         return self._finish_conversation(conversation, persist=True)
 
+    def _attempt_candidates(
+        self,
+        priority: tuple[InstructionCandidate, ...],
+        snapshot: HistorySnapshot,
+        generator: InferenceClient,
+        target_language: str,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+        previous_turns: tuple[TurnArtifact, ...],
+    ) -> TurnAttemptResult:
+        """Try a fixed candidate order after local question failures only.
+
+        The failed questions and decisions remain private. Every candidate sees exactly the
+        same committed prefix, and transport failures or unknown evidence stop the attempt.
+        """
+        if not priority or len(priority) > self.config.tasks.max_candidate_attempts:
+            raise ValueError("Candidate attempts exceed the configured bound")
+        plan = tuple(
+            {
+                "attempt_id": canonical_hash(
+                    {
+                        "run": self.run_id,
+                        "conversation": snapshot.conversation_id,
+                        "turn": snapshot.turn_index,
+                        "history": snapshot.history_hash,
+                        "candidate": candidate.candidate_id,
+                        "rank": rank,
+                    }
+                ),
+                "candidate_id": candidate.candidate_id,
+                "rank": rank,
+            }
+            for rank, candidate in enumerate(priority)
+        )
+        self.store.write_json_artifact(
+            "candidate-attempt-plans",
+            {
+                "conversation_id": snapshot.conversation_id,
+                "turn_index": snapshot.turn_index,
+                "history_hash": snapshot.history_hash,
+                "attempts": plan,
+            },
+        )
+        rejected_questions: set[str] = set()
+        for candidate, attempt in zip(priority, plan, strict=True):
+            try:
+                outcome = self._attempt_turn(
+                    candidate,
+                    snapshot,
+                    generator,
+                    target_language,
+                    model_image,
+                    image_views,
+                    previous_turns,
+                    rejected_question_fingerprints=frozenset(rejected_questions),
+                )
+            except ExecutionError as error:
+                self.store.write_json_artifact(
+                    "candidate-attempt-outcomes",
+                    {**attempt, "status": "EXECUTION_FAILURE", "reason": error.reason},
+                )
+                raise
+            self.store.write_json_artifact(
+                "candidate-attempt-outcomes",
+                {
+                    **attempt,
+                    "status": outcome.status,
+                    "stage": outcome.stage,
+                    "reason": outcome.reason,
+                    "question_fingerprint": outcome.question_fingerprint,
+                },
+            )
+            if not (
+                outcome.turn is None
+                and outcome.status == "REJECTED"
+                and (
+                    outcome.stage == "question_generation"
+                    or (
+                        outcome.stage == "question_gate"
+                        and outcome.reason == "QUESTION_GATE_NOT_MET"
+                    )
+                )
+            ):
+                return outcome
+            if outcome.question_fingerprint is not None:
+                rejected_questions.add(outcome.question_fingerprint)
+        return outcome
+
     def _attempt_turn(
         self,
         selected: InstructionCandidate,
@@ -584,6 +680,8 @@ class SynthesisCoordinator:
         model_image: ModelImage,
         image_views: list[dict[str, str]],
         previous_turns: tuple[TurnArtifact, ...],
+        *,
+        rejected_question_fingerprints: frozenset[str] = frozenset(),
     ) -> TurnAttemptResult:
         """Generate and verify one selected operation against its unchanged public prefix."""
         conversation_id = snapshot.conversation_id
@@ -610,7 +708,9 @@ class SynthesisCoordinator:
         ) -> None:
             if result.text is None:
                 return
-            if internal_reference_in_question(result.text):
+            if question_fingerprint(result.text) in rejected_question_fingerprints:
+                reason = "REPEATED_REJECTED_QUESTION"
+            elif internal_reference_in_question(result.text):
                 reason = "INTERNAL_REFERENCE_IN_QUESTION"
             elif repeated_public_question(result.text, history):
                 reason = "REPEATED_PUBLIC_QUESTION"
@@ -696,6 +796,7 @@ class SynthesisCoordinator:
                 "ACTION_AFFORDANCE_NOT_VISIBLE",
                 "TEXT_RELATION_UNVERIFIED",
                 "CATEGORY_OPTIONS_NOT_PUBLIC",
+                "REPEATED_REJECTED_QUESTION",
             }:
                 raise
             terminal_status = "REJECTED"
@@ -775,7 +876,13 @@ class SynthesisCoordinator:
                 terminal_status = "ABSTAINED" if fit is GateVerdict.UNKNOWN else "REJECTED"
                 terminal_stage = "question_gate"
                 terminal_reason = f"QUESTION_GATE_{fit.value}"
-                return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+                return TurnAttemptResult(
+                    None,
+                    terminal_status,
+                    terminal_stage,
+                    terminal_reason,
+                    question_fingerprint(question.content),
+                )
         if self.config.evaluation.mode == "detailed":
             requirement_status, requirements = self._extract_requirements(
                 snapshot.public_history,
@@ -2223,7 +2330,6 @@ class SynthesisCoordinator:
             call_kwargs = dict(kwargs)
             if attempt:
                 call_kwargs["seed"] = int(call_kwargs["seed"]) + 100_000 * attempt
-                call_kwargs["bypass_cache"] = True
                 call_kwargs["retry_feedback"] = retry_feedback
                 if (
                     stage in {"evidence_extraction", "table_source", "chart_source", "graph_source"}

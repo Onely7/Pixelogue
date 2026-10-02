@@ -323,6 +323,11 @@ def _normalize_public_question(question: str) -> str:
     return " ".join(normalized.split()).rstrip(".!?。！？ ")
 
 
+def question_fingerprint(question: str) -> str:
+    """Identify exact normalized repeats without exposing the rejected question text."""
+    return canonical_hash(_normalize_public_question(question))
+
+
 def has_natural_language_content(text: str) -> bool:
     """Return whether text contains a Unicode letter that needs language evaluation."""
     return any(character.isalpha() for character in text)

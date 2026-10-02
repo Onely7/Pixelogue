@@ -330,3 +330,48 @@ def test_two_blind_judges_using_same_endpoint_replay_independently(
                 assert budget["request_count"] == 2 and budget["output_tokens"] == 18
     assert len(calls) == 2
     assert calls[0] == calls[1]
+
+
+def test_structured_retry_replays_each_saved_attempt_after_reopen(tmp_path: Path):
+    config = load_config(Path("configs/pilot.yaml"))
+    calls = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        content = "invalid" if len(calls) == 1 else '{"verdict":"MET","reason":"Visible."}'
+        return httpx.Response(
+            200, json=completion(content, {"prompt_tokens": 4, "completion_tokens": 3})
+        )
+
+    for _ in range(2):
+        with RunStore(tmp_path, "structured-replay", require_local_wal=False) as store:
+            with httpx.Client(
+                base_url="http://localhost/v1/", transport=httpx.MockTransport(handler)
+            ) as http:
+                client = client_for(store, http)
+                coordinator = SynthesisCoordinator(
+                    config, "structured-replay", store, client, client, client
+                )
+                result = coordinator._invoke(
+                    client,
+                    "rubric_item",
+                    {
+                        "target_language": "en",
+                        "public_history": [],
+                        "question": "q",
+                        "candidate_answer": "a",
+                        "image_views": [],
+                        "criterion": {},
+                    },
+                    (),
+                    RubricVerdict,
+                    max_tokens=32,
+                    temperature=0.0,
+                    seed=1,
+                    trial_id="blind-judge:1",
+                )
+                assert result.verdict == "MET"
+            budget = store.connection.execute("SELECT * FROM budget").fetchone()
+            assert budget["request_count"] == 2 and budget["output_tokens"] == 6
+    assert len(calls) == 2 and calls[0]["seed"] != calls[1]["seed"]
