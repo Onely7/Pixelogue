@@ -3,8 +3,11 @@
 This guide describes the P0–P8 comparison campaign. Experimental options preserve the
 minimum of two committed turns, the existing quality gates, the eight-candidate limit,
 and the configured model pair. An automatic `QUALITY_CANDIDATE` is not a human-approved
-conversation. Human-approved conversations per allocated GPU hour remains unmeasured
-until three independent audit ballots are available.
+conversation. The planned final audit uses three independent raters. If the user
+explicitly chooses a one-rater interim review, record the policy and report those
+results as provisional. They do not measure inter-rater agreement or satisfy the
+three-rater audit. Missing confirmation ballots remain unmeasured even when development
+ballots are complete.
 
 ## Fix the comparison before running
 
@@ -110,10 +113,16 @@ Small structured-image strata are scope checks, not precise general success rate
 
 Keep the audit sampling manifest, method/model mapping, automatic statuses and selection
 probabilities outside the material distributed to raters. Sample one conversation per
-visual group when possible. Release question packets in depth order after all three
+visual group when possible. Release question packets in depth order after all required
 raters' previous ballots are saved; prior public answers in later histories cannot then
 change earlier question votes. Release answer packets after question votes are frozen.
 Preserve original votes, disagreements, adjudication, unknown and unevaluated items.
+
+Keep development and confirmation pack identities separate. A completed development
+review cannot label later confirmation outputs. For an explicitly requested one-rater
+review, use the [local audit UI](../tasks/specialist-and-research.md) and preserve the
+actual ballots. The resolution CLI still defaults to three raters; use an explicit
+`--required-raters 1` only for the recorded provisional policy.
 
 Stops without an answer do not enter completed-conversation false-rejection estimates.
 Use actual inclusion probabilities for population estimates; observed cell fractions
