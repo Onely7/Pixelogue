@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
@@ -19,6 +20,7 @@ from pixelogue.contracts import (
     SelectionManifest,
     SourceRecord,
 )
+from pixelogue.decision_factory import decision_client_context
 from pixelogue.diagnostics import build_diagnostic_report, write_diagnostic_reports
 from pixelogue.doctor import diagnose
 from pixelogue.errors import (
@@ -621,12 +623,18 @@ def synthesize(
             "image_records": [image.model_dump(mode="json") for image in image_records],
         }
     )
-    with RunStore(
-        config.storage.run_root,
-        run_id,
-        require_local_wal=config.storage.require_local_wal,
-    ) as store:
+    with (
+        RunStore(
+            config.storage.run_root,
+            run_id,
+            require_local_wal=config.storage.require_local_wal,
+        ) as store,
+        ExitStack() as decision_clients,
+    ):
         store.initialize_run(run_id, run_contract_hash, config.profile)
+        decision_client = decision_clients.enter_context(
+            decision_client_context(config, store.run_dir)
+        )
         selector, generator_a, generator_b = _clients(config_path, run_id, store)
         coordinator = SynthesisCoordinator(
             config,
@@ -635,6 +643,7 @@ def synthesize(
             selector,
             generator_a,
             generator_b,
+            decision_client=decision_client,
         )
         scheduled_images = image_records[: config.data.target_dialogues]
         language_schedule = exact_schedule(
@@ -720,8 +729,23 @@ def rate_existing(
     ) as store:
         store.initialize_run(run_id, config.config_hash, config.profile)
         selector, generator_a, generator_b = _clients(config_path, run_id, store)
+        # Rating saved public turns never extracts or binds candidates and needs no classifier.
+        rating_config = config.model_copy(
+            update={
+                "tasks": config.tasks.model_copy(
+                    update={
+                        "decision_routing": config.tasks.decision_routing.model_copy(
+                            update={
+                                "evidence_enabled": False,
+                                "binding_enabled": False,
+                            }
+                        ),
+                    }
+                )
+            }
+        )
         coordinator = SynthesisCoordinator(
-            config,
+            rating_config,
             run_id,
             store,
             selector,

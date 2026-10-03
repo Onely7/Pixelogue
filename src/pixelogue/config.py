@@ -258,6 +258,30 @@ class RuntimeConfig(StrictModel):
     allow_external_inference: Literal[False] = False
 
 
+class DecisionRoutingConfig(StrictModel):
+    """Explicit experimental classifier identity, separate from generator roles."""
+
+    evidence_enabled: bool = False
+    binding_enabled: bool = False
+    model_repository: Literal["autotrust/JEV-27B-VL", "akhilaaa3/Jev-Omni"] | None = None
+    model_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")] | None = None
+    proposal_max_tokens: Annotated[int, Field(ge=256, le=4096)] = 1536
+    base_url: HttpUrl | None = None
+    runtime_python: Path | None = None
+    snapshot_path: Path | None = None
+    startup_timeout_seconds: Annotated[int, Field(ge=1, le=1800)] = 600
+
+    @model_validator(mode="after")
+    def validate_explicit_identity(self) -> DecisionRoutingConfig:
+        """Require a pinned classifier before enabling either experimental path."""
+        if self.evidence_enabled or self.binding_enabled:
+            if self.model_repository is None or self.model_revision is None:
+                raise ValueError("Decision routing requires an explicit repository and revision")
+        if (self.model_repository is None) != (self.model_revision is None):
+            raise ValueError("Decision repository and revision must be specified together")
+        return self
+
+
 class TaskRuntimeConfig(StrictModel):
     """Bound candidate and evidence work independently of taxonomy size."""
 
@@ -276,10 +300,15 @@ class TaskRuntimeConfig(StrictModel):
     profiles: tuple[Literal["normal", "limitation", "false_premise"], ...] = ("normal",)
     enabled_extensions: tuple[str, ...] = ()
     calibration_manifest: Path | None = None
+    decision_routing: DecisionRoutingConfig = DecisionRoutingConfig()
 
     @model_validator(mode="after")
     def validate_admission_settings(self) -> TaskRuntimeConfig:
         """Fail closed on unsupported extensions and repeated profile settings."""
+        if self.decision_routing.evidence_enabled and self.attribute_recheck_enabled:
+            raise ValueError(
+                "Decision evidence routing cannot mix with generator-only attribute rechecks"
+            )
         if not self.profiles or len(self.profiles) != len(set(self.profiles)):
             raise ValueError("At least one unique task profile is required")
         if len(self.enabled_extensions) != len(set(self.enabled_extensions)):

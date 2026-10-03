@@ -526,7 +526,48 @@ Use UNKNOWN only when textual compliance itself cannot be determined from the su
 }
 
 
+STAGE_INSTRUCTIONS["evidence_proposal"] = """Inspect the image and propose a few located
+visual claims. Return only scopes with public_description, object_label (or null), a normalized
+region and sparse observations. Each observation contains capability, region and a short visible
+detail. Do not emit verdicts, evidence IDs, image IDs or check names. Use only capability_vocabulary.
+Respect max_scopes and max_observations_per_scope and put each observation inside its scope.
+Within EACH scope, include a capability name AT MOST ONCE. A capability summarizes support across
+that scope, not one entry per object, text line, value or series. Combine multiple visible facts
+in one short detail for that capability: fur color, nose color and collar color belong in ONE
+visible_attribute observation; readable lines belong in ONE readable_text observation.
+Set object_label=null unless this scope contains one clearly recognizable subject AND includes
+a visible_entity observation naming that subject. Section names such as header, axis, legend,
+sidebar or item_list are not object labels; use public_description for them.
+All boxes use normalized view coordinates: 0 <= left < right <= 1 and 0 <= top < bottom <= 1.
+For every observation, scope.left <= observation.left < observation.right <= scope.right and
+scope.top <= observation.top < observation.bottom <= scope.bottom. When a claim actually applies
+across its whole existing scope, its region may equal the scope region. Do not invent, clip or
+expand geometry to make an unsupported claim fit; omit that claim instead.
+For recognizable subjects, include visible_entity and directly visible attributes in the same
+scope. Name separate supported properties in the detail (for example fur color and nose color).
+For documents, tables, charts, diagrams and UI, describe the actual readable content or structure.
+A category name or plausible domain is not proof of readable values, complete sets or clear edges.
+Do not guess unseen facts. An independent classifier will check each claim against the image."""
+
+STAGE_INSTRUCTIONS["candidate_proposal"] = """Bind only the supplied unresolved candidates
+before any answer exists. Return candidate_id, target (value, origin, evidence_refs), and
+public_parameters. Do not output checks, verdicts, estimated tokens or binding evidence IDs.
+Use only the candidate's local evidence references and allowed parameter names. Include all
+required_parameter_names. Fixed policies are not public parameters. For attribute_lookup, use an
+instruction-origin property name (for example nose color), never the property's answer value.
+Use public_history to choose a new target, property or public condition. Do not repeat an already
+answered request. Use typed_object_refs exactly when supplied for object identification. Image
+facts require local evidence refs; history facts require exact committed public message IDs;
+instruction choices have no refs. Omit a candidate when its target or required choice is unclear.
+The controller and a separate visual classifier will check references and every admission condition."""
+
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
+    "evidence_proposal": frozenset(
+        {"capability_vocabulary", "max_scopes", "max_observations_per_scope", "image_views"}
+    ),
+    "candidate_proposal": frozenset(
+        {"target_language", "public_history", "candidates", "scope_evidence", "image_views"}
+    ),
     "research_history_pre": frozenset(
         {
             "target_language",
@@ -829,8 +870,10 @@ def validate_stage_payload(stage: str, payload: Mapping[str, Any]) -> None:
             )
     if stage in {
         "candidate_binding",
+        "candidate_proposal",
         "instruction_selection",
         "evidence_extraction",
+        "evidence_proposal",
         "attribute_recheck",
         "question_generation",
         "question_intent",
