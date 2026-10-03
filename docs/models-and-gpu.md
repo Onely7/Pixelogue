@@ -248,3 +248,46 @@ with a bounded capability enum. The default remains `keyed` until controlled com
 justify a change. Both formats use the same descriptions, regions, capability limits and
 internal validation. Missing observations remain UNKNOWN. Duplicate capability or evidence
 IDs, unrelated views and observations outside the parent region remain rejected.
+
+## Stop runaway JSON generation
+
+The experimental `runtime/vllm/*-whitespace.yaml` generator configurations select
+`xgrammar` and `disable_any_whitespace: true`. This constrains whitespace between JSON tokens;
+ordinary spaces inside strings remain available. In the pinned vLLM 0.29.0 backend,
+this setting must be applied when launching the server. Sending a similarly named
+request field alone does not establish that the setting was applied.
+Restart existing servers and record their launch manifest before comparing runs.
+The standard server configurations retain their existing decoding behavior. A faster
+experimental condition must also preserve supported candidate yield and task coverage
+before adoption. Use `configs/repetition-detection-pilot.yaml` to evaluate the
+separate repetition guard with the pinned standard pair.
+
+For evaluation, an optional engine repetition guard can be configured separately:
+
+```yaml
+runtime:
+  repetition_detection:
+    min_pattern_size: 1
+    max_pattern_size: 4
+    min_count: 64
+    stages: [evidence_extraction, candidate_binding]
+```
+
+The guard is disabled by default. It stops consecutive token-pattern repetition
+without changing sampling probabilities. These thresholds are experimental; a long
+legitimate repeated sequence may also stop. Only evidence extraction and candidate
+binding may use this option. Public question and answer generation retain their
+existing behavior.
+
+`finish_reason: repetition` is recorded as `MODEL_OUTPUT_REPETITION`, preserves the
+raw response and incurred usage, and abstains without automatically increasing the
+output budget or retrying. Even parseable JSON from such a stopped completion is
+rejected. A configuration change produces a different run identity. This option
+requires an endpoint implementing the pinned vLLM repetition-detection API.
+
+The [vLLM 0.29.0 serving reference](https://docs.vllm.ai/en/v0.29.0/cli/serve/),
+[SamplingParams](https://docs.vllm.ai/en/v0.29.0/api/vllm/sampling_params/) and
+[structured output guide](https://docs.vllm.ai/en/v0.29.0/features/structured_outputs/)
+describe the available interfaces. Inspect the installed runtime with
+`uv run --project runtime/vllm --locked vllm serve --help=all`; a listed option does
+not establish support for every model or backend.

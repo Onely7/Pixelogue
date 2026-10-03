@@ -245,6 +245,27 @@ class StorageConfig(StrictModel):
     require_local_wal: bool = True
 
 
+class RepetitionDetectionConfig(StrictModel):
+    """Bound engine-side repetition stopping to the two extraction stages."""
+
+    min_pattern_size: Annotated[int, Field(ge=1, le=16)] = 1
+    max_pattern_size: Annotated[int, Field(ge=1, le=16)] = 4
+    min_count: Annotated[int, Field(ge=2, le=1024)] = 64
+    stages: Annotated[
+        tuple[Literal["evidence_extraction", "candidate_binding"], ...],
+        Field(min_length=1, max_length=2),
+    ] = ("evidence_extraction", "candidate_binding")
+
+    @model_validator(mode="after")
+    def validate_patterns(self) -> RepetitionDetectionConfig:
+        """Reject inverted pattern ranges and repeated stage names."""
+        if self.min_pattern_size > self.max_pattern_size:
+            raise ValueError("minimum pattern size exceeds maximum")
+        if len(self.stages) != len(set(self.stages)):
+            raise ValueError("repetition detection stages must be unique")
+        return self
+
+
 class RuntimeConfig(StrictModel):
     """Inference request and retry boundaries."""
 
@@ -253,6 +274,7 @@ class RuntimeConfig(StrictModel):
     structured_output_max_attempts: Literal[1, 2, 3] = 2
     max_concurrent_images: Annotated[int, Field(ge=1, le=64)] = 1
     refill_completed_images: bool = False
+    repetition_detection: RepetitionDetectionConfig | None = None
     max_total_requests: Annotated[int, Field(ge=1)] = 10_000_000
     max_total_output_tokens: Annotated[int, Field(ge=1)] = 1_000_000_000
     allow_external_inference: Literal[False] = False

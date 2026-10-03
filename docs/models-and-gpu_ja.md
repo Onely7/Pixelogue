@@ -228,3 +228,45 @@ PIXELOGUE_LIVE_RUBRIC=1 PIXELOGUE_LIVE_CONFIG=configs/paired-one-gpu-pilot.yaml 
 ## 根拠の出力形式を比較する
 
 比較用設定で `tasks.evidence_format: array` を指定すると、能力名を列挙型で制限した観測配列を使います。比較結果を確認するまで既定は `keyed` です。両形式は説明文・領域・能力上限・内部検証を共通にし、欠測はUNKNOWNのまま保持します。能力や根拠IDの重複、異なるview、親領域外の観測は拒否します。
+
+## JSONの空白暴走を抑える
+
+実験用の `runtime/vllm/*-whitespace.yaml` 生成器設定は `xgrammar` と
+`disable_any_whitespace: true` を指定します。JSONトークン間の任意の空白を
+制限し、文字列内の通常の空白は維持します。固定したvLLM 0.29.0では、
+サーバー起動時に設定する必要があります。リクエストに同名のフィールドを
+送っただけでは有効化を確認できません。既存サーバーを再起動し、起動manifestを
+記録したうえで比較してください。
+標準サーバー設定は従来のデコード設定を維持します。高速化した実験条件は、
+根拠が支持する候補数とタスク範囲も維持できた場合に採用します。
+独立した反復停止は `configs/repetition-detection-pilot.yaml` で
+固定した標準モデルのペアを使って評価できます。
+
+評価用に、エンジンの反復停止を別途指定できます。
+
+```yaml
+runtime:
+  repetition_detection:
+    min_pattern_size: 1
+    max_pattern_size: 4
+    min_count: 64
+    stages: [evidence_extraction, candidate_binding]
+```
+
+既定は無効です。出力の確率を変えず、連続するトークン列の反復を検知して停止します。
+この閾値は実験用で、正しい長い反復も停止する可能性があります。
+適用可能なのは根拠抽出と候補具体化のみです。
+質問・回答生成には適用しません。
+
+`finish_reason: repetition` は `MODEL_OUTPUT_REPETITION` として記録し、
+生の応答と使用トークンを保存します。出力上限の自動増加や再試行をせず棄権し、
+構文が正しいJSONでも途中停止した応答は受理しません。
+設定変更後は異なるrun IDを使います。この機能は固定したvLLMの反復検知APIに
+対応するendpointが必要です。
+
+[vLLM 0.29.0の起動設定](https://docs.vllm.ai/en/v0.29.0/cli/serve/)、
+[SamplingParams](https://docs.vllm.ai/en/v0.29.0/api/vllm/sampling_params/)、
+[構造化出力](https://docs.vllm.ai/en/v0.29.0/features/structured_outputs/)で
+利用可能な設定を確認できます。導入済み版の全起動設定は
+`uv run --project runtime/vllm --locked vllm serve --help=all` で確認してください。
+設定項目の存在だけで、全モデル・バックエンドでの動作を保証するものではありません。

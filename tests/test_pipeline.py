@@ -946,17 +946,17 @@ def test_malformed_binding_preserves_valid_sibling_and_records_rejection(
     assert rejected[0]["rejections"][0]["reason"] == expected_reason
 
 
+@pytest.mark.parametrize("reason", ["MODEL_SCHEMA_MISMATCH", "MODEL_OUTPUT_REPETITION"])
 def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_error(
-    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, image_artifact, monkeypatch: pytest.MonkeyPatch, reason: str
 ) -> None:
     image, root = image_artifact
     coordinator, store, _, _, _ = _coordinator(tmp_path, evaluation_mode="holistic")
     original = coordinator._invoke
-    reason = "MODEL_SCHEMA_MISMATCH"
 
     def invoke(client, stage, payload, images, model, **kwargs):
         if stage == "evidence_extraction":
-            raise ExecutionError(reason, "DUPLICATE_JSON_KEY: readable_text")
+            raise ExecutionError(reason, "Invalid model output")
         return original(client, stage, payload, images, model, **kwargs)
 
     monkeypatch.setattr(coordinator, "_invoke", invoke)

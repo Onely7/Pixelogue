@@ -423,6 +423,10 @@ class VllmClient:
             if isinstance(choices, list) and len(choices) == 1 and isinstance(choices[0], dict)
             else {}
         )
+        if choice.get("finish_reason") == "repetition":
+            raise ExecutionError(
+                "MODEL_OUTPUT_REPETITION", "Engine stopped a repeated token pattern"
+            )
         message = choice.get("message")
         raw_content = message.get("content") if isinstance(message, dict) else None
         whitespace_runaway = (
@@ -698,6 +702,9 @@ class VllmClient:
                 }
             ),
         }
+        detection = self.runtime.repetition_detection
+        if detection is not None and stage in detection.stages:
+            body["repetition_detection"] = detection.model_dump(exclude={"stages"})
         body.update(self.adapter.extra_body())
         return body
 
