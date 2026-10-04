@@ -70,6 +70,15 @@ answer failure, transport error, or exhausted budget stops the turn. A normalize
 already judged in the failed attempt cannot be judged again. Private attempt plans and outcomes
 retain stable identities for replay, and the coordinator commits at most one turn.
 
+`tasks.question_operation_guidance` defaults to `baseline`. The experimental
+`object_identification_v1` value adds fixed public guidance only to question generation
+for normal V7 object identification: ask for a visually supported category, keep the
+same target, and distinguish identification from label reading or UI function explanation.
+The generator receives no private category answer. Selector and evaluator contracts,
+target-disclosure checks, and question and answer gates remain unchanged. Compare actual
+completed conversations before adopting this option; an intent-check improvement alone
+does not establish a synthesis improvement.
+
 `tasks.fact_novelty_enabled` defaults to `false` while its effect is compared. When enabled,
 private request identities combine the view, scope, subject, operation, requested property or
 count unit, and public conditions. Formatting alone does not create a new fact. The existing

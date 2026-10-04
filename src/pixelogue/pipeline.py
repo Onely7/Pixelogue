@@ -116,6 +116,7 @@ from pixelogue.task_runtime import (
     bind_candidates_individually,
     binding_candidate,
     operation_contract,
+    question_operation_contract,
     selector_candidate,
     validate_evidence,
 )
@@ -1236,7 +1237,9 @@ class SynthesisCoordinator:
                     "target_language": target_language,
                     "turn_index": turn_index,
                     "public_history": self._history(snapshot.public_history),
-                    "selected_instruction": operation_contract(selected),
+                    "selected_instruction": question_operation_contract(
+                        selected, guidance=self.config.tasks.question_operation_guidance
+                    ),
                     "image_views": image_views,
                 },
                 (model_image,),

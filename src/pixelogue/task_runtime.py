@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pixelogue.calibration import eligible_domains, model_calibration_lock
 from pixelogue.catalog import task_catalog
@@ -231,6 +231,62 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
             if task.id == "grounded_arithmetic"
             else None
         ),
+    }
+
+
+def question_operation_contract(
+    candidate: InstructionCandidate,
+    *,
+    guidance: Literal["baseline", "object_identification_v1"] = "baseline",
+) -> dict[str, Any]:
+    """Add opt-in question guidance using fixed public policies only.
+
+    The experiment applies only to normal V7 object identification. It does not
+    expose the private category binding or change the contracts used by judges.
+
+    Args:
+        candidate: Bound operation whose public question will be generated.
+        guidance: Baseline contract or the versioned identification experiment.
+
+    Raises:
+        ValueError: If the requested guidance version is unsupported.
+    """
+    if guidance not in {"baseline", "object_identification_v1"}:
+        raise ValueError("Unsupported question operation guidance")
+    contract = operation_contract(candidate)
+    if (
+        guidance == "baseline"
+        or candidate.catalog_version is None
+        or candidate.task_id != "object_identification"
+        or candidate.profile != "normal"
+    ):
+        return contract
+    return {
+        **contract,
+        "question_contract": {
+            "version": "object_identification_v1",
+            "requested_operation": "Ask for the visible category of the bound entity. "
+            "Make category identification explicit in the public question.",
+            "requested_granularity": "Request the finest category independently supported by "
+            "the entity's appearance. Generic person categories are permitted. Do not request "
+            "individual identity, an exact product model, or an unsupported finer subtype.",
+            "target_locator": "Locate the same bound entity using position or visible "
+            "non-category traits. Do not state the category being requested or its synonym. "
+            "The question must identify the target without printing private IDs or coordinates.",
+            "operation_boundaries": [
+                "Reading a visible label, chart legend, or displayed number is text or chart "
+                "reading; do not substitute that request for entity category identification.",
+                "Explaining a UI control's function is a different operation; ask for the "
+                "visible entity's category without requesting its purpose.",
+                "Do not replace identification of the bound entity with classification of "
+                "the overall scene, document, interface, or diagram.",
+                "A depicted entity in a drawing or icon can be identified when its appearance "
+                "independently supports the category; surrounding labels alone do not.",
+            ],
+            "unsupported_question": "Return text=null with a reason if the bound entity or "
+            "requested category cannot be resolved without revealing the answer or changing "
+            "the selected operation.",
+        },
     }
 
 

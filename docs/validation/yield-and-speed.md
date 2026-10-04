@@ -48,6 +48,7 @@ These defaults remain in place while experimental results and human quality are 
 | `tasks.attribute_recheck_enabled` | `false` | `true`, one bounded recheck |
 | `tasks.fact_novelty_enabled` | `false` | `true` |
 | `tasks.max_candidate_attempts` | `1` | `2` |
+| `tasks.question_operation_guidance` | `baseline` | `object_identification_v1` |
 | `tasks.initial_binding_batch_size` | `8` | `2` |
 | `runtime.refill_completed_images` | `false` | `true` |
 | `runtime.max_concurrent_images` | `2` | `4` |
@@ -63,6 +64,37 @@ ambiguous requests remain unresolved. The blind novelty gate still runs. A fallb
 candidate uses the same committed prefix and a priority fixed before evaluation. Failed
 questions, answers and votes stay private; unknown evidence, answer failures and
 transport errors do not trigger additional candidates.
+
+The opt-in `object_identification_v1` guidance applies only to question generation
+for normal V7 object identification. It requests a visible category at a supported
+granularity, keeps the bound target, and distinguishes category identification from
+reading a label or explaining a UI function. It never supplies the private category
+answer to the generator. Selectors and judges receive the original public contract;
+the usual target-disclosure, question and answer gates still run. Treat this as an
+experimental option until a full-path comparison supports adoption.
+
+## Run a finite improvement cycle
+
+Freeze 100 diverse development images and a diagnostic subset of approximately 25.
+Screen each proposed change on that subset before running a 100-image comparison.
+Set a maximum number of hypotheses and corrective variants in advance. Reject a
+variant when its proposed mechanism fails; preserve its actual failed calls and
+costs without repeating the same expensive failure merely to enlarge the sample.
+
+Select one measured condition, check it against the current version on a second
+generation seed, then compare both conditions on the same 100 images. Keep planned
+depths fixed across seeds: changing generation seed must not change the conversation
+length being compared. Balance execution order within each native host, use one
+model session, and preserve the image-to-generator allocation. Report screening,
+confirmation and final comparison separately. Previously inspected images remain
+development inputs, including the second-seed run.
+
+An independent AI reference may inspect saved question and answer ballots. Freeze
+question judgments before opening answers, use full image and public-context hashes
+for exact reuse, and retain `UNKNOWN` and missing votes. Label the result as an AI
+reference, with its model version; it does not replace human ground truth or establish
+specialist calibration. Count a reference-valid completed conversation only when
+every committed question and answer satisfies every required reference criterion.
 
 An initial two-candidate batch can omit later opportunities when it finds a valid early
 candidate. Measure task exposure and coverage as well as time. Refill preserves input

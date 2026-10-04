@@ -318,6 +318,7 @@ class TaskRuntimeConfig(StrictModel):
     evidence_format: Literal["keyed", "array", "compact"] = "keyed"
     attribute_recheck_enabled: bool = False
     max_candidate_attempts: Literal[1, 2] = 1
+    question_operation_guidance: Literal["baseline", "object_identification_v1"] = "baseline"
     fact_novelty_enabled: bool = False
     initial_binding_batch_size: Literal[2, 8] = 8
     binding_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
