@@ -90,8 +90,10 @@ confirmation and final comparison separately. Previously inspected images remain
 development inputs, including the second-seed run.
 
 An independent AI reference may inspect saved question and answer ballots. Freeze
-question judgments before opening answers, use full image and public-context hashes
-for exact reuse, and retain `UNKNOWN` and missing votes. Label the result as an AI
+each question depth before releasing the next depth: later public histories contain
+earlier answers. Release answer ballots only after all question depths are frozen.
+Use full image and public-context hashes for exact reuse, and retain `UNKNOWN` and
+missing votes. Label the result as an AI
 reference, with its model version; it does not replace human ground truth or establish
 specialist calibration. Count a reference-valid completed conversation only when
 every committed question and answer satisfies every required reference criterion.
