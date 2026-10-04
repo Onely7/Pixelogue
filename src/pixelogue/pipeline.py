@@ -2820,6 +2820,9 @@ class SynthesisCoordinator:
             "TEXT_RELATION_UNVERIFIED",
         }
         retry_feedback: str | None = None
+        detection = self.config.runtime.repetition_detection
+        if detection is not None and stage in detection.stages and detection.recovery == "retry":
+            retryable.add("MODEL_OUTPUT_REPETITION")
         prior_error: str | None = None
         for attempt in range(self.config.runtime.structured_output_max_attempts):
             call_kwargs = dict(kwargs)
@@ -3071,6 +3074,14 @@ class SynthesisCoordinator:
             return (
                 "The previous JSON response ended with excessive whitespace. Finish all required"
                 " JSON fields, close the object, and stop immediately. Do not emit blank lines."
+            )
+        if reason == "MODEL_OUTPUT_REPETITION":
+            return (
+                "The engine stopped a repeated token pattern in the previous response. "
+                "Re-examine the supplied input and return a complete concise JSON object "
+                "within the original token limit. Use short reasons, no blank lines, and "
+                "stop after closing the object. Never omit required judgments or guess "
+                "missing evidence; use UNKNOWN when the image does not establish a fact."
             )
         if reason == "REPEATED_PUBLIC_QUESTION":
             return (

@@ -82,6 +82,7 @@ runtime:
     min_pattern_size: 1
     max_pattern_size: 4
     min_count: 64
+    recovery: retry
     stages:
     - evidence_extraction
     - candidate_binding

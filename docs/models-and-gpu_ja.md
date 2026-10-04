@@ -250,6 +250,7 @@ runtime:
     min_pattern_size: 1
     max_pattern_size: 4
     min_count: 64
+    recovery: retry
     stages: [evidence_extraction, candidate_binding]
 ```
 
@@ -259,8 +260,11 @@ runtime:
 質問・回答生成には適用しません。
 
 `finish_reason: repetition` は `MODEL_OUTPUT_REPETITION` として記録し、
-生の応答と使用トークンを保存します。出力上限の自動増加や再試行をせず棄権し、
-構文が正しいJSONでも途中停止した応答は受理しません。
+生の応答と使用トークンを保存し、構文が正しいJSONでも途中停止した応答は拒否します。
+指定した抽出段階では `recovery: retry` により、`structured_output_max_attempts`
+の範囲で修正指示を付けて再試行します。元の出力上限を維持し、反復を理由に
+上限を増やしたり途中出力を採用したりしません。比較用の `recovery: abstain`
+は即時棄権を維持します。
 設定変更後は異なるrun IDを使います。この機能は固定したvLLMの反復検知APIに
 対応するendpointが必要です。
 
@@ -270,3 +274,35 @@ runtime:
 利用可能な設定を確認できます。導入済み版の全起動設定は
 `uv run --project runtime/vllm --locked vllm serve --help=all` で確認してください。
 設定項目の存在だけで、全モデル・バックエンドでの動作を保証するものではありません。
+
+### 整形を保ったままJSONの連続空白を制限する
+
+任意の `runtime.json_whitespace_max_chars: 32` は根拠抽出・候補具体化の
+Schemaだけに非公開の拡張を付けます。JSON要素間の空白数を制限し、通常の改行と
+字下げは許します。文字列の値に含まれる空白は内容として維持します。
+停止した応答の観測・適格性判定・公開パラメータをcontrollerが補完することはありません。
+
+アプリとは別のvLLM環境へ、次の版固定パッチを適用します。
+
+```bash
+runtime/vllm/.venv/bin/python runtime/vllm/whitespace_patch.py
+runtime/vllm/.venv/bin/python runtime/vllm/whitespace_patch.py --check
+```
+
+適用・復元の前にモデルサーバーを停止し、処理後に再起動します。環境の
+`uv sync` 後も検査・再適用してください。vLLM 0.29.0、XGrammar 0.2.6と
+元ファイル全体のSHAを検査し、検証済みbackupを保存します。別の変更があれば
+上書きを拒否します。`--restore` は元のバイト列を復元します。
+返された `patched_sha256` を生成endpointの
+`serving_runtime.xgrammar_whitespace_patch_sha256` に設定し、実際のサーバー
+manifestを記録します。`structured_output_backend: xgrammar` と
+`disable_any_whitespace: false` が必要です。未記録・非対応の実行識別は拒否します。
+上限値はSchemaに含まれ、呼出・文法キャッシュの識別へ反映されます。変更後は
+新しいrun IDを使います。拡張のない基準呼出は従来の文法生成を保ちます。
+質問・回答と専門sourceのSchemaには、この拡張を渡しません。
+
+パッチは既存の `max_whitespace_cnt` を渡すだけで、重み・量子化を変更しません。
+[版固定XGrammarの実装](https://github.com/mlc-ai/xgrammar/blob/v0.2.6/python/xgrammar/compiler.py)と
+[版固定vLLMのbackend](https://github.com/vllm-project/vllm/blob/v0.29.0/vllm/v1/structured_output/backend_xgrammar.py)を参照できます。
+生成可能な経路は変わるため、新しいモデル・画像分野に採用する前に支持数と
+会話全体の品質を確認します。

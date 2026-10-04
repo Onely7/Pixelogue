@@ -270,6 +270,7 @@ runtime:
     min_pattern_size: 1
     max_pattern_size: 4
     min_count: 64
+    recovery: retry
     stages: [evidence_extraction, candidate_binding]
 ```
 
@@ -280,9 +281,12 @@ binding may use this option. Public question and answer generation retain their
 existing behavior.
 
 `finish_reason: repetition` is recorded as `MODEL_OUTPUT_REPETITION`, preserves the
-raw response and incurred usage, and abstains without automatically increasing the
-output budget or retrying. Even parseable JSON from such a stopped completion is
-rejected. A configuration change produces a different run identity. This option
+raw response and incurred usage, and rejects even parseable JSON from the stopped
+completion. In the configured extraction stages, `recovery: retry` permits a new
+complete response within `structured_output_max_attempts`, with correction feedback
+and the original output limit. It never accepts partial output or increases the
+budget because of repetition. `recovery: abstain` keeps immediate abstention for
+comparisons. A configuration change produces a different run identity. This option
 requires an endpoint implementing the pinned vLLM repetition-detection API.
 
 The [vLLM 0.29.0 serving reference](https://docs.vllm.ai/en/v0.29.0/cli/serve/),
@@ -291,3 +295,37 @@ The [vLLM 0.29.0 serving reference](https://docs.vllm.ai/en/v0.29.0/cli/serve/),
 describe the available interfaces. Inspect the installed runtime with
 `uv run --project runtime/vllm --locked vllm serve --help=all`; a listed option does
 not establish support for every model or backend.
+
+### Bounded whitespace without forcing compact JSON
+
+An opt-in `runtime.json_whitespace_max_chars: 32` adds a private Schema extension
+only to evidence extraction and candidate binding. It limits whitespace between
+JSON elements while preserving normal newlines and indentation. Spaces inside
+text values remain content. No observation, eligibility verdict or public
+parameter is synthesized by the controller to repair a stopped response.
+
+This requires the checked-in bridge in the separate vLLM environment:
+
+```bash
+runtime/vllm/.venv/bin/python runtime/vllm/whitespace_patch.py
+runtime/vllm/.venv/bin/python runtime/vllm/whitespace_patch.py --check
+```
+
+Stop model servers before installing or restoring the patch, then restart them.
+After `uv sync` in that environment, verify or reapply it. The installer checks
+vLLM 0.29.0, XGrammar 0.2.6 and the complete upstream file digest, keeps a verified
+backup, and refuses unrelated runtime edits. `--restore` restores those exact
+upstream bytes. Record the returned `patched_sha256` in each generator endpoint's
+`serving_runtime.xgrammar_whitespace_patch_sha256`, along with the actual server
+manifest. Use explicit `structured_output_backend: xgrammar` and
+`disable_any_whitespace: false`. The client refuses absent or incompatible
+runtime identities. The bound appears in the Schema and therefore the request
+and grammar cache identities; use new run IDs after changing it. Baseline requests
+without the extension retain upstream compilation behavior. Questions, answers
+and specialist source schemas do not receive this extension.
+
+The bridge forwards XGrammar's existing `max_whitespace_cnt`; it does not change
+model weights or quantization. See the [pinned XGrammar implementation](https://github.com/mlc-ai/xgrammar/blob/v0.2.6/python/xgrammar/compiler.py)
+and [pinned vLLM backend](https://github.com/vllm-project/vllm/blob/v0.29.0/vllm/v1/structured_output/backend_xgrammar.py).
+The bound changes allowed generation paths, so validate support and end-to-end
+quality before adopting it for a new model or image domain.

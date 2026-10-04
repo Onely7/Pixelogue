@@ -91,6 +91,7 @@ class ServingRuntimeIdentity(StrictModel):
     ]
     disable_any_whitespace: bool
     server_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    xgrammar_whitespace_patch_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
 
     @model_validator(mode="after")
     def validate_whitespace_control(self) -> ServingRuntimeIdentity:
@@ -251,6 +252,7 @@ class RepetitionDetectionConfig(StrictModel):
     min_pattern_size: Annotated[int, Field(ge=1, le=16)] = 1
     max_pattern_size: Annotated[int, Field(ge=1, le=16)] = 4
     min_count: Annotated[int, Field(ge=2, le=1024)] = 64
+    recovery: Literal["retry", "abstain"] = "retry"
     stages: Annotated[
         tuple[Literal["evidence_extraction", "candidate_binding"], ...],
         Field(min_length=1, max_length=2),
@@ -275,6 +277,7 @@ class RuntimeConfig(StrictModel):
     max_concurrent_images: Annotated[int, Field(ge=1, le=64)] = 1
     refill_completed_images: bool = False
     repetition_detection: RepetitionDetectionConfig | None = None
+    json_whitespace_max_chars: Annotated[int, Field(ge=1, le=256)] | None = None
     max_total_requests: Annotated[int, Field(ge=1)] = 10_000_000
     max_total_output_tokens: Annotated[int, Field(ge=1)] = 1_000_000_000
     allow_external_inference: Literal[False] = False

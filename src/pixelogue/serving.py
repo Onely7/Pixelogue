@@ -534,6 +534,23 @@ class VllmClient:
             {"type": "image_url", "image_url": {"url": image.data_uri()}} for image in images
         )
         schema = response_model.model_json_schema()
+        whitespace_bound = self.runtime.json_whitespace_max_chars
+        if whitespace_bound is not None and stage in {"evidence_extraction", "candidate_binding"}:
+            identity = self.endpoint.serving_runtime
+            if (
+                identity is None
+                or identity.vllm_version != "0.29.0"
+                or identity.structured_output_backend != "xgrammar"
+                or identity.disable_any_whitespace
+                or identity.xgrammar_whitespace_patch_sha256
+                != "97e96f276ad6ad10d536f7c88e294a8115cce11bd219763c0a708dabf913020e"
+            ):
+                raise ExecutionError(
+                    "MODEL_RUNTIME_PATCH_REQUIRED",
+                    "Bounded JSON whitespace requires the verified Pixelogue XGrammar patch "
+                    "and an explicit xgrammar server with ordinary whitespace enabled",
+                )
+            schema["x-pixelogue-max-whitespace-chars"] = whitespace_bound
         if stage in SPECIALIST_SOURCE_STAGES:
             _bind_specialist_source_schema(schema, stage, payload)
         if response_model in (
@@ -704,7 +721,7 @@ class VllmClient:
         }
         detection = self.runtime.repetition_detection
         if detection is not None and stage in detection.stages:
-            body["repetition_detection"] = detection.model_dump(exclude={"stages"})
+            body["repetition_detection"] = detection.model_dump(exclude={"stages", "recovery"})
         body.update(self.adapter.extra_body())
         return body
 
