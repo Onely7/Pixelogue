@@ -103,6 +103,51 @@ candidate. Measure task exposure and coverage as well as time. Refill preserves 
 output order, conversation history order, bounded active work and a bounded waiting
 buffer. Keep SQLite operations serialized.
 
+## Recorded development comparison: 2026-10-04
+
+The finite cycle screened changes on 25 diverse development images, checked the
+selected condition on a second generation seed, and compared it with the current
+condition on the same 100 images. The selected condition combined compact evidence
+with an initial binding batch of two candidates. Models, quantization, quality gates
+and planned conversation depths were unchanged. Native host order was balanced;
+these measurements used the pinned model pair in verified TP1 serving configurations.
+
+| Measure on the matched 100 images | Current | Compact plus initial batch of two |
+|---|---:|---:|
+| Automatic candidates | 6 | 14 |
+| Whole conversations satisfying the AI reference | 4 | 9 |
+| Mean image synthesis seconds | 126.53 | 102.21 |
+| p95 image synthesis seconds | 217.76 | 201.67 |
+| Maximum image synthesis seconds | 327.52 | 376.64 |
+| Tasks in reference-valid conversations | 3 | 6 |
+| Reference-valid conversations per phase GPU hour | 1.39 | 3.93 |
+
+These counts use the unchanged minimum-two-turn policy, including retained committed
+prefixes after a later stop. Three current and five selected reference-valid
+conversations finished their planned depth; one and four respectively are retained
+prefixes. Only committed public turns enter the reference-valid count.
+
+The mean fell 19.2%. Summed evidence and binding HTTP durations fell 37.3%; this
+sum overlaps in time and is not an elapsed-time reduction. Candidate review covered
+94 actual question/answer ballots using GPT-6.1 Sol Ultra. The selected candidates
+include three reference failures and two unknown conversations; the current candidates
+include two failures. Independent human correctness and holdout generalization remain
+unmeasured. The target of ten reference-valid conversations was not met.
+
+Defaults remain keyed evidence and an initial batch of eight. The selected condition
+is available for explicit comparison. It improves measured yield and mean speed, but
+does not establish preserved candidate quality or every operation opportunity. Two
+eligible multi-region opportunities were not offered in the selected condition, and
+the maximum image duration increased. Separate evidence-format and batching effects
+cannot be inferred from this combined condition. Other screened changes remain
+disabled by default; the failed large-table prompt change was withdrawn.
+
+Report actual phase intervals for each native host. The first-to-last campaign span
+can include other conditions and gaps when execution order is balanced, so it cannot
+measure comparative throughput. Phase efficiency excludes shared model loading;
+the complete cycle used 12.21 GPU hours including loading, failed and interrupted
+tasks, and gaps. Reservation time after job completion remains separate.
+
 ## Report all work and missing measurements
 
 Use `pixelogue run-diagnostics` for stage reach, attempted turns, committed turns and
@@ -162,10 +207,12 @@ Stops without an answer do not enter completed-conversation false-rejection esti
 Use actual inclusion probabilities for population estimates; observed cell fractions
 alone need not be inclusion probabilities. An empty ballot template is not a human vote.
 
-The final `examples.html` embeds its images and contains actual image/instruction/answer
-examples for both conditions. All 72 catalog rows stay visible, and tasks without an
-observed example remain empty. Mark accepted prefixes from stopped conversations as
-diagnostics. Keep validation inputs and their visual groups evaluation-only.
+The final `examples.html` embeds its images and contains actual committed
+image/instruction/answer examples for the explicitly named display condition.
+The report compares both conditions. All 72 catalog rows stay visible, and tasks
+without an observed example remain empty. Exclude rejected terminal text from public
+dialogue and mark committed prefixes from stopped conversations as diagnostics.
+Keep validation inputs and their visual groups evaluation-only.
 
 See the [task guide](../tasks/README.md), [GPU guide](../models-and-gpu.md),
 [recovery guide](../recovery-and-ci.md) and
