@@ -329,3 +329,15 @@ model weights or quantization. See the [pinned XGrammar implementation](https://
 and [pinned vLLM backend](https://github.com/vllm-project/vllm/blob/v0.29.0/vllm/v1/structured_output/backend_xgrammar.py).
 The bound changes allowed generation paths, so validate support and end-to-end
 quality before adopting it for a new model or image domain.
+
+## Bounded table and verbatim-text verification
+
+Single-cell lookups in simple labeled tables use two answer-blind readings of the complete row/column header domains and only the requested cell. Missing addressing domains, ambiguous selected headers, misaligned or off-scope cells, and disagreements abstain. Selected row and column header anchors must align with the requested cell; unrelated grid coordinates and values are not generated. Merged or hierarchical headers, relevant footnotes, and multi-cell requests retain full-grid verification. Predicate selection, joins and reconstruction always retain complete grids.
+
+Verbatim text, reading-order and code transcription use two answer-blind source readings as literal line arrays. The controller compares the complete answer, permitting only outer quotations or code fences; it never accepts a matching substring that omits or adds text. The blind readers receive the original image so they can detect text continuing outside the bound rectangle. The controller requires the whole requested unit to fit its bound image region. Non-verbatim extractive QA and label/value linking retain their existing span-based checks. These contracts require empirical visual calibration; valid JSON alone is not proof of correct image reading.
+
+For local object identification, attribute and verbatim transcription questions, question-fit and holistic judges receive only pixels inside the target rectangle, falling back to the scope rectangle. Crops carry their source view identity, exact source coordinates and encoded hash. Rounding does not expand the region; empty crops abstain. Question/answer generators retain the full original view. Full-grid table retries keep their original token budget; an incomplete grid may abstain but cannot become a closed certificate.
+
+UI location answers that exactly repeat the public target reference are rejected before visual review, with the text and reason preserved privately. A location description remains eligible.
+
+The [100-image development inspection manifest](../validation/diverse_100_20261004_manifest.json) fixes image identities, strata, host/model allocation and seed. These are previously used evaluation images, not an independent holdout. Natural-image results and the remaining task coverage must be reported separately from shared CPU contract tests.

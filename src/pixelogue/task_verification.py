@@ -42,9 +42,15 @@ from pixelogue.specialist_geometry import (
 from pixelogue.specialist_music import MusicSource, verify_music
 from pixelogue.specialist_render import RenderSource, verify_render
 from pixelogue.specialist_ui import UIActionSource, verify_ui_action
+from pixelogue.table_lookup import TableLookupSource, verify_table_lookup
 from pixelogue.table_verifiers import TABLE_TASKS, TableAnswer, TableSource, verify_table
-from pixelogue.task_evidence import TranscriptInventory, VisualContractReview
+from pixelogue.task_evidence import (
+    TranscriptInventory,
+    TranscriptSource,
+    VisualContractReview,
+)
 from pixelogue.task_runtime import operation_contract
+from pixelogue.transcription_verifier import verify_transcription
 
 InvokeJudge = Callable[[str, dict[str, Any], type[BaseModel], int], BaseModel]
 
@@ -542,11 +548,26 @@ def verify_operation(
         table_source_payload = {
             key: value for key, value in public.items() if key != "candidate_answer"
         }
-        table_sources = tuple(
-            TableSource.model_validate(
-                invoke("table_source", table_source_payload, TableSource, index)
+        lookup_sources: tuple[TableLookupSource, ...] = ()
+        if instruction.task_id == "table_cell_lookup":
+            lookup_sources = tuple(
+                TableLookupSource.model_validate(
+                    invoke("table_lookup_source", table_source_payload, TableLookupSource, index)
+                )
+                for index in range(2)
             )
-            for index in range(2)
+        needs_full_grid = not lookup_sources or any(
+            source.layout == "requires_full_grid" for source in lookup_sources
+        )
+        table_sources = (
+            tuple(
+                TableSource.model_validate(
+                    invoke("table_source", table_source_payload, TableSource, index)
+                )
+                for index in range(2)
+            )
+            if needs_full_grid
+            else ()
         )
         table_answers: tuple[TableAnswer, TableAnswer] | None = None
         if instruction.task_id != "table_structure_reconstruction":
@@ -564,17 +585,30 @@ def verify_operation(
             table_answers = (extracted[0], extracted[1])
         assert instruction.scope_id is not None
         assert instruction.view_id is not None
-        content, schema = verify_table(
-            instruction.task_id,
-            (table_sources[0], table_sources[1]),
-            table_answers,
-            {item.name: item.value for item in instruction.public_parameters},
-            instruction.scope_id,
-            instruction.view_id,
-            payload["candidate_answer"],
-        )
+        if needs_full_grid:
+            content, schema = verify_table(
+                instruction.task_id,
+                (table_sources[0], table_sources[1]),
+                table_answers,
+                {item.name: item.value for item in instruction.public_parameters},
+                instruction.scope_id,
+                instruction.view_id,
+                payload["candidate_answer"],
+            )
+        else:
+            assert table_answers is not None
+            content = verify_table_lookup(
+                (lookup_sources[0], lookup_sources[1]),
+                table_answers,
+                instruction.scope_id,
+                instruction.view_id,
+                payload["candidate_answer"],
+                scope_region=instruction.scope_region,
+            )
+            schema = None
         table_evidence = tuple(
-            item.model_dump(mode="json") for item in (*table_sources, *(table_answers or ()))
+            item.model_dump(mode="json")
+            for item in (*lookup_sources, *table_sources, *(table_answers or ()))
         )
         for name in instruction.verification_contracts:
             if name in {"table_structure_check", "closed_set_check", "schema_check"}:
@@ -747,15 +781,37 @@ def verify_operation(
                 computation = verify_computation_inventories(computations)
                 verdict = GateVerdict(computation.verdict)
         elif name == "transcript_alignment":
-            models = [
-                invoke("transcript_alignment", public, TranscriptInventory, index)
-                for index in range(2)
-            ]
-            transcripts = [TranscriptInventory.model_validate(item) for item in models]
-            if all(t.coverage == "MET" for t in transcripts):
-                if transcripts[0].expected_text == transcripts[1].expected_text and all(
-                    t.answer_text and t.answer_text in payload["candidate_answer"]
-                    for t in transcripts
+            if instruction.task_id in {
+                "text_transcription",
+                "code_transcription",
+                "text_reading_order",
+            }:
+                source_payload = {
+                    key: value for key, value in public.items() if key != "candidate_answer"
+                }
+                models = [
+                    invoke("transcript_source", source_payload, TranscriptSource, index)
+                    for index in range(2)
+                ]
+                sources = [TranscriptSource.model_validate(item) for item in models]
+                verdict = verify_transcription(
+                    (sources[0], sources[1]),
+                    payload["candidate_answer"],
+                    instruction.target_region or instruction.scope_region,
+                )
+            else:
+                models = [
+                    invoke("transcript_alignment", public, TranscriptInventory, index)
+                    for index in range(2)
+                ]
+                transcripts = [TranscriptInventory.model_validate(item) for item in models]
+                if (
+                    all(t.coverage == "MET" for t in transcripts)
+                    and transcripts[0].expected_text == transcripts[1].expected_text
+                    and all(
+                        t.answer_text and t.answer_text in payload["candidate_answer"]
+                        for t in transcripts
+                    )
                 ):
                     verdict = consensus(
                         [

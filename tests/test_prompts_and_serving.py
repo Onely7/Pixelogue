@@ -30,11 +30,13 @@ from pixelogue.specialist_circuit import CircuitSource
 from pixelogue.specialist_geometry import GeometryProblem
 from pixelogue.specialist_music import MusicSource
 from pixelogue.store import RunStore
+from pixelogue.table_lookup import TableLookupSource
 from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_evidence import (
     AttributeRecheckReport,
     CandidateBindingsReport,
     ScopedEvidenceReport,
+    TranscriptSource,
 )
 
 
@@ -42,6 +44,8 @@ from pixelogue.task_evidence import (
     ("stage", "model"),
     [
         ("table_source", TableSource),
+        ("table_lookup_source", TableLookupSource),
+        ("transcript_source", TranscriptSource),
         ("table_answer", TableAnswer),
         ("chart_source", ChartSource),
         ("chart_answer", ChartAnswer),
@@ -58,7 +62,7 @@ def test_structural_reader_sees_the_exact_decoder_contract_without_mutating_mode
     payload = {
         "target_language": "en",
         "question": "Read the requested visible value.",
-        "expected_operation": {},
+        "expected_operation": {"scope_id": "table", "view_id": "full:view"},
     }
     images = ()
     if source:

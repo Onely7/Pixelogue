@@ -52,6 +52,7 @@ from pixelogue.prompts import STAGE_INSTRUCTIONS
 from pixelogue.rules import CountGroup, SetCheck, SetInventory, verify_set_inventories
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
+from pixelogue.table_lookup import TableLookupSource
 from pixelogue.table_verifiers import TableSource
 from pixelogue.task_evidence import (
     AttributeRecheckReport,
@@ -68,6 +69,7 @@ from pixelogue.task_evidence import (
     ScopeEvidence,
     ScopeEvidenceReport,
     TargetReport,
+    TranscriptSource,
 )
 
 
@@ -205,6 +207,18 @@ class ScriptedClient:
                 }
             )
             value = response_model.model_validate({**common, **structure})
+        elif response_model is TableLookupSource:
+            value = TableLookupSource(
+                coverage="UNKNOWN",
+                layout="unreadable",
+                scope_id="whole",
+                view_id="view",
+                scope_region=ImageRegion(left=0, top=0, right=1, bottom=1),
+                row_headers=(),
+                col_headers=(),
+                closed=False,
+                reason="The table is not readable.",
+            )
         elif response_model is TableSource:
             value = TableSource.model_validate(
                 {
@@ -460,6 +474,11 @@ def test_candidate_wire_partition_rejects_unknown_and_duplicate_ids() -> None:
 @pytest.mark.parametrize(
     ("stage", "model", "expected"),
     [
+        (
+            "table_lookup_source",
+            TableLookupSource,
+            ("row_anchor", "col_anchor", "overlap", "null anchors"),
+        ),
         ("table_source", TableSource, ("data_rows", "query object", "left < right")),
         ("formula_source", FormulaSource, ("zero children", "script has three", "root=null")),
         ("chart_source", ChartSource, ("lower=upper", "marks=[]", "N/A")),
@@ -468,7 +487,7 @@ def test_candidate_wire_partition_rejects_unknown_and_duplicate_ids() -> None:
 def test_source_schema_retry_names_nested_contracts(
     tmp_path: Path,
     stage: str,
-    model: type[TableSource] | type[FormulaSource] | type[ChartSource],
+    model: type[TableLookupSource] | type[TableSource] | type[FormulaSource] | type[ChartSource],
     expected: tuple[str, ...],
 ) -> None:
     config = load_config(Path("configs/pilot.yaml"))
@@ -492,6 +511,8 @@ def test_source_schema_retry_names_nested_contracts(
     assert result.coverage == "UNKNOWN"
     assert client.retry_feedback[0] is None
     assert all(fragment in (client.retry_feedback[1] or "") for fragment in expected)
+    if stage == "table_lookup_source":
+        assert "edge array" not in (client.retry_feedback[1] or "")
 
 
 @pytest.mark.parametrize(
@@ -532,7 +553,7 @@ def test_structural_source_retry_only_increases_budget_for_truncated_content(
     assert budgets == expected_budgets
 
 
-def test_incomplete_table_source_gets_a_larger_retry_budget(
+def test_incomplete_table_source_keeps_budget_and_can_abstain_without_timeout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_config(Path("configs/pilot.yaml"))
@@ -540,9 +561,11 @@ def test_incomplete_table_source_gets_a_larger_retry_budget(
     client = ScriptedClient(config.models.generator_a)
     original_invoke = client.invoke
     budgets: list[int] = []
+    feedbacks: list[str | None] = []
 
     def truncate_first(*args: Any, **kwargs: Any) -> ModelResponse:
         budgets.append(kwargs["max_tokens"])
+        feedbacks.append(kwargs.get("retry_feedback"))
         if len(budgets) == 1:
             raise ExecutionError("MODEL_FINISH_REASON", "Completion reached its token limit")
         return original_invoke(*args, **kwargs)
@@ -564,7 +587,8 @@ def test_incomplete_table_source_gets_a_larger_retry_budget(
         store.close()
 
     assert result.coverage == "UNKNOWN"
-    assert budgets == [4096, 8192]
+    assert budgets == [4096, 4096]
+    assert "complete table cannot fit" in (feedbacks[1] or "")
 
 
 def test_incomplete_evidence_extraction_gets_a_larger_retry_budget(
@@ -1621,6 +1645,64 @@ def test_public_text_checks_catch_observed_multiturn_leaks() -> None:
     assert not scene_options_in_question(
         "What type of scene is this?", ("residential street", "rural road")
     )
+
+
+@pytest.mark.parametrize("region_field", ["target_region", "scope_region"])
+def test_local_question_judges_receive_only_a_hashed_focus_view(
+    tmp_path, image_artifact, monkeypatch, region_field
+):
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    try:
+        instruction = InstructionCandidate(
+            candidate_id="local",
+            task_id="object_identification",
+            family="visual_description",
+            visible_scope="left half",
+            instruction_summary="Identify the local subject",
+            required_capabilities=("visible_entity",),
+            target_region=ImageRegion(left=0, top=0, right=0.5, bottom=1)
+            if region_field == "target_region"
+            else None,
+            scope_region=ImageRegion(left=0, top=0, right=0.5, bottom=1)
+            if region_field == "scope_region"
+            else None,
+        )
+        original = coordinator._model_image(image, root)
+        calls = []
+
+        def invoke(client, stage, payload, images, model, **kwargs):
+            assert stage == "question_fit"
+            assert len(images) == 1 and images[0].view_id.startswith("focus:")
+            assert images[0].encoded_sha256 != original.encoded_sha256
+            view = payload["image_views"][0]
+            assert view["source_view_id"] == original.view_id
+            assert float(view["source_right"]) == 0.5
+            assert "candidate_answer" not in payload
+            calls.append(images[0].encoded_sha256)
+            return QuestionFit(
+                local_anchor="MET",
+                operation_coherent="MET",
+                useful_request="MET",
+                reason="Visible inside the delivered crop",
+            )
+
+        monkeypatch.setattr(coordinator, "_invoke", invoke)
+        result = coordinator._question_fit(
+            (),
+            PublicMessage(
+                message_id="q", turn_index=1, role="user", content="What object is on the left?"
+            ),
+            instruction,
+            "en",
+            [coordinator._view_metadata(image)],
+            original,
+            1,
+        )
+        assert result is GateVerdict.MET
+        assert len(calls) == 2 and calls[0] == calls[1]
+    finally:
+        store.close()
 
 
 def test_reciprocal_identification_disclosure_requires_both_public_directions() -> None:
@@ -3360,5 +3442,167 @@ def test_compact_discovery_reconstructs_fixed_ids_and_replays_completed_conversa
         )
         assert resumed == first and discovery == 1 and len(generator.calls) == calls
         assert not any("scope_1" in turn.question.content for turn in first.turns)
+    finally:
+        store.close()
+
+
+def test_empty_local_pixels_abstain_even_after_a_base_review_pass(
+    tmp_path, image_artifact, monkeypatch
+):
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    try:
+        instruction = InstructionCandidate(
+            candidate_id="subpixel",
+            task_id="object_identification",
+            family="visual_description",
+            visible_scope="empty pixel region",
+            instruction_summary="Identify a local entity",
+            required_capabilities=("visible_entity",),
+            catalog_version="7.0",
+            scope_id="tiny",
+            evidence_refs=("visible-local-evidence",),
+            verification_contracts=("dual_visual_review",),
+            view_id=image.full_view.view_id,
+            target_region=ImageRegion(left=0, top=0, right=0.00001, bottom=0.00001),
+        )
+        monkeypatch.setattr(
+            coordinator, "_rate_base_turn", lambda *args: TurnRating(items=(), aggregate="PASS")
+        )
+        monkeypatch.setattr(
+            coordinator,
+            "_invoke",
+            lambda *args, **kwargs: pytest.fail("Empty pixels called a model"),
+        )
+        rating = coordinator._rate_turn(
+            "conversation",
+            "a" * 64,
+            (),
+            PublicMessage(message_id="q", turn_index=1, role="user", content="What is here?"),
+            PublicMessage(message_id="a", turn_index=1, role="assistant", content="object"),
+            instruction,
+            "en",
+            [coordinator._view_metadata(image)],
+            coordinator._model_image(image, root),
+            1,
+            (),
+        )
+        assert rating.aggregate == "ABSTAIN"
+        assert rating.items[-1].verdict is GateVerdict.UNKNOWN
+    finally:
+        store.close()
+
+
+def test_blind_transcription_sees_full_context_and_rejects_an_incomplete_bound(
+    tmp_path, image_artifact, monkeypatch
+):
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    try:
+        original = coordinator._model_image(image, root)
+        instruction = InstructionCandidate(
+            candidate_id="title",
+            task_id="text_transcription",
+            family="text_reading",
+            visible_scope="top half",
+            instruction_summary="Read the complete title",
+            required_capabilities=("readable_text",),
+            catalog_version="7.0",
+            scope_id="title",
+            evidence_refs=("title-evidence",),
+            verification_contracts=("dual_visual_review", "transcript_alignment"),
+            view_id=original.view_id,
+            target_region=ImageRegion(left=0, top=0, right=1, bottom=0.5),
+        )
+        monkeypatch.setattr(
+            coordinator, "_rate_base_turn", lambda *args: TurnRating(items=(), aggregate="PASS")
+        )
+        calls = []
+
+        def invoke(client, stage, payload, images, model, **kwargs):
+            assert stage == "transcript_source"
+            assert "candidate_answer" not in payload
+            assert images == (original,)
+            assert payload["image_views"][0]["view_id"] == original.view_id
+            calls.append(stage)
+            return TranscriptSource(
+                coverage="MET",
+                expected_lines=("Complete title", "second line"),
+                source_region=ImageRegion(left=0.1, top=0.2, right=0.9, bottom=0.7),
+                requested_unit_complete=True,
+                reason="The original image shows the second line below the bound.",
+            )
+
+        monkeypatch.setattr(coordinator, "_invoke", invoke)
+        rating = coordinator._rate_turn(
+            "conversation",
+            "a" * 64,
+            (),
+            PublicMessage(message_id="q", turn_index=1, role="user", content="Read the title."),
+            PublicMessage(
+                message_id="a",
+                turn_index=1,
+                role="assistant",
+                content="Complete title\nsecond line",
+            ),
+            instruction,
+            "en",
+            [coordinator._view_metadata(image)],
+            original,
+            1,
+            (),
+        )
+        assert calls == ["transcript_source", "transcript_source"]
+        assert rating.aggregate == "ABSTAIN"
+        assert rating.items[-1].verdict is GateVerdict.UNKNOWN
+    finally:
+        store.close()
+
+
+def test_rerating_rejects_a_ui_name_instead_of_a_location_without_model_calls(
+    tmp_path, image_artifact
+):
+    image, root = image_artifact
+    coordinator, store, _, generator_a, generator_b = _coordinator(
+        tmp_path, evaluation_mode="holistic"
+    )
+    try:
+        original = coordinator.synthesize_image(image, root)
+        first = original.turns[0]
+        instruction = InstructionCandidate(
+            candidate_id="menu",
+            task_id="ui_element_grounding",
+            family="screen_ui",
+            visible_scope="visible desktop",
+            instruction_summary="Locate the named menu",
+            required_capabilities=("ui_controls",),
+            catalog_version="7.0",
+            scope_id="screen",
+            evidence_refs=("menu-evidence",),
+            verification_contracts=("dual_visual_review", "ui_grounding_check"),
+            view_id=image.full_view.view_id,
+            public_parameters=(
+                PublicParameter(name="target", value="the 'Aktionen' menu", origin="instruction"),
+            ),
+        )
+        changed = first.model_copy(
+            update={
+                "instruction": instruction,
+                "question": first.question.model_copy(
+                    update={"content": "Where is the 'Aktionen' menu located?"}
+                ),
+                "answer": first.answer.model_copy(update={"content": "the 'Aktionen' menu"}),
+            }
+        )
+        calls_before = sum(len(client.calls) for client in (generator_a, generator_b))
+        rerated = coordinator.rate_existing(original.model_copy(update={"turns": (changed,)}), root)
+        calls_after = sum(len(client.calls) for client in (generator_a, generator_b))
+        assert rerated.turns[0].status == "REJECTED" and calls_after == calls_before
+        assert (
+            coordinator._answer_disclosure_reason(
+                instruction, changed.question.content, "In the upper-left menu bar.", ()
+            )
+            is None
+        )
     finally:
         store.close()

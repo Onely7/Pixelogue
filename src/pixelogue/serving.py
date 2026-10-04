@@ -45,7 +45,9 @@ SPECIALIST_SOURCE_STAGES = frozenset(
 STRUCTURAL_OUTPUT_STAGES = frozenset(
     {
         "table_source",
+        "table_lookup_source",
         "table_answer",
+        "transcript_source",
         "chart_source",
         "chart_answer",
         "graph_source",
@@ -661,6 +663,15 @@ class VllmClient:
             if count == 0:
                 schema["properties"]["claims"]["maxItems"] = 0
         if stage in STRUCTURAL_OUTPUT_STAGES:
+            if stage == "table_lookup_source":
+                operation = payload.get("expected_operation")
+                if not isinstance(operation, dict):
+                    raise ExecutionError("MODEL_PAYLOAD_FIELD", "Lookup requires a bound operation")
+                for field in ("scope_id", "view_id"):
+                    value = operation.get(field)
+                    if not isinstance(value, str) or not value:
+                        raise ExecutionError("MODEL_PAYLOAD_FIELD", f"Lookup lacks {field}")
+                    schema["properties"][field]["const"] = value
             if stage.endswith("_answer"):
                 # Nullable result fields must be emitted, even when the parse abstains.
                 # Their omission otherwise permits an acknowledgement-only JSON object.
@@ -692,6 +703,74 @@ class VllmClient:
                     "The visible component and terminal inventory is complete. "
                     "A fully read passive network with no power source is closed."
                 )
+            elif stage in {"transcript_source", "table_lookup_source"}:
+                # A nullable region otherwise permits a syntactically valid MET
+                # response without a complete source. Bind the two coverage shapes
+                # in the decoder, keeping visual truth with the independent reader.
+                properties = schema["properties"]
+                base = {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": sorted(properties),
+                }
+                if stage == "transcript_source":
+                    complete_fields = {
+                        "coverage": {"type": "string", "const": "MET"},
+                        "expected_lines": {**properties["expected_lines"], "minItems": 1},
+                        "source_region": {"$ref": "#/$defs/ImageRegion"},
+                        "requested_unit_complete": {"type": "boolean", "const": True},
+                    }
+                    uncertain_fields = {
+                        "coverage": {"type": "string", "enum": ["UNKNOWN", "NOT_MET"]},
+                        "expected_lines": {**properties["expected_lines"], "maxItems": 0},
+                        "source_region": {"type": "null"},
+                        "requested_unit_complete": {"type": "boolean", "const": False},
+                    }
+                else:
+                    complete_fields = {
+                        "coverage": {"type": "string", "const": "MET"},
+                        "layout": {"type": "string", "const": "simple_grid"},
+                        "closed": {"type": "boolean", "const": True},
+                        "table_region": {"$ref": "#/$defs/ImageRegion"},
+                        "data_region": {"$ref": "#/$defs/ImageRegion"},
+                        "cell": {"$ref": "#/$defs/LookupCell"},
+                        "row_anchor": {"$ref": "#/$defs/HeaderAnchor"},
+                        "col_anchor": {"$ref": "#/$defs/HeaderAnchor"},
+                    }
+                    uncertain_fields = {
+                        "coverage": {"type": "string", "enum": ["UNKNOWN", "NOT_MET"]},
+                        "layout": {"type": "string", "enum": ["requires_full_grid", "unreadable"]},
+                        "closed": {"type": "boolean", "const": False},
+                        "row_anchor": {"type": "null"},
+                        "col_anchor": {"type": "null"},
+                        "data_region": {"type": "null"},
+                        "cell": {"type": "null"},
+                        **{
+                            name: {**properties[name], "maxItems": 0}
+                            for name in ("row_headers", "col_headers")
+                        },
+                    }
+                complete: dict[str, Any] = {
+                    **base,
+                    "properties": {**properties, **complete_fields},
+                }
+                uncertain: dict[str, Any] = {
+                    **base,
+                    "properties": {**properties, **uncertain_fields},
+                }
+                if stage == "transcript_source":
+                    # Establish whole-unit readability before choosing a coverage
+                    # branch; choosing MET first prevents a later abstention.
+                    order = (
+                        "reason",
+                        "requested_unit_complete",
+                        "expected_lines",
+                        "source_region",
+                        "coverage",
+                    )
+                    for branch in (complete, uncertain):
+                        branch["properties"] = {name: branch["properties"][name] for name in order}
+                schema = {"$defs": schema["$defs"], "anyOf": [complete, uncertain]}
             request_text["response_schema"] = schema
             user_content[0]["text"] = canonical_json(request_text).decode()
         body: dict[str, Any] = {

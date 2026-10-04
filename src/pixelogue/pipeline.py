@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -60,6 +61,7 @@ from pixelogue.evaluation import (
     unverified_transcription_relation,
 )
 from pixelogue.fact_identity import requested_fact_key
+from pixelogue.focused_views import focused_view
 from pixelogue.jev_routing import (
     SUPPORTED_BINDING_TASKS,
     BindingProposals,
@@ -100,6 +102,7 @@ from pixelogue.task_evidence import (
     CandidateBindingsReport,
     CapabilityObservation,
     CompactScopedEvidenceReport,
+    ImageRegion,
     ScopedEvidenceInventory,
     ScopedEvidenceReport,
     ScopeEvidence,
@@ -127,6 +130,7 @@ type PublicTextRejectionReason = Literal[
     "IDENTIFICATION_TARGET_IN_QUESTION",
     "IDENTIFICATION_ANSWER_IN_QUESTION",
     "IDENTIFICATION_ANSWER_ALREADY_PUBLIC",
+    "UI_LOCATION_REPEATS_TARGET",
     "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC",
     "TRANSCRIPTION_ANSWER_IN_QUESTION",
     "TEXT_RELATION_UNVERIFIED",
@@ -1971,6 +1975,10 @@ class SynthesisCoordinator:
         model_image: ModelImage,
         turn_index: int,
     ) -> GateVerdict:
+        focused = self._local_verification_view(instruction, image_views, model_image)
+        if focused is None:
+            return GateVerdict.UNKNOWN
+        model_image, image_views = focused
         votes = [
             self._invoke(
                 client,
@@ -1992,6 +2000,64 @@ class SynthesisCoordinator:
             for judge_index, client in enumerate(self.generators.values())
         ]
         return question_fit_consensus(votes)
+
+    def _local_verification_view(
+        self,
+        instruction: InstructionCandidate,
+        image_views: list[dict[str, str]],
+        model_image: ModelImage,
+    ) -> tuple[ModelImage, list[dict[str, str]]] | None:
+        """Deliver only bound pixels to local question-fit and holistic judges."""
+        region = instruction.target_region or instruction.scope_region
+        if (
+            instruction.task_id
+            not in {
+                "object_identification",
+                "attribute_lookup",
+                "text_transcription",
+                "text_reading_order",
+                "code_transcription",
+            }
+            or region is None
+            or region == ImageRegion(left=0, top=0, right=1, bottom=1)
+        ):
+            return model_image, image_views
+        encoded = model_image.path.read_bytes()
+        if hashlib.sha256(encoded).hexdigest() != model_image.encoded_sha256:
+            raise ExecutionError("EVIDENCE_VIEW_MISMATCH", "Source pixels changed before cropping")
+        view = focused_view(encoded, region)
+        if view is None:
+            self.store.write_json_artifact(
+                "focus-view-abstentions",
+                {
+                    "candidate_id": instruction.candidate_id,
+                    "region": region.model_dump(mode="json"),
+                },
+            )
+            return None
+        digest = self.store.write_artifact("focus-images", view.encoded)
+        identifier = "focus:" + canonical_hash({"source": model_image.view_id, "pixels": digest})
+        metadata = {
+            "view_id": identifier,
+            "encoded_sha256": digest,
+            "width": str(view.width),
+            "height": str(view.height),
+            "source_view_id": model_image.view_id,
+            **{
+                "source_" + name: str(value)
+                for name, value in view.source_region.model_dump().items()
+            },
+        }
+        self.store.write_json_artifact("focus-views", metadata)
+        return (
+            ModelImage(
+                view_id=identifier,
+                path=self.store.artifact_dir / "focus-images" / digest[:2] / digest,
+                encoded_sha256=digest,
+                media_type="image/png",
+            ),
+            [metadata],
+        )
 
     def _rate_turn(
         self,
@@ -2035,13 +2101,35 @@ class SynthesisCoordinator:
             "image_views": image_views,
         }
 
+        focused = self._local_verification_view(instruction, image_views, model_image)
+        if focused is None:
+            item = RubricItem(
+                item_id=item_id(
+                    conversation_id,
+                    turn_index,
+                    0,
+                    "dual_visual_review",
+                    "empty",
+                    canonical_hash(payload),
+                ),
+                template_id="dual_visual_review",
+                axis="factual_correctness",
+                verdict=GateVerdict.UNKNOWN,
+                reason="Bound subject region contains no complete pixel.",
+                actor="controller",
+                history_hash=history_hash,
+            )
+            return aggregate_rating((*rating.items, item))
+
         def invoke(
             stage: str, body: dict[str, Any], model: type[BaseModel], judge: int
         ) -> BaseModel:
             client = tuple(self.generators.values())[judge]
+            # Full context lets blind transcription readers detect a requested unit
+            # extending beyond its bound rectangle; the controller checks containment.
             max_tokens = (
                 self.config.tasks.evidence_max_tokens
-                if stage == "table_source"
+                if stage in {"table_source", "table_lookup_source"}
                 or (stage.startswith("specialist_") and stage.endswith("_source"))
                 else 2048
             )
@@ -2071,7 +2159,12 @@ class SynthesisCoordinator:
             )
 
         items = list(rating.items)
-        for check in verify_operation(instruction, payload, invoke, model_image.path):
+        for check in verify_operation(
+            instruction,
+            payload,
+            invoke,
+            model_image.path,
+        ):
             self.store.write_json_artifact(
                 "operation-checks",
                 {
@@ -2341,6 +2434,13 @@ class SynthesisCoordinator:
             or is_private_prompt_echo(answer.content)
             or repeated_public_question(question.content, history)
         )
+        focused = (
+            None
+            if invalid
+            else self._local_verification_view(instruction, image_views, model_image)
+        )
+        if focused is not None:
+            model_image, image_views = focused
         payload = {
             "target_language": language,
             "public_history": self._history(history),
@@ -2352,7 +2452,7 @@ class SynthesisCoordinator:
             payload["expected_operation"] = operation_contract(instruction)
         votes = (
             []
-            if invalid
+            if invalid or focused is None
             else [
                 self._invoke(
                     client,
@@ -2368,14 +2468,17 @@ class SynthesisCoordinator:
                 for index, client in enumerate(self.generators.values())
             ]
         )
-        verdict = (
-            GateVerdict.NOT_MET
-            if invalid
-            else consensus([GateVerdict(vote.verdict) for vote in votes])
-        )
+        if invalid:
+            verdict = GateVerdict.NOT_MET
+        elif focused is None:
+            verdict = GateVerdict.UNKNOWN
+        else:
+            verdict = consensus([GateVerdict(vote.verdict) for vote in votes])
         reason = (
             "Empty, repeated, or private-prompt public text."
             if invalid
+            else "Bound subject region contains no complete pixel."
+            if focused is None
             else " | ".join(
                 f"{role}:{vote.reason}" for role, vote in zip(self.generators, votes, strict=True)
             )[:240]
@@ -2388,7 +2491,11 @@ class SynthesisCoordinator:
                 "template_id": "Q_HOLISTIC",
                 "subject": None,
                 "votes": [vote.model_dump(mode="json") for vote in votes],
-                "controller_reason": "INVALID_PUBLIC_TEXT" if invalid else None,
+                "controller_reason": "INVALID_PUBLIC_TEXT"
+                if invalid
+                else "EMPTY_FOCUS_VIEW"
+                if focused is None
+                else None,
                 "verdict": verdict.value,
             },
         )
@@ -2400,7 +2507,7 @@ class SynthesisCoordinator:
             axis="factual_correctness",
             verdict=verdict,
             reason=reason,
-            actor="controller" if invalid else "dual-consensus",
+            actor="controller" if invalid or focused is None else "dual-consensus",
             history_hash=history_hash,
         )
         return aggregate_rating((item,))
@@ -2590,6 +2697,16 @@ class SynthesisCoordinator:
                 return "IDENTIFICATION_ANSWER_IN_QUESTION"
             if identification_answer_in_history(answer, same_scope_messages):
                 return "IDENTIFICATION_ANSWER_ALREADY_PUBLIC"
+        elif instruction.task_id == "ui_element_grounding":
+            target = next(
+                (item.value for item in instruction.public_parameters if item.name == "target"),
+                None,
+            )
+            if isinstance(target, str) and (
+                " ".join(answer.casefold().split()).rstrip(".")
+                == " ".join(target.casefold().split()).rstrip(".")
+            ):
+                return "UI_LOCATION_REPEATS_TARGET"
         if instruction.task_id == "text_transcription" and transcription_answer_in_question(
             question, answer
         ):
@@ -2830,7 +2947,7 @@ class SynthesisCoordinator:
                 call_kwargs["seed"] = int(call_kwargs["seed"]) + 100_000 * attempt
                 call_kwargs["retry_feedback"] = retry_feedback
                 if (
-                    stage in {"evidence_extraction", "table_source", "chart_source", "graph_source"}
+                    stage in {"evidence_extraction", "chart_source", "graph_source"}
                     and prior_error == "MODEL_FINISH_REASON"
                 ):
                     original_tokens = int(kwargs["max_tokens"])
@@ -2894,6 +3011,12 @@ class SynthesisCoordinator:
                 )
                 if can_retry:
                     retry_feedback = self._structured_retry_feedback(error.reason)
+                    if stage == "table_source" and error.reason == "MODEL_FINISH_REASON":
+                        retry_feedback += (
+                            " Keep the original output budget. If the complete table cannot fit,"
+                            " return coverage=UNKNOWN, tables=[] and the public query; never"
+                            " declare a partial grid closed."
+                        )
                     if error.reason == "MODEL_SCHEMA_MISMATCH":
                         required = model.model_json_schema().get("required", [])
                         retry_feedback += " Required top-level fields: " + ", ".join(required) + "."
@@ -2953,6 +3076,15 @@ class SynthesisCoordinator:
                                     " evidence_refs. Omit names outside this candidate's"
                                     " bindable_parameter_names."
                                 )
+                        elif stage == "table_lookup_source":
+                            retry_feedback += (
+                                " Extract every row/column label as a string, preserving blank"
+                                " labels. Include row_anchor and col_anchor for the selected"
+                                " indexed headers. Their tight text boxes must overlap the"
+                                " cell vertically and horizontally, respectively. Do not"
+                                " invent extra fields or coordinates for every row. Use UNKNOWN"
+                                " with empty arrays, null anchors and no cell when unclear."
+                            )
                         elif stage == "table_source":
                             retry_feedback += (
                                 " Every tables[] entry needs table_id, rows, cols, cells,"

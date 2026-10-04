@@ -131,6 +131,24 @@ Keep signs, units and decimal places as written. Ambiguous or multiple interpret
 Do not infer values or structure from an expected chart result. coverage=MET certifies only an
 unambiguous literal parse, including a wrong reported number. Correctness is checked separately
 against blind chart readings. No image is needed to parse a plainly written number.""",
+    "table_lookup_source": """Read the image, public question and bound operation WITHOUT an answer.
+For a SINGLE cell in a simple table, extract ALL visible data-row labels and ALL data-column
+headers as literal string arrays in reading order, but only the requested cell's value.
+Preserve blank header labels as ""; never invent a label such as Total for an unlabeled row.
+Include units and all lines/aliases belonging to each header. Grouping headers spanning multiple
+rows/columns, relevant footnotes or multiple requested cells require the full-grid verifier.
+data_region encloses all data cells inside table_region, which is inside scope_region.
+Cell row/col are zero-based indices into the complete header arrays. row_anchor and col_anchor
+contain the selected header's exact literal text and tight visible text rectangle, not the whole
+row or column. The requested cell's tight text rectangle must overlap the row anchor vertically
+and the column anchor horizontally. Read only these three locations; do not extrapolate numeric
+boundaries for every row. All regions use the delivered view's normalized coordinates.
+An explicit blank cell has text="". MET requires layout=simple_grid, closed=true, complete
+readable addressing and one unmerged cell. An ambiguous selected header or incomplete/unreadable
+axes requires UNKNOWN. For merged/grouping headers or other unsupported layouts use
+layout=requires_full_grid and UNKNOWN. Otherwise uncertain simple tables use layout=unreadable.
+For non-MET use closed=false, empty header arrays, data_region=null, both anchors=null and
+cell=null. Never copy a value from an answer.""",
     "table_source": """Read only the image, public question and bound operation without an answer.
 Reconstruct each relevant table as a complete rectangular grid. Preserve every blank as an explicit
 cell and every merged cell with its exact row/column span, text, kind and image region. Distinguish
@@ -283,6 +301,26 @@ source errors, punctuation, indentation, and meaningful whitespace. Never infer 
 the answer. Only MET coverage means every requested transcription/extraction is accounted for.
 If either scope or text is unreadable, coverage is UNKNOWN. The controller compares exact text.
 An arbitrary matching substring does not establish complete transcription.""",
+    "transcript_source": """Read only the image, public question and bound operation; no answer is available.
+Return expected_lines containing ALL requested readable text, its enclosing source_region in the
+DELIVERED image view's normalized coordinates, requested_unit_complete, coverage and reason. Preserve
+source spelling errors, punctuation and indentation. Each array item is one actual source line;
+use a separate item for each separate sign. Never output words such as "line break" or "own"
+as separators, and never combine lines with invented colons, commas or hyphens. Include repeated
+labels and small edge/arrow/branch labels such as yes/no when the whole diagram is requested.
+For plural signs or boxes read every requested unit, not just the first. Ordinary text requests
+include the written labels, not drawn arrows, lines, icons or other non-text graphics. Never
+invent hyphens to join separate labels. Assess readability of the whole unit in reason before
+setting requested_unit_complete and coverage; an incomplete unit must use UNKNOWN.
+Never complete cropped text or omit readable text because it appears unimportant.
+Read the original image so you can detect requested text continuing beyond the bound region.
+If the question names a whole box, sign, cell or diagram, that entire requested unit must lie
+inside expected_operation.target_region (or scope_region when no target region exists).
+Do not silently return only the part intersecting that region or expand the bound region.
+MET requires requested_unit_complete=true and all requested text readable and accounted for.
+If the unit is truncated by the bound region, unclear or unreadable, use UNKNOWN,
+expected_lines=[], source_region=null and requested_unit_complete=false.
+The controller compares this blind reading against the complete answer, never a substring.""",
     "visual_contract_review": """Independently verify the supplied verification_contract and
 expected_operation against the image, question, answer and committed public history. Bind every
 essential answer part using exact answer_quote fragments, normalized visible image regions, and
@@ -345,8 +383,13 @@ Do not infer the task from a likely answer or from a prior turn's task. No selec
 candidate answer is supplied; return only your independent classification and brief reason.""",
     "question_fit": """Judge whether the current question has a visible or historically grounded local
 anchor, realizes the selected instruction's operation coherently, and is useful in this
-conversation. A visible object, region, text, or complete image scope is a local anchor. Every field
-is required: use MET, NOT_MET, or UNKNOWN, never NOT_APPLICABLE. Mark operation_coherent NOT_MET when
+conversation. A visible object, region, text, or complete image scope is a local anchor.
+If the delivered image view has source_view_id and source_left/top/right/bottom, it is a crop
+of exactly that original region. Resolve positions using that mapping. For local identification
+or attribute questions the actual requested subject must be visible IN this delivered crop;
+a neighboring subject that may exist elsewhere in the source image is not a valid substitute.
+If excluded context is needed to resolve the question, use UNKNOWN instead of guessing.
+Every field is required: use MET, NOT_MET, or UNKNOWN, never NOT_APPLICABLE. Mark operation_coherent NOT_MET when
 the question changes the exact task_id, even within one family; counting or spatial ordering cannot
 realize correspondence matching. Mark useful_request NOT_MET when the public history already
 contains the same answered request. When target_region is supplied, check that the question refers
@@ -459,6 +502,10 @@ expected list requires a genuinely explicit empty scope; do not call omitted ext
 If coverage is not MET all arrays must be [] and empty_scope_is_explicit=false.""",
     "holistic_review": """Review this image-grounded question and answer as a whole, using the
 image and public history. Return one verdict (MET, NOT_MET, UNKNOWN) and a short concrete reason.
+When image_views provides source_view_id and source_left/top/right/bottom, the delivered image is
+only that crop of the original view. The requested local subject and its material visual claims
+must be supported inside the crop; do not borrow a neighboring subject from omitted context.
+Use the source mapping for positional references, and UNKNOWN if omitted context is needed.
 MET means the question is understandable and grounded, the answer fulfills its request and active
 public instructions, and its material claims and completeness are supported by the image/history.
 NOT_MET means an identifiable material defect makes this turn unsuitable for training. Name the
@@ -658,6 +705,9 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "chart_answer": frozenset(
         {"target_language", "question", "candidate_answer", "expected_operation"}
     ),
+    "table_lookup_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
     "table_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),
@@ -707,6 +757,15 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "public_history",
             "question",
             "candidate_answer",
+            "image_views",
+            "expected_operation",
+        }
+    ),
+    "transcript_source": frozenset(
+        {
+            "target_language",
+            "public_history",
+            "question",
             "image_views",
             "expected_operation",
         }

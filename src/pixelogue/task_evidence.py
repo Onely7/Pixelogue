@@ -478,12 +478,41 @@ class CandidateBindingsReport(StrictModel):
 
 
 class TranscriptInventory(StrictModel):
-    """Independent transcription aligned with the public answer's exact text."""
+    """Literal source and answer spans for non-verbatim extractive operations."""
 
     coverage: ObservationVerdict
     expected_text: str
     answer_text: str
     reason: Nonempty
+
+
+class TranscriptSource(StrictModel):
+    """Blind transcription of the entire requested visible unit."""
+
+    coverage: ObservationVerdict
+    expected_lines: Annotated[tuple[str, ...], Field(max_length=256)]
+    source_region: ImageRegion | None = None
+    requested_unit_complete: bool
+    reason: Nonempty
+
+    @property
+    def expected_text(self) -> str:
+        """Join literal source lines without interpreting generated separators."""
+        return "\n".join(self.expected_lines)
+
+    @model_validator(mode="after")
+    def check_coverage(self) -> TranscriptSource:
+        """Keep incomplete text or off-image guesses from becoming certificates."""
+        if self.coverage == "MET":
+            if (
+                not any(self.expected_lines)
+                or self.source_region is None
+                or not self.requested_unit_complete
+            ):
+                raise ValueError("Complete transcription needs text, its region and the whole unit")
+        elif self.expected_lines or self.source_region is not None or self.requested_unit_complete:
+            raise ValueError("Incomplete transcription cannot provide partial source text")
+        return self
 
 
 class AnswerEvidence(StrictModel):

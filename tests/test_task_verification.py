@@ -20,7 +20,7 @@ from pixelogue.pipeline import SynthesisCoordinator
 from pixelogue.rules import CountGroup, SetInventory
 from pixelogue.serving import ModelImage, VllmClient
 from pixelogue.store import RunStore
-from pixelogue.task_evidence import TranscriptInventory
+from pixelogue.task_evidence import ImageRegion, TranscriptSource
 from pixelogue.task_verification import verify_operation
 
 
@@ -93,23 +93,25 @@ def test_closed_scope_uncertainty_cannot_be_overridden_by_matching_answers():
         ("STOP", "STOP", "MET"),
         ("ST0P", "STOP", "NOT_MET"),
         ("a\n  b", "a\nb", "NOT_MET"),
-        ("STOP", "not in answer", "UNKNOWN"),
+        ("STOP", "STOP\nextra", "NOT_MET"),
     ],
 )
 def test_transcription_preserves_source_errors_and_meaningful_whitespace(
     expected_text, answer_text, verdict
 ):
     def invoke(stage, payload, model, judge):
-        assert stage == "transcript_alignment"
-        return TranscriptInventory(
+        assert stage == "transcript_source"
+        assert "candidate_answer" not in payload
+        return TranscriptSource(
             coverage="MET",
-            expected_text=expected_text,
-            answer_text=answer_text,
+            expected_lines=tuple(expected_text.split("\n")),
+            source_region=ImageRegion(left=0, top=0, right=1, bottom=1),
+            requested_unit_complete=True,
             reason="Visible source",
         )
 
     result = verify_operation(
-        operation("text_transcription"), {"candidate_answer": "STOP\na\nb"}, invoke
+        operation("text_transcription"), {"candidate_answer": answer_text}, invoke
     )
     assert result[0].verdict.value == verdict
 
