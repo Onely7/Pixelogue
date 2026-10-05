@@ -206,6 +206,7 @@ def test_html_and_simple_markdown_are_parsed_without_executing_markup() -> None:
     assert _check(
         source, None, html.replace("<td>A</td>", "<script>A</script>"), format="html_table"
     ) == (GateVerdict.UNKNOWN, GateVerdict.NOT_MET)
+
     simple = TableGrid(
         table_id="t",
         rows=2,
@@ -227,3 +228,50 @@ def test_html_and_simple_markdown_are_parsed_without_executing_markup() -> None:
     assert _check(
         markdown_source, None, "| A | B |\n| --- | --- |\n| x |  |", format="markdown_simple_only"
     ) == (GateVerdict.MET, GateVerdict.MET)
+
+
+@pytest.mark.parametrize(
+    "attribute",
+    [
+        "onclick='run()'",
+        "style='display:none'",
+        "style='background:url(https://example.invalid)'",
+        "style='text-align:center;text-align:left'",
+        "src='file:///etc/passwd'",
+    ],
+)
+def test_static_html_rejects_undeclared_or_active_presentation(attribute: str) -> None:
+    source = _source(
+        "table_structure_reconstruction",
+        TableQuery(operation="reconstruct", table_ids=("t",), format="html_table"),
+    )
+    html = f"<table {attribute}><tr><th>A</th></tr></table>"
+    assert _check(source, None, html, format="html_table") == (
+        GateVerdict.UNKNOWN,
+        GateVerdict.NOT_MET,
+    )
+
+
+def test_static_html_preserves_line_breaks_and_balanced_header_sections() -> None:
+    grid = TableGrid(
+        table_id="t",
+        rows=2,
+        cols=1,
+        data_rows=(1,),
+        closed=True,
+        cells=(
+            TableCell(row=0, col=0, text="Line\none", kind="header", region=REGION),
+            TableCell(row=1, col=0, text="20", kind="data", region=REGION),
+        ),
+    )
+    source = _source(
+        "table_structure_reconstruction",
+        TableQuery(operation="reconstruct", table_ids=("t",), format="html_table"),
+        (grid,),
+    )
+    html = "<table border='1' style='border-collapse:collapse;text-align:center'><thead><tr><th scope='col'>Line<br/>one</th></tr></thead><tbody><tr><td>20</td></tr></tbody></table>"
+    assert _check(source, None, html, format="html_table") == (GateVerdict.MET, GateVerdict.MET)
+    assert _check(source, None, html.replace("</thead>", "</tbody>"), format="html_table") == (
+        GateVerdict.UNKNOWN,
+        GateVerdict.NOT_MET,
+    )

@@ -61,6 +61,9 @@ constraint; an approximate appearance is insufficient. Keep visible outline clas
 separate from stated geometry. Unclear marks or unsupported conventions are UNKNOWN. Never see
 the proposed answer.""",
     "geometry_answer": """Parse only the candidate answer and public geometric question without an image.
+Return answer_quote as a string copied exactly from the answer, not an object or array.
+For MET use exactly one of value (a string), truth (a boolean), or relations (arrays of subject
+labels). All unused fields are null. For UNKNOWN set answer_quote='' and all result fields null.
 Quote the exact stated shape class, truth value or relation members. Missing or ambiguous
 subject labels and multiple conflicting claims are UNKNOWN. Do not infer geometry from the
 expected diagram result.""",
@@ -88,6 +91,9 @@ Identify every relevant node, visible label, directed or undirected edge, arrowh
 point and branch label with image regions. Resolve crossings only when dots or the public notation
 make junctions explicit; ambiguity is UNKNOWN. Interpret a public numeric branch input using only
 printed comparison thresholds. For path and process tasks, certify the relevant graph is closed.
+Each node or edge region is an enclosing rectangle around visible pixels, not a pair of line
+endpoints. Horizontal strokes need positive height; vertical strokes need positive width.
+Never fabricate an extent: if the required stroke is unreadable, use UNKNOWN.
 Never see the candidate answer or infer a hidden edge from proximity.""",
     "graph_answer": """Parse only the candidate answer and public graph objective, without an image.
 Quote the exact substring and extract one label, neighbor set, edge set or ordered paths. Preserve
@@ -95,6 +101,8 @@ all reported alternatives. Ambiguous or incomplete text is UNKNOWN. Do not infer
 from an expected route or result. coverage=MET means the answer's literal content was parsed;
 it does not claim that the answer is correct. For a neighbor question, even one reported node
 belongs in members, not label. The controller compares it with a separate blind graph extraction.
+For bilingual names such as 'Nanlishilu (南礼士路)', retain the literal parenthesized name
+as the member and preserve the complete answer_quote; do not invent a translation or synonym.
 Do not require an image to parse an unambiguous reported node.""",
     "formula_source": """Read the visible two-dimensional formula and public notation without seeing
 the proposed answer. Recover literal symbols, order, parentheses, scripts, stacked fractions and
@@ -108,9 +116,17 @@ value=null. If coverage is UNKNOWN, use root=null and formula_region=null.""",
 For field extraction, identify every explicitly requested field and its visible value, label and
 image region; mark missing fields with null, never guessed values. For document structure, recover
 the complete bounded page as ordered heading, paragraph, list, table, formula, caption and footnote
-nodes with parent links and regions. Hidden or unreadable content makes coverage UNKNOWN. The output
+nodes with parent links and regions. Hidden or unreadable content makes coverage UNKNOWN.
+For UNKNOWN or NOT_MET, set closed=false, fields=[], nodes=[] and retain only the public query;
+do not certify a partial set of source facts under incomplete coverage. The output
 format is strict structured_json. Never see the proposed answer.""",
     "chart_source": """Read only the image, question, public history and bound operation.
+For chart_extremum_ranking copy the public rank_mode and rank_order into query exactly.
+max_min means the maximum and minimum groups, in that order; it never requests every rank.
+Always include query.series and query.categories. For a complete ranking, copy the selected
+series identifier and every relevant category from the marks into these lists; never omit them.
+Axis ticks must be bare decimal strings in increasing numeric order, without units, %, commas
+or descriptions. Put their unit only in axis.unit; do not invent calibration marks.
 Recover the numeric value axis (horizontal or vertical), units and labeled ticks, legend and
 requested marks. Give each mark its
 series, category, image region, value interval and honest precision. Exact values require visible
@@ -126,6 +142,10 @@ and describe the requested operation in query. Never put unknown, N/A or an empt
 a numeric lower or upper field. Lower and upper must be bare decimal strings, never inequalities
 such as >= or <=, units or explanations. Keep regions as positive-extent rectangles inside scope_region.""",
     "chart_answer": """Parse only the candidate answer and public operation, without an image.
+For chart_extremum_ranking extract the reported category or positional description into
+rank_groups, not its incidental numeric value. For example 'the upper-right diamond, about 35.6'
+has rank_groups=[['upper-right diamond']] and value=null. Preserve each literal description in
+answer_quote. Do not invent printed labels or infer a position from a number.
 Quote the exact answer substring. Return one numeric value, relation, tied rank groups or trend.
 Keep signs, units and decimal places as written. Ambiguous or multiple interpretations are UNKNOWN.
 Do not infer values or structure from an expected chart result. coverage=MET certifies only an
@@ -199,14 +219,22 @@ field is an object keyed by capability name, not an array. Each value has a uniq
 a MET/NOT_MET/UNKNOWN verdict, a visible detail, and a normalized region
 inside its scope. Every region must satisfy 0 <= left < right <= 1 and
 0 <= top < bottom <= 1; a point or an all-1 box is invalid. Observation regions
-must remain inside their parent scope. Do not combine capabilities from unrelated regions. Missing evidence is UNKNOWN,
-not absence. Copy image_id and each view_id exactly. Respect max_scopes and
+must remain inside their parent scope. Do not combine capabilities from unrelated regions.
+Missing evidence is UNKNOWN, not absence.
+For text scopes enclose the entire visible sign, title, box or requested unit, including punctuation
+and descenders; do not use a box around only its tallest glyphs. Keep this enclosing unit inside
+the supplied image view. Chemical bonds and matrix layouts are not readable_formula capability
+under the registered scalar mathematical grammar; report their actual eligible structure instead.
+Copy image_id and each view_id exactly. Respect max_scopes and
 max_observations_per_scope. Within one scope, report each capability at most once: a capability
 describes support for an operation across the scope, not one observation per visible object.
 Summarize multiple instances in that observation's detail. Use the actual supplied resolution.
 For a scope centered on one clearly recognizable object, put one conservative category name in
 object_label and support it with a MET visible_entity observation in that scope. Use null for a
 mixed or ambiguous scope; the label is a visual observation, not a desired answer.
+An axis name, document title, table heading or diagram topic belongs in public_description,
+not object_label. Set object_label=null when no visible_entity observation is supported;
+do not invent visible_entity merely to justify a textual label.
 For EACH scope with a salient visible animal, person or object, explicitly check for a
 visible_attribute such as color, shape or a visible part. Include a MET visible_attribute
 when clearly supported, even if visible_interaction or scene_context is also present.
@@ -295,6 +323,15 @@ A false premise needs a visible local contradiction, never failure to retrieve a
 Do not manufacture unreadability. Estimate output tokens conservatively; select a publicly bounded
 region or reject if the result cannot fit answer_max_tokens. Follow runtime_restrictions.
 Source metadata, gold answers, hidden pages, and other judges' verdicts are unavailable.""",
+    "extractive_source": """Read only the image, public question, history and operation; no answer is available.
+Extract the complete minimal source span that answers the public question, retaining every
+qualifier, negation and exception needed for that answer. Copy the source's language and spelling;
+do not translate, paraphrase, solve, or include an entire paragraph when a smaller complete span
+answers the question. Return its actual lines, enclosing source_region in delivered-view normalized
+coordinates, requested_unit_complete, coverage and reason. The entire span must lie inside the
+public target_region (or scope_region). Missing, cropped or ambiguous evidence requires UNKNOWN,
+expected_lines=[], source_region=null and requested_unit_complete=false. Never infer a source
+span from the proposed answer, which is unavailable.""",
     "transcript_alignment": """Independently read the exact requested source text from the image.
 Return expected_text, the exact answer_text fragment copying it, coverage, and reason. Preserve
 source errors, punctuation, indentation, and meaningful whitespace. Never infer expected_text from
@@ -342,6 +379,12 @@ the target language and grounded in the visible scope and public history. Realiz
 task_id and operation exactly; do not replace it with an easier nearby task or repeat an answered
 request. Every public parameter must be realized in the question, including scope, counting unit,
 precision, predicates and hypothetical assumptions.
+When output_contract is present, state its relevant output conditions in the public question.
+For extractive QA request the source-language answer span, with its qualifiers, not a translation.
+For HTML tables explicitly request the declared static table subset, preserving cell line breaks
+and excluding executable markup and CSS outside the public allowlist.
+For chart extrema distinguish maximum, minimum, both extrema, and complete ranking, preserving ties
+and the public ordering. Do not request a matrix or chemical bond diagram as formula_transcription.
 Controller IDs such as scope_id, view_id, candidate_id and evidence IDs are private references;
 never print their values in the public question. Do not refer to a "selected region" or
 "selected image scene"; those are controller descriptions, not public visual locators.
@@ -761,6 +804,9 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "expected_operation",
         }
     ),
+    "extractive_source": frozenset(
+        {"target_language", "public_history", "question", "expected_operation", "image_views"}
+    ),
     "transcript_source": frozenset(
         {
             "target_language",
@@ -927,7 +973,7 @@ def validate_stage_payload(stage: str, payload: Mapping[str, Any]) -> None:
             raise ExecutionError(
                 "MODEL_PAYLOAD_FIELD", "Claim inventories are restricted to C_COVERAGE"
             )
-    if stage in {
+    if stage.endswith("_source") or stage in {
         "candidate_binding",
         "candidate_proposal",
         "instruction_selection",
@@ -949,7 +995,7 @@ def validate_stage_payload(stage: str, payload: Mapping[str, Any]) -> None:
 
         if answer_fields(payload):
             raise ExecutionError(
-                "MODEL_INFORMATION_LEAK", "Answer-independent stage received an answer"
+                "MODEL_INFORMATION_LEAK", "Answer-independent stage received candidate_answer"
             )
     fields = set(payload)
     forbidden = _nested_forbidden_fields(payload)

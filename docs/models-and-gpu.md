@@ -170,6 +170,8 @@ Before a 50-image run, send one image through the same structured-output stages.
 
 If a completion stops at its token limit and lacks a required field, the run records an incomplete completion rather than a generic schema mismatch. Evidence extraction retries with a larger output limit, up to 8192 tokens. The retry must still satisfy the full schema and scope checks; missing observations are never filled in as MET.
 
+Missing JSON braces or brackets are never appended, even when other fields appear complete. The original response must already contain one complete JSON object.
+
 If a length-limited JSON completion ends with at least 512 whitespace characters and remains invalid, the run records `MODEL_WHITESPACE_RUNAWAY`. A bounded retry receives explicit finish guidance but keeps the original output limit. A complete, schema-valid JSON object with trailing whitespace is still accepted. The invalid response remains a private artifact; no missing field or visual fact is inferred.
 
 Qwen receives `enable_thinking=false` in both server defaults and each request. Thinking text and internal control fields must not enter public dialogue.

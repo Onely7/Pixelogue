@@ -88,6 +88,51 @@ def test_closed_scope_uncertainty_cannot_be_overridden_by_matching_answers():
 
 
 @pytest.mark.parametrize(
+    "answer,verdict",
+    [
+        ("Six volumes.", "MET"),
+        ("six volumes", "MET"),
+        ("Six volumes and two maps.", "NOT_MET"),
+        ("Six", "NOT_MET"),
+        ("Seven volumes.", "NOT_MET"),
+        ("six VOLUMES", "NOT_MET"),
+    ],
+)
+def test_extractive_qa_reads_blind_and_preserves_the_entire_answer_span(answer, verdict):
+    def invoke(stage, payload, model, judge):
+        assert stage == "extractive_source"
+        assert "candidate_answer" not in payload
+        return TranscriptSource(
+            coverage="MET",
+            expected_lines=("six volumes",),
+            source_region=ImageRegion(left=0, top=0, right=1, bottom=1),
+            requested_unit_complete=True,
+            reason="All answer-bearing text is readable",
+        )
+
+    result = verify_operation(
+        operation("document_extractive_qa"), {"candidate_answer": answer}, invoke
+    )
+    assert result[0].verdict.value == verdict
+
+
+def test_extractive_qa_disagreement_and_truncated_qualifiers_still_abstain():
+    def invoke(stage, payload, model, judge):
+        return TranscriptSource(
+            coverage="MET",
+            expected_lines=(("at least six volumes" if judge else "six volumes"),),
+            source_region=ImageRegion(left=0, top=0, right=1, bottom=1),
+            requested_unit_complete=True,
+            reason="Independent source reading",
+        )
+
+    result = verify_operation(
+        operation("document_extractive_qa"), {"candidate_answer": "Six volumes."}, invoke
+    )
+    assert result[0].verdict is GateVerdict.UNKNOWN
+
+
+@pytest.mark.parametrize(
     ("expected_text", "answer_text", "verdict"),
     [
         ("STOP", "STOP", "MET"),

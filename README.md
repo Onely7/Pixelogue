@@ -39,6 +39,9 @@ See the [v7 catalog and runtime admission guide](docs/tasks/README.md) for scope
 
 ## Guides
 
+See [verification contract revision 2](docs/tasks/verification-contract-v2.md) for
+public output formats, blind extraction, query binding and small performance comparisons.
+
 Read the guides in this order:
 
 1. [CPU quickstart](docs/quickstart.md)

@@ -221,6 +221,30 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
             if not (private_target_task and p.name == "target")
         ],
         "parameter_contract": task.parameters,
+        "output_contract": {
+            "chart_extremum_ranking": "Use the public rank_mode and rank_order. Include all ties. "
+            "max_min asks for maximum and minimum only; all asks for the complete ordering.",
+            "document_extractive_qa": "Return the complete minimal answer-bearing span in the "
+            "source language, preserving qualifiers, negation and exceptions. Only "
+            "sentence-initial case and a final prose period may differ. Translation, "
+            "paraphrase and extra claims are not extractive output.",
+            "formula_transcription": "Use the registered literal mathematical grammar: symbols, "
+            "numbers, grouping, arithmetic, equality, scripts, fractions and square roots. "
+            "Whole LaTeX display delimiters are allowed. Chemical bond diagrams, arrays, "
+            "matrices and unregistered commands are unsupported; choose another eligible "
+            "operation rather than promising their transcription.",
+            "table_structure_reconstruction": "For html_table return exactly one static table "
+            "using balanced table, thead/tbody/tfoot, tr, th and td tags, with br for cell "
+            "line breaks. Cells allow rowspan/colspan; th allows scope=row/col/rowgroup/colgroup. "
+            "table allows numeric border/cellpadding/cellspacing. Optional style supports only "
+            "border-collapse=collapse/separate, text-align=left/right/center/start/end/justify "
+            "and vertical-align=top/middle/bottom. No other CSS, scripts, event handlers, "
+            "external assets or tags. "
+            "Preserve blank cells, header/data roles and merged-cell spans. For structured_json "
+            "use table_id, rows, cols, cells, data_rows, closed; each cell has row, col, "
+            "rowspan, colspan, text, kind (header or data), without private image regions. "
+            "markdown_simple_only supports unmerged tables with one header row.",
+        }.get(task.id),
         "eligibility_checks": checks,
         "do_not_infer": task.do_not_infer,
         "required_verification_contracts": list(candidate.verification_contracts),
@@ -658,6 +682,10 @@ def bind_candidates(
                 ),
                 target_region,
             )
+        if template.task_id in {"text_transcription", "text_reading_order", "code_transcription"}:
+            # Bind the already declared enclosing unit before generating a question.
+            # Tight observation boxes can cut off punctuation or letter descenders.
+            target_region = scope.region
         candidate = template.model_copy(
             update={
                 "public_parameters": tuple(

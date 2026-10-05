@@ -50,7 +50,7 @@ from pixelogue.task_evidence import (
     VisualContractReview,
 )
 from pixelogue.task_runtime import operation_contract
-from pixelogue.transcription_verifier import verify_transcription
+from pixelogue.transcription_verifier import verify_extractive, verify_transcription
 
 InvokeJudge = Callable[[str, dict[str, Any], type[BaseModel], int], BaseModel]
 
@@ -781,7 +781,21 @@ def verify_operation(
                 computation = verify_computation_inventories(computations)
                 verdict = GateVerdict(computation.verdict)
         elif name == "transcript_alignment":
-            if instruction.task_id in {
+            if instruction.task_id == "document_extractive_qa":
+                source_payload = {
+                    key: value for key, value in public.items() if key != "candidate_answer"
+                }
+                models = [
+                    invoke("extractive_source", source_payload, TranscriptSource, index)
+                    for index in range(2)
+                ]
+                sources = [TranscriptSource.model_validate(item) for item in models]
+                verdict = verify_extractive(
+                    (sources[0], sources[1]),
+                    payload["candidate_answer"],
+                    instruction.target_region or instruction.scope_region,
+                )
+            elif instruction.task_id in {
                 "text_transcription",
                 "code_transcription",
                 "text_reading_order",

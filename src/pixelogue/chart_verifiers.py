@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from fractions import Fraction
 from typing import Annotated, Literal
@@ -91,7 +92,7 @@ class ChartQuery(StrictModel):
     series: tuple[str, ...] = ()
     categories: tuple[str, ...] = ()
     rank_order: Literal["ascending", "descending"] = "descending"
-    rank_mode: Literal["all", "max", "min"] = "all"
+    rank_mode: Literal["all", "max", "min", "max_min"] = "all"
     relation: Literal["intersection", "dominance", "variation"] | None = None
     format: Literal["structured_json"] | None = None
 
@@ -229,6 +230,99 @@ def _rank(marks: tuple[ChartMark, ...], descending: bool) -> tuple[tuple[str, ..
     return tuple(tuple(sorted(values[key])) for key in sorted(values, reverse=descending))
 
 
+def _extremum(marks: tuple[ChartMark, ...], maximum: bool) -> tuple[str, ...] | None:
+    """Certify an extremum from separated intervals, without inventing an exact value."""
+    if not marks:
+        return None
+    key = (lambda mark: _interval(mark)[0]) if maximum else (lambda mark: -_interval(mark)[1])
+    candidate = max(marks, key=key)
+    low, high = _interval(candidate)
+    ties = []
+    for mark in marks:
+        if mark is candidate:
+            ties.append(mark.category)
+            continue
+        other_low, other_high = _interval(mark)
+        if low == high == other_low == other_high:
+            ties.append(mark.category)
+        elif (maximum and low <= other_high) or (not maximum and high >= other_low):
+            return None
+    return tuple(sorted(ties))
+
+
+def _position_index(label: str, marks: tuple[ChartMark, ...]) -> int | None:
+    """Resolve registered positional phrases only in a horizontally separated set."""
+    ordered = sorted(marks, key=lambda mark: mark.region.left)
+    if not ordered or any(
+        left.region.right >= right.region.left
+        for left, right in zip(ordered, ordered[1:], strict=False)
+    ):
+        return None
+    phrase = re.sub(r"^(?:the )| (?:marker|diamond|point)$", "", label.casefold())
+    size = len(ordered)
+    if phrase == "leftmost":
+        return 0
+    if phrase == "rightmost":
+        return size - 1
+    if phrase == "middle" and size % 2:
+        return size // 2
+    if phrase in {"upper-right", "upper right", "upper-left", "upper left"}:
+        index = size - 1 if "right" in phrase else 0
+        candidate = ordered[index]
+        if all(
+            other is candidate or candidate.region.bottom < other.region.top for other in ordered
+        ):
+            return index
+        return None
+    match = re.fullmatch(
+        r"(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth) (?:marker |diamond |point )?from (left|right)",
+        phrase,
+    )
+    if match is None:
+        return None
+    ordinal = (
+        "first",
+        "second",
+        "third",
+        "fourth",
+        "fifth",
+        "sixth",
+        "seventh",
+        "eighth",
+        "ninth",
+        "tenth",
+    ).index(match[1])
+    if ordinal >= size:
+        return None
+    return ordinal if match[2] == "left" else size - ordinal - 1
+
+
+def _position_bound_source(source: ChartSource) -> ChartSource:
+    """Use deterministic positions for unlabeled closed ranking marks only."""
+    if source.query.operation != "rank" or not source.closed or len(source.query.series) != 1:
+        return source
+    indices = [_position_index(mark.category, source.marks) for mark in source.marks]
+    if None in indices or len(set(indices)) != len(indices):
+        return source
+    mapping = {
+        mark.category: f"position:{index}"
+        for mark, index in zip(source.marks, indices, strict=True)
+    }
+    if any(category not in mapping for category in source.query.categories):
+        return source
+    return source.model_copy(
+        update={
+            "marks": tuple(
+                mark.model_copy(update={"category": mapping[mark.category]})
+                for mark in source.marks
+            ),
+            "query": source.query.model_copy(
+                update={"categories": tuple(mapping[name] for name in source.query.categories)}
+            ),
+        }
+    )
+
+
 def _trend(marks: tuple[ChartMark, ...]) -> tuple[str, tuple[str, ...]] | None:
     if len(marks) < 2:
         return None
@@ -286,6 +380,8 @@ def verify_chart(
         GateVerdict.UNKNOWN,
         GateVerdict.UNKNOWN if task_id == "chart_data_reconstruction" else None,
     )
+    original_sources = sources
+    sources = (_position_bound_source(sources[0]), _position_bound_source(sources[1]))
     if any(
         source.coverage != "MET"
         or source.task_id != task_id
@@ -296,6 +392,16 @@ def verify_chart(
         for source in sources
     ) or _canonical(sources[0]) != _canonical(sources[1]):
         return unknown
+    if sources[0] is not original_sources[0]:
+        other_marks = {(mark.series, mark.category): mark for mark in sources[1].marks}
+        if any(
+            mark.region.left >= other_marks[(mark.series, mark.category)].region.right
+            or mark.region.right <= other_marks[(mark.series, mark.category)].region.left
+            or mark.region.top >= other_marks[(mark.series, mark.category)].region.bottom
+            or mark.region.bottom <= other_marks[(mark.series, mark.category)].region.top
+            for mark in sources[0].marks
+        ):
+            return unknown
     source = sources[0]
     assert source.axis is not None
     if source.axis.scale != "unmarked":
@@ -308,6 +414,11 @@ def verify_chart(
         ):
             return unknown
     query = source.query
+    if task_id == "chart_extremum_ranking" and any(
+        name in public_parameters and public_parameters[name] != getattr(query, name)
+        for name in ("rank_mode", "rank_order")
+    ):
+        return unknown
     by_key = {(mark.series, mark.category): mark for mark in source.marks}
     if task_id == "chart_data_reconstruction":
         if (
@@ -393,16 +504,28 @@ def verify_chart(
         )
         if len(marks) != len(query.categories):
             return unknown
-        ranked = _rank(marks, query.rank_order == "descending")
-        if ranked is None:
-            return unknown
         if query.rank_mode == "max":
-            expected = (ranked[0] if query.rank_order == "descending" else ranked[-1],)
+            group = _extremum(marks, True)
+            expected = (group,) if group is not None else None
         elif query.rank_mode == "min":
-            expected = (ranked[-1] if query.rank_order == "descending" else ranked[0],)
+            group = _extremum(marks, False)
+            expected = (group,) if group is not None else None
+        elif query.rank_mode == "max_min":
+            maximum, minimum = _extremum(marks, True), _extremum(marks, False)
+            expected = (maximum, minimum) if maximum is not None and minimum is not None else None
         else:
-            expected = ranked
+            expected = _rank(marks, query.rank_order == "descending")
         observed = answer.rank_groups
+        if source is not original_sources[0] and observed is not None:
+            positions = tuple(
+                tuple(_position_index(label, original_sources[0].marks) for label in group)
+                for group in observed
+            )
+            if any(index is None for group in positions for index in group):
+                return unknown
+            observed = tuple(
+                tuple(sorted(f"position:{index}" for index in group)) for group in positions
+            )
     elif task_id == "chart_trend_summary" and query.operation == "trend":
         if len(query.series) != 1 or not source.closed:
             return unknown

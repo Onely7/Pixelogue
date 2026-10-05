@@ -141,6 +141,57 @@ def test_complete_ranking_preserves_ties_and_trend_order() -> None:
     assert _check(trend, mixed, "rising then flat")[0] is GateVerdict.MET
 
 
+def test_public_extrema_mode_cannot_drift_into_a_full_ranking() -> None:
+    marks = (_mark("A", "Jan", "10"), _mark("A", "Feb", "20"), _mark("A", "Mar", "15"))
+    source = _source(
+        "chart_extremum_ranking",
+        "rank",
+        marks,
+        categories=("Jan", "Feb", "Mar"),
+        rank_mode="max_min",
+    )
+    answer = _answer(answer_quote="Feb and Jan", rank_groups=(("Feb",), ("Jan",)))
+    assert (
+        _check(source, answer, "Feb and Jan", rank_mode="max_min", rank_order="descending")[0]
+        is GateVerdict.MET
+    )
+    wrong = _answer(answer_quote="Feb and Mar", rank_groups=(("Feb",), ("Mar",)))
+    assert _check(source, wrong, "Feb and Mar", rank_mode="max_min")[0] is GateVerdict.NOT_MET
+    assert _check(source, answer, "Feb and Jan", rank_mode="all")[0] is GateVerdict.UNKNOWN
+
+
+def test_paired_extrema_retains_every_tie_and_requires_closed_scope() -> None:
+    marks = (_mark("A", "Jan", "10"), _mark("A", "Feb", "20"), _mark("A", "Mar", "20"))
+    source = _source(
+        "chart_extremum_ranking",
+        "rank",
+        marks,
+        categories=("Jan", "Feb", "Mar"),
+        rank_mode="max_min",
+    )
+    answer = _answer(answer_quote="Feb, Mar; Jan", rank_groups=(("Feb", "Mar"), ("Jan",)))
+    assert _check(source, answer, "Feb, Mar; Jan", rank_mode="max_min")[0] is GateVerdict.MET
+    assert (
+        _check(source.model_copy(update={"closed": False}), answer, "Feb, Mar; Jan")[0]
+        is GateVerdict.UNKNOWN
+    )
+
+
+def test_paired_extrema_preserves_both_roles_when_every_value_is_tied() -> None:
+    source = _source(
+        "chart_extremum_ranking",
+        "rank",
+        (_mark("A", "Jan", "10"), _mark("A", "Feb", "10")),
+        categories=("Jan", "Feb"),
+        rank_mode="max_min",
+    )
+    answer = _answer(
+        answer_quote="Feb, Jan are both highest and lowest",
+        rank_groups=(("Feb", "Jan"), ("Feb", "Jan")),
+    )
+    assert _check(source, answer, answer.answer_quote, rank_mode="max_min")[0] is GateVerdict.MET
+
+
 def test_series_crossing_requires_line_encoding() -> None:
     marks = (
         _mark("A", "Jan", "10"),
@@ -160,6 +211,85 @@ def test_series_crossing_requires_line_encoding() -> None:
     assert _check(source, crossing, "crossing", relation="intersection")[0] is GateVerdict.MET
     bars = source.model_copy(update={"encoding": "bar"})
     assert _check(bars, crossing, "crossing", relation="intersection")[0] is GateVerdict.UNKNOWN
+
+
+def test_extremum_uses_separated_intervals_without_claiming_exact_values() -> None:
+    marks = (
+        _mark("A", "Jan", "9", "11", precision="interval"),
+        _mark("A", "Feb", "19", "21", precision="interval"),
+    )
+    source = _source(
+        "chart_extremum_ranking", "rank", marks, categories=("Jan", "Feb"), rank_mode="max"
+    )
+    answer = _answer(answer_quote="Feb", rank_groups=(("Feb",),))
+    assert _check(source, answer, "Feb")[0] is GateVerdict.MET
+    overlapping = source.model_copy(
+        update={"marks": (marks[0], _mark("A", "Feb", "10", "21", precision="interval"))}
+    )
+    assert _check(overlapping, answer, "Feb")[0] is GateVerdict.UNKNOWN
+
+
+def test_position_aliases_require_closed_separated_and_matching_marks() -> None:
+    names = ("Leftmost marker", "Middle marker", "Rightmost marker")
+    marks = tuple(
+        _mark("A", name, str(10 + index * 10)).model_copy(
+            update={
+                "region": ImageRegion(
+                    left=index * 0.3, top=0.2, right=index * 0.3 + 0.1, bottom=0.3
+                )
+            }
+        )
+        for index, name in enumerate(names)
+    )
+    source = _source("chart_extremum_ranking", "rank", marks, categories=names, rank_mode="max")
+    other = source.model_copy(
+        update={
+            "marks": (
+                marks[0],
+                marks[1].model_copy(update={"category": "Second marker from left"}),
+                marks[2],
+            ),
+            "query": source.query.model_copy(
+                update={"categories": (names[0], "Second marker from left", names[2])}
+            ),
+        }
+    )
+    answer = _answer(answer_quote="Rightmost marker", rank_groups=(("Rightmost marker",),))
+    assert (
+        verify_chart(
+            source.task_id,
+            (source, other),
+            (answer, answer),
+            {},
+            "scope",
+            "view",
+            answer.answer_quote,
+        )[0]
+        is GateVerdict.MET
+    )
+    displaced = other.model_copy(
+        update={
+            "marks": (
+                marks[0],
+                marks[1],
+                marks[2].model_copy(
+                    update={"region": ImageRegion(left=0.8, top=0.5, right=0.9, bottom=0.6)}
+                ),
+            )
+        }
+    )
+    assert (
+        verify_chart(
+            source.task_id,
+            (source, displaced),
+            (answer, answer),
+            {},
+            "scope",
+            "view",
+            answer.answer_quote,
+        )[0]
+        is GateVerdict.UNKNOWN
+    )
 
 
 def test_log_axis_rejects_nonpositive_intervals() -> None:

@@ -76,6 +76,51 @@ def test_element_lookup_and_directed_neighbors() -> None:
     assert _check(incoming, _answer("A and B", members=("A", "B"))) is GateVerdict.MET
 
 
+def test_neighbors_compare_topology_without_requiring_an_unused_node_subtype() -> None:
+    source = _source("graph_connectivity", "neighbors", node_id="A")
+    other = source.model_copy(
+        update={
+            "nodes": tuple(node.model_copy(update={"kind": "station"}) for node in source.nodes)
+        }
+    )
+    answer = _answer("B and C", members=("B", "C"))
+    assert (
+        verify_graph(
+            source.task_id,
+            (source, other),
+            (answer, answer),
+            {},
+            "scope",
+            "view",
+            answer.answer_quote,
+        )
+        is GateVerdict.MET
+    )
+    missing = other.model_copy(update={"edges": other.edges[:-1]})
+    assert (
+        verify_graph(
+            source.task_id,
+            (source, missing),
+            (answer, answer),
+            {},
+            "scope",
+            "view",
+            answer.answer_quote,
+        )
+        is GateVerdict.UNKNOWN
+    )
+
+
+def test_bilingual_neighbor_names_require_explicit_unique_visible_labels() -> None:
+    source = _source("graph_connectivity", "neighbors", node_id="A")
+    answer = _answer("Alpha (B), Beta (C)", members=("Alpha (B)", "Beta (C)"))
+    assert _check(source, answer) is GateVerdict.MET
+    wrong = _answer("Alpha (B), Gamma (D)", members=("Alpha (B)", "Gamma (D)"))
+    assert _check(source, wrong) is GateVerdict.NOT_MET
+    duplicate = _answer("Alpha (B), Beta (B)", members=("Alpha (B)", "Beta (B)"))
+    assert _check(source, duplicate) is GateVerdict.NOT_MET
+
+
 def test_all_paths_include_every_visible_alternative() -> None:
     source = _source("graph_path_tracing", "paths", start="A", end="C")
     correct = _answer("A B C; A C", paths=(("A", "B", "C"), ("A", "C")))

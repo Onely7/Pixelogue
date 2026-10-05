@@ -12,7 +12,7 @@ from pixelogue.errors import ConfigurationError
 from pixelogue.serialization import canonical_json, load_yaml, strict_json_object
 from pixelogue.task_catalog import TaskCatalog
 
-TASK_CONTRACT_VERSION = "scope-operations-v1"
+TASK_CONTRACT_VERSION = "scope-operations-v2"
 EXPECTED_RUBRIC_COUNT = 28
 EXPECTED_AXES = {
     "format",

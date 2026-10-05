@@ -23,6 +23,35 @@ def transcript_content(answer: str) -> str:
     return answer
 
 
+def extractive_content(text: str) -> str:
+    """Normalize only sentence-initial case and a final prose period.
+
+    Interior spelling, punctuation, numbers, qualifiers and order stay literal.
+    This comparison is for extractive QA, never verbatim transcription.
+    """
+    text = transcript_content(text.strip())
+    if re.search(r"[A-Za-z]\.$", text):
+        text = text[:-1]
+    return text[:1].casefold() + text[1:]
+
+
+def verify_extractive(
+    sources: tuple[TranscriptSource, TranscriptSource],
+    candidate_answer: str,
+    region: ImageRegion | None,
+) -> GateVerdict:
+    """Compare the whole answer with two independently read answer-bearing spans."""
+    for source in sources:
+        if verify_transcription((source, source), source.expected_text, region) != GateVerdict.MET:
+            return GateVerdict.UNKNOWN
+    expected = extractive_content(sources[0].expected_text)
+    if not expected or expected != extractive_content(sources[1].expected_text):
+        return GateVerdict.UNKNOWN
+    return (
+        GateVerdict.MET if expected == extractive_content(candidate_answer) else GateVerdict.NOT_MET
+    )
+
+
 def verify_transcription(
     sources: tuple[TranscriptSource, TranscriptSource],
     candidate_answer: str,

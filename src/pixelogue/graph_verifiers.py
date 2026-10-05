@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from fractions import Fraction
 from typing import Annotated, Literal
@@ -157,6 +158,9 @@ def _canonical(source: GraphSource) -> dict[str, object]:
     result = source.model_dump(mode="json", exclude={"reason"})
     for node in result["nodes"]:
         node.pop("region", None)
+        if source.query.operation in {"neighbors", "edges", "paths"}:
+            # Node subtype is not an operand of these topology-only operations.
+            node.pop("kind", None)
     for edge in result["edges"]:
         edge.pop("region", None)
     result["nodes"].sort(key=lambda item: item["node_id"])
@@ -190,6 +194,16 @@ def _label_bound_source(source: GraphSource) -> GraphSource | None:
             "query": GraphQuery.model_validate(query),
         }
     )
+
+
+def _reported_label(label: str, visible_labels: set[str]) -> str:
+    """Read an explicit parenthesized visible label; never guess a translation."""
+    if label in visible_labels:
+        return label
+    match = re.fullmatch(r"[^()（）]+\s*[（(]([^()（）]+)[）)]", label)
+    if match is not None and match[1] in visible_labels:
+        return match[1]
+    return label
 
 
 def _region_overlap(left: ImageRegion, right: ImageRegion) -> float:
@@ -374,7 +388,14 @@ def verify_graph(
             return GateVerdict.UNKNOWN
         expected, observed = (
             _neighbors(source, query.node_id, query.neighbor_direction),
-            tuple(sorted(answer.members)) if answer.members is not None else None,
+            tuple(
+                sorted(
+                    _reported_label(label, {node.label for node in source.nodes})
+                    for label in answer.members
+                )
+            )
+            if answer.members is not None
+            else None,
         )
     elif task_id == "graph_connectivity" and query.operation == "edges":
         expected, observed = (

@@ -12,6 +12,7 @@ from pydantic import HttpUrl
 from pixelogue.chart_verifiers import ChartAnswer, ChartSource
 from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
 from pixelogue.contracts import ClaimExtraction, EvidenceInventory, RubricVerdict, TextPayload
+from pixelogue.document_verifiers import DocumentSource
 from pixelogue.errors import ExecutionError
 from pixelogue.graph_verifiers import GraphAnswer, GraphSource
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
@@ -46,7 +47,9 @@ from pixelogue.task_evidence import (
         ("table_source", TableSource),
         ("table_lookup_source", TableLookupSource),
         ("transcript_source", TranscriptSource),
+        ("extractive_source", TranscriptSource),
         ("table_answer", TableAnswer),
+        ("document_source", DocumentSource),
         ("chart_source", ChartSource),
         ("chart_answer", ChartAnswer),
         ("graph_source", GraphSource),
@@ -94,6 +97,10 @@ def test_structural_reader_sees_the_exact_decoder_contract_without_mutating_mode
         assert "candidate_answer" not in text["input"]
         with pytest.raises(ExecutionError, match="candidate_answer"):
             validate_stage_payload(stage, {**payload, "candidate_answer": "hidden answer"})
+        with pytest.raises(ExecutionError, match="Answer-independent"):
+            validate_stage_payload(
+                stage, {**payload, "expected_operation": {"candidate_answer": "hidden answer"}}
+            )
         if stage == "chart_source":
             mark = decoder_schema["$defs"]["ChartMark"]
             assert "visible_label" in mark["required"]
@@ -101,6 +108,165 @@ def test_structural_reader_sees_the_exact_decoder_contract_without_mutating_mode
     else:
         assert set(decoder_schema["required"]) == set(decoder_schema["properties"])
         assert [part["type"] for part in body["messages"][1]["content"]] == ["text"]
+
+
+def test_chart_rank_decoder_is_bound_to_the_public_objective():
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="rank")
+    operation = {
+        "task_id": "chart_extremum_ranking",
+        "public_parameters": [
+            {"name": "rank_mode", "value": "max_min"},
+            {"name": "rank_order", "value": "descending"},
+        ],
+    }
+    try:
+        body = client._build_body(
+            "chart_source",
+            {"expected_operation": operation},
+            (),
+            ChartSource,
+            max_tokens=2048,
+            temperature=0.0,
+            seed=1,
+        )
+        answer = client._build_body(
+            "chart_answer",
+            {
+                "expected_operation": operation,
+                "candidate_answer": "The upper-right diamond, approximately 35.6",
+            },
+            (),
+            ChartAnswer,
+            max_tokens=2048,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    schema = body["response_format"]["json_schema"]["schema"]
+    query = schema["$defs"]["ChartQuery"]
+    assert query["properties"]["rank_mode"]["const"] == "max_min"
+    assert query["properties"]["rank_order"]["const"] == "descending"
+    assert {"rank_mode", "rank_order"} <= set(query["required"])
+    answer_schema = answer["response_format"]["json_schema"]["schema"]
+    assert answer_schema["properties"]["value"] == {"type": "null", "const": None}
+    assert "rank_groups" in answer_schema["required"]
+
+
+@pytest.mark.parametrize(
+    "task_id,operation,series_count,category_count",
+    [
+        ("chart_value_lookup", "value", 1, 1),
+        ("chart_comparison", "compare", 2, 1),
+        ("chart_extremum_ranking", "rank", 1, None),
+        ("chart_trend_summary", "trend", 1, None),
+        ("chart_series_relation", "relation", 2, None),
+        ("chart_data_reconstruction", "reconstruct", None, None),
+    ],
+)
+def test_chart_decoder_requires_operands_only_for_a_complete_reading(
+    task_id, operation, series_count, category_count
+):
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="chart")
+    try:
+        body = client._build_body(
+            "chart_source",
+            {"expected_operation": {"task_id": task_id}},
+            (),
+            ChartSource,
+            max_tokens=2048,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    schema = body["response_format"]["json_schema"]["schema"]
+    query = schema["$defs"]["ChartQuery"]
+    assert {"series", "categories"} <= set(query["required"])
+    assert query["properties"]["operation"]["const"] == operation
+    complete, uncertain = schema["anyOf"]
+    assert complete["properties"]["coverage"] == {"const": "MET"}
+    assert uncertain["properties"]["coverage"] == {"enum": ["UNKNOWN", "NOT_MET"]}
+    assert uncertain["properties"]["axis"] == {"type": "null"}
+    assert uncertain["properties"]["marks"]["maxItems"] == 0
+    assert set(complete["properties"]) == set(uncertain["properties"]) == set(schema["properties"])
+    if operation != "reconstruct":
+        for field, count in (("series", series_count), ("categories", category_count)):
+            operand = complete["properties"]["query"]["properties"][field]
+            assert operand["minItems"] == (count or 1)
+            assert operand.get("maxItems") == count
+    unmarked, calibrated = schema["$defs"]["ChartAxis"]["anyOf"]
+    assert (
+        set(unmarked["properties"]) == set(calibrated["properties"]) == {"scale", "unit", "ticks"}
+    )
+    assert unmarked["properties"]["scale"] == {"type": "string", "const": "unmarked"}
+    assert unmarked["properties"]["ticks"]["maxItems"] == 0
+    assert calibrated["properties"]["scale"] == {"type": "string", "enum": ["linear", "log"]}
+    assert calibrated["properties"]["ticks"]["minItems"] == 2
+
+
+@pytest.mark.parametrize(
+    "stage,model",
+    [
+        ("chart_source", ChartSource),
+        ("graph_source", GraphSource),
+        ("table_source", TableSource),
+        ("document_source", DocumentSource),
+        ("transcript_source", TranscriptSource),
+        ("extractive_source", TranscriptSource),
+    ],
+)
+def test_source_decoder_limits_coordinates_to_the_declared_public_region(stage, model):
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="bounds")
+    scope = {"left": 0.1, "top": 0.2, "right": 0.9, "bottom": 0.8}
+    target = {"left": 0.3, "top": 0.4, "right": 0.7, "bottom": 0.6}
+    try:
+        body = client._build_body(
+            stage,
+            {"expected_operation": {"scope_region": scope, "target_region": target}},
+            (),
+            model,
+            max_tokens=2048,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    fields = body["response_format"]["json_schema"]["schema"]["$defs"]["ImageRegion"]["properties"]
+    bound = target if stage in {"transcript_source", "extractive_source"} else scope
+    for field, lower, upper in (
+        ("left", "left", "right"),
+        ("right", "left", "right"),
+        ("top", "top", "bottom"),
+        ("bottom", "top", "bottom"),
+    ):
+        assert fields[field]["minimum"] == bound[lower]
+        assert fields[field]["maximum"] == bound[upper]
+
+
+def test_incomplete_document_decoder_cannot_certify_partial_source_facts():
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="doc")
+    try:
+        body = client._build_body(
+            "document_source",
+            {"expected_operation": {"task_id": "text_field_extraction"}},
+            (),
+            DocumentSource,
+            max_tokens=2048,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    schema = body["response_format"]["json_schema"]["schema"]
+    complete, uncertain = schema["anyOf"]
+    assert set(complete["properties"]) == set(uncertain["properties"])
+    assert set(complete["required"]) == set(complete["properties"])
+    assert complete["properties"]["coverage"] == {"const": "MET"}
+    assert uncertain["properties"]["coverage"] == {"enum": ["UNKNOWN", "NOT_MET"]}
+    assert uncertain["properties"]["closed"] == {"const": False}
+    assert uncertain["properties"]["fields"]["maxItems"] == 0
+    assert uncertain["properties"]["nodes"]["maxItems"] == 0
 
 
 @pytest.mark.parametrize(
@@ -609,20 +775,24 @@ def test_concurrent_model_calls_are_recorded_with_duration(tmp_path: Path) -> No
     assert profile.stages[0].stage == "rubric_item"
 
 
-def test_length_completion_repairs_only_missing_json_containers() -> None:
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"verdict":"MET","reason":"Supported."',
+        '{"coverage":"MET","marks":[{"value":"5"}',
+        '{"verdict":"MET","reason":',
+    ],
+)
+def test_length_completion_never_repairs_missing_json_containers(content) -> None:
     response = {
         "choices": [
             {
                 "finish_reason": "length",
-                "message": {"content": '{"verdict":"MET","reason":"Supported."'},
+                "message": {"content": content},
             }
         ],
         "usage": {"completion_tokens": 20},
     }
-    content, _ = VllmClient._validate_completion(response)
-    assert content == '{"verdict":"MET","reason":"Supported."}'
-
-    response["choices"][0]["message"]["content"] = '{"verdict":"MET","reason":'
     with pytest.raises(ExecutionError) as caught:
         VllmClient._validate_completion(response)
     assert caught.value.reason == "MODEL_FINISH_REASON"

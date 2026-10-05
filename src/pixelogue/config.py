@@ -103,6 +103,17 @@ class ServingRuntimeIdentity(StrictModel):
             raise ValueError("whitespace suppression requires explicit xgrammar or guidance")
         return self
 
+    @property
+    def bounded_whitespace_supported(self) -> bool:
+        """Match the verified grammar extension while retaining ordinary JSON whitespace."""
+        return (
+            self.vllm_version == "0.29.0"
+            and self.structured_output_backend == "xgrammar"
+            and not self.disable_any_whitespace
+            and self.xgrammar_whitespace_patch_sha256
+            == "97e96f276ad6ad10d536f7c88e294a8115cce11bd219763c0a708dabf913020e"
+        )
+
 
 class ModelEndpoint(StrictModel):
     """Pinned model and local OpenAI-compatible endpoint."""
@@ -393,6 +404,16 @@ class PixelogueConfig(StrictModel):
         generator_repos = (self.models.generator_a.repo_id, self.models.generator_b.repo_id)
         if self.profile == "standard" and generator_repos != PRIMARY_GENERATOR_REPOS:
             raise ValueError("standard profile requires the primary Qwen3.8/Gemma model pair")
+        if self.runtime.json_whitespace_max_chars is not None:
+            for endpoint in (self.models.generator_a, self.models.generator_b):
+                if (
+                    endpoint.serving_runtime is None
+                    or not endpoint.serving_runtime.bounded_whitespace_supported
+                ):
+                    raise ValueError(
+                        "Bounded JSON whitespace requires a verified patched xgrammar runtime "
+                        f"with ordinary whitespace enabled for {endpoint.repo_id}"
+                    )
         return self
 
     @property

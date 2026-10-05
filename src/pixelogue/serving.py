@@ -27,6 +27,7 @@ from pixelogue.task_evidence import (
     AttributeRecheckReport,
     CandidateBindingsReport,
     CompactScopedEvidenceReport,
+    ImageRegion,
     ScopedEvidenceInventory,
     ScopedEvidenceReport,
 )
@@ -48,15 +49,25 @@ STRUCTURAL_OUTPUT_STAGES = frozenset(
         "table_lookup_source",
         "table_answer",
         "transcript_source",
+        "extractive_source",
+        "document_source",
         "chart_source",
         "chart_answer",
         "graph_source",
         "graph_answer",
+        "geometry_answer",
         "specialist_geometry_source",
         "specialist_circuit_source",
     }
 )
 STRUCTURAL_ANSWER_FORMS = {
+    "chart_answer": {
+        "chart_value_lookup": frozenset({"value"}),
+        "chart_comparison": frozenset({"relation"}),
+        "chart_extremum_ranking": frozenset({"rank_groups"}),
+        "chart_trend_summary": frozenset({"trend", "trend_segments"}),
+        "chart_series_relation": frozenset({"relation"}),
+    },
     "table_answer": {
         "table_cell_lookup": frozenset({"value"}),
         "table_predicate_selection": frozenset({"rows"}),
@@ -70,6 +81,84 @@ STRUCTURAL_ANSWER_FORMS = {
         "diagram_branch_evaluation": frozenset({"paths"}),
     },
 }
+
+
+def _bind_chart_source_schema(schema: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Prevent contradictory axis shapes and absent operands in a complete reading.
+
+    Bind only the public operation. Marks, labels and values still come from
+    the independent reader, and an uncertain reading may leave operands empty.
+    """
+    definitions = schema["$defs"]
+    axis = definitions["ChartAxis"]
+    axis_fields = axis["properties"]
+    axis_base = {key: value for key, value in axis.items() if key != "properties"}
+    definitions["ChartAxis"] = {
+        "anyOf": [
+            {
+                **axis_base,
+                "properties": {
+                    **axis_fields,
+                    "scale": {"type": "string", "const": "unmarked"},
+                    "ticks": {**axis_fields["ticks"], "maxItems": 0},
+                },
+            },
+            {
+                **axis_base,
+                "properties": {
+                    **axis_fields,
+                    "scale": {"type": "string", "enum": ["linear", "log"]},
+                    "ticks": {**axis_fields["ticks"], "minItems": 2},
+                },
+            },
+        ]
+    }
+    query = definitions["ChartQuery"]
+    query["required"] = sorted(set(query["required"]) | {"series", "categories"})
+    operation = payload.get("expected_operation")
+    task_id = operation.get("task_id") if isinstance(operation, dict) else None
+    forms = {
+        "chart_value_lookup": ("value", 1, 1),
+        "chart_comparison": ("compare", 2, 1),
+        "chart_extremum_ranking": ("rank", 1, None),
+        "chart_trend_summary": ("trend", 1, None),
+        "chart_series_relation": ("relation", 2, None),
+        "chart_data_reconstruction": ("reconstruct", None, None),
+    }
+    if task_id not in forms:
+        return
+    verb, series_count, category_count = forms[task_id]
+    query["properties"]["operation"]["const"] = verb
+    operands: dict[str, Any] = {}
+    if verb != "reconstruct":
+        for field, count in (("series", series_count), ("categories", category_count)):
+            operands[field] = {**query["properties"][field], "minItems": count or 1}
+            if count is not None:
+                operands[field]["maxItems"] = count
+    fields = schema["properties"]
+    base = {key: value for key, value in schema.items() if key not in {"properties", "$defs"}}
+    # XGrammar compiles each union branch independently. Put the entire object
+    # in both branches rather than relying on intersection with sibling fields.
+    schema["anyOf"] = [
+        {
+            **base,
+            "properties": {
+                **fields,
+                "coverage": {"const": "MET"},
+                "query": {**query, "properties": {**query["properties"], **operands}},
+            },
+        },
+        {
+            **base,
+            "properties": {
+                **fields,
+                "coverage": {"enum": ["UNKNOWN", "NOT_MET"]},
+                "axis": {"type": "null"},
+                "marks": {**fields["marks"], "maxItems": 0},
+                "closed": {"const": False},
+            },
+        },
+    ]
 
 
 def _bind_specialist_source_schema(
@@ -539,14 +628,7 @@ class VllmClient:
         whitespace_bound = self.runtime.json_whitespace_max_chars
         if whitespace_bound is not None and stage in {"evidence_extraction", "candidate_binding"}:
             identity = self.endpoint.serving_runtime
-            if (
-                identity is None
-                or identity.vllm_version != "0.29.0"
-                or identity.structured_output_backend != "xgrammar"
-                or identity.disable_any_whitespace
-                or identity.xgrammar_whitespace_patch_sha256
-                != "97e96f276ad6ad10d536f7c88e294a8115cce11bd219763c0a708dabf913020e"
-            ):
+            if identity is None or not identity.bounded_whitespace_supported:
                 raise ExecutionError(
                     "MODEL_RUNTIME_PATCH_REQUIRED",
                     "Bounded JSON whitespace requires the verified Pixelogue XGrammar patch "
@@ -663,6 +745,35 @@ class VllmClient:
             if count == 0:
                 schema["properties"]["claims"]["maxItems"] = 0
         if stage in STRUCTURAL_OUTPUT_STAGES:
+            if stage in {
+                "chart_source",
+                "graph_source",
+                "table_source",
+                "transcript_source",
+                "extractive_source",
+                "document_source",
+            }:
+                operation = payload.get("expected_operation")
+                region = operation.get("scope_region") if isinstance(operation, dict) else None
+                if stage in {"transcript_source", "extractive_source"} and isinstance(
+                    operation, dict
+                ):
+                    region = operation.get("target_region") or region
+                if region is not None:
+                    try:
+                        bound = ImageRegion.model_validate(region)
+                    except ValidationError as error:
+                        raise ExecutionError(
+                            "MODEL_PAYLOAD_FIELD", "Source operation has an invalid public region"
+                        ) from error
+                    coordinates = schema["$defs"]["ImageRegion"]["properties"]
+                    for field, minimum, maximum in (
+                        ("left", bound.left, bound.right),
+                        ("right", bound.left, bound.right),
+                        ("top", bound.top, bound.bottom),
+                        ("bottom", bound.top, bound.bottom),
+                    ):
+                        coordinates[field].update(minimum=minimum, maximum=maximum)
             if stage == "table_lookup_source":
                 operation = payload.get("expected_operation")
                 if not isinstance(operation, dict):
@@ -676,7 +787,52 @@ class VllmClient:
                 # Nullable result fields must be emitted, even when the parse abstains.
                 # Their omission otherwise permits an acknowledgement-only JSON object.
                 schema["required"] = sorted(schema["properties"])
-            if stage == "chart_source":
+            if stage == "document_source":
+                properties = schema["properties"]
+                base = {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": sorted(properties),
+                }
+                schema = {
+                    "$defs": schema["$defs"],
+                    "anyOf": [
+                        {
+                            **base,
+                            "properties": {**properties, "coverage": {"const": "MET"}},
+                        },
+                        {
+                            **base,
+                            "properties": {
+                                **properties,
+                                "coverage": {"enum": ["UNKNOWN", "NOT_MET"]},
+                                "closed": {"const": False},
+                                **{
+                                    name: {**properties[name], "maxItems": 0}
+                                    for name in ("fields", "nodes")
+                                },
+                            },
+                        },
+                    ],
+                }
+            elif stage == "chart_source":
+                operation = payload.get("expected_operation")
+                if (
+                    isinstance(operation, dict)
+                    and operation.get("task_id") == "chart_extremum_ranking"
+                ):
+                    parameters = {
+                        item["name"]: item["value"]
+                        for item in operation.get("public_parameters", [])
+                    }
+                    for field in ("rank_mode", "rank_order"):
+                        if field in parameters:
+                            schema["$defs"]["ChartQuery"]["properties"][field]["const"] = (
+                                parameters[field]
+                            )
+                            required = schema["$defs"]["ChartQuery"].setdefault("required", [])
+                            if field not in required:
+                                required.append(field)
                 mark_schema = schema["$defs"]["ChartMark"]
                 mark_properties = mark_schema["properties"]
                 mark_schema["required"] = sorted(mark_properties)
@@ -689,6 +845,11 @@ class VllmClient:
                     mark_properties[endpoint]["description"] = (
                         "Bare finite decimal string. No inequality, unit, label or explanation."
                     )
+                    mark_properties[endpoint]["pattern"] = r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$"
+                schema["$defs"]["ChartAxis"]["properties"]["ticks"]["items"]["pattern"] = (
+                    r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$"
+                )
+                _bind_chart_source_schema(schema, payload)
             elif stage in STRUCTURAL_ANSWER_FORMS:
                 operation = payload.get("expected_operation")
                 task_id = operation.get("task_id") if isinstance(operation, dict) else None
@@ -703,7 +864,7 @@ class VllmClient:
                     "The visible component and terminal inventory is complete. "
                     "A fully read passive network with no power source is closed."
                 )
-            elif stage in {"transcript_source", "table_lookup_source"}:
+            elif stage in {"transcript_source", "extractive_source", "table_lookup_source"}:
                 # A nullable region otherwise permits a syntactically valid MET
                 # response without a complete source. Bind the two coverage shapes
                 # in the decoder, keeping visual truth with the independent reader.
@@ -713,7 +874,7 @@ class VllmClient:
                     "additionalProperties": False,
                     "required": sorted(properties),
                 }
-                if stage == "transcript_source":
+                if stage in {"transcript_source", "extractive_source"}:
                     complete_fields = {
                         "coverage": {"type": "string", "const": "MET"},
                         "expected_lines": {**properties["expected_lines"], "minItems": 1},
@@ -758,7 +919,7 @@ class VllmClient:
                     **base,
                     "properties": {**properties, **uncertain_fields},
                 }
-                if stage == "transcript_source":
+                if stage in {"transcript_source", "extractive_source"}:
                     # Establish whole-unit readability before choosing a coverage
                     # branch; choosing MET first prevents a later abstention.
                     order = (
@@ -920,48 +1081,16 @@ class VllmClient:
         if not isinstance(content, str) or not content.strip():
             raise ExecutionError("MODEL_CONTENT_EMPTY", "Completion content is empty")
         if finish_reason == "length":
-            completed = VllmClient._close_json_delimiters(content)
-            if completed is None:
-                raise ExecutionError("MODEL_FINISH_REASON", "Completion ended before a JSON value")
-            content = completed
+            try:
+                _model_json_object(content)
+            except ExecutionError as error:
+                raise ExecutionError(
+                    "MODEL_FINISH_REASON", "Completion ended before a complete JSON object"
+                ) from error
         usage = response.get("usage")
         if not isinstance(usage, dict):
             usage = {}
         return content, usage
-
-    @staticmethod
-    def _close_json_delimiters(content: str) -> str | None:
-        """Close only missing terminal JSON containers in an otherwise complete object."""
-        stripped = content.rstrip()
-        stack: list[str] = []
-        in_string = False
-        escaped = False
-        pairs = {"}": "{", "]": "["}
-        for character in stripped:
-            if in_string:
-                if escaped:
-                    escaped = False
-                elif character == "\\":
-                    escaped = True
-                elif character == '"':
-                    in_string = False
-                continue
-            if character == '"':
-                in_string = True
-            elif character in "{[":
-                stack.append(character)
-            elif character in "}]":
-                if not stack or stack.pop() != pairs[character]:
-                    return None
-        if in_string or len(stack) > 8:
-            return None
-        suffix = "".join("}" if opener == "{" else "]" for opener in reversed(stack))
-        candidate = stripped + suffix
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError:
-            return None
-        return candidate if isinstance(parsed, dict) else None
 
     def _record(
         self,

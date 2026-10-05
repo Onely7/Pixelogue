@@ -2072,7 +2072,15 @@ tasks:
   - dual_visual_review
   - chart_encoding_check
   - closed_set_check
-  parameters: {}
+  parameters:
+    rank_mode:
+    - all
+    - max
+    - min
+    - max_min
+    rank_order:
+    - descending
+    - ascending
   inspiration_subset_numbers:
   - 14
   - 16

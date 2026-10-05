@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,28 @@ from pixelogue.config import PixelogueConfig, allocate_quotas, load_config
 from pixelogue.errors import ConfigurationError, ExternalInputError
 from pixelogue.planner import exact_schedule
 from pixelogue.serialization import strict_json_object
+
+
+def test_bounded_whitespace_fails_at_configuration_load_before_any_image_calls() -> None:
+    raw = load_config(Path("configs/standard.yaml")).model_dump(mode="json")
+    raw["runtime"]["json_whitespace_max_chars"] = 32
+    with pytest.raises(ValidationError, match="verified patched xgrammar"):
+        PixelogueConfig.model_validate_json(json.dumps(raw))
+    identity = {
+        "vllm_version": "0.29.0",
+        "structured_output_backend": "xgrammar",
+        "disable_any_whitespace": False,
+        "server_manifest_sha256": "a" * 64,
+        "xgrammar_whitespace_patch_sha256": "97e96f276ad6ad10d536f7c88e294a8115cce11bd219763c0a708dabf913020e",
+    }
+    for role in ("generator_a", "generator_b"):
+        raw["models"][role]["serving_runtime"] = identity
+    assert (
+        PixelogueConfig.model_validate_json(json.dumps(raw)).runtime.json_whitespace_max_chars == 32
+    )
+    raw["models"]["generator_b"]["serving_runtime"] = {**identity, "disable_any_whitespace": True}
+    with pytest.raises(ValidationError, match="verified patched xgrammar"):
+        PixelogueConfig.model_validate_json(json.dumps(raw))
 
 
 def test_example_profiles_are_valid_and_separate() -> None:

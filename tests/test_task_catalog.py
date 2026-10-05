@@ -870,6 +870,38 @@ def test_model_payloads_exclude_source_mapping_and_private_evidence():
         )
 
 
+def test_transcription_binds_the_enclosing_unit_before_question_generation():
+    unit = scope("title", readable_text="MET", reading_order="MET")
+    unit = unit.model_copy(
+        update={
+            "observations": tuple(
+                item.model_copy(
+                    update={"region": ImageRegion(left=0.1, top=0.2, right=0.9, bottom=0.48)}
+                )
+                for item in unit.observations
+            )
+        }
+    )
+    data = inventory(unit)
+    template = next(c for c in candidates(data) if c.task_id == "text_reading_order")
+    proposal = binding(
+        template,
+        public_parameters=(
+            PublicParameter(
+                name="target",
+                value="the two-line title",
+                origin="image",
+                evidence_refs=(unit.observations[0].evidence_id,),
+            ),
+        ),
+    )
+    admitted = bind_candidates(
+        (template,), CandidateBindings(bindings=(proposal,)), data, (), TaskRuntimeConfig()
+    )
+    assert admitted[0].target_region == unit.region
+    assert admitted[0].target_region != unit.observations[0].region
+
+
 def test_compile_exposes_admission_migration_and_versioned_run_identity(tmp_path):
     config = load_config(Path("configs/pilot.yaml"))
     compiled = compile_configuration(config)

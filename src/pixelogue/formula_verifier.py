@@ -112,7 +112,7 @@ class _Parser:
         if notation == "unicode_math":
             text = text.translate(SUPERSCRIPTS).translate(SUBSCRIPTS)
         if notation == "latex":
-            text = text.replace("\\left", "").replace("\\right", "")
+            text = re.sub(r"\\(?:left|right)(?=[()])", "", text)
         self.tokens = TOKEN_RE.findall(text)
         if "".join(self.tokens).replace(" ", "") != re.sub(r"\s+", "", text):
             raise ValueError("Unsupported formula token")
@@ -230,6 +230,13 @@ class _Parser:
 
 def parse_formula(text: str, notation: Literal["latex", "unicode_math"]) -> FormulaNode:
     """Parse only the registered literal grammar; never simplify equivalent forms."""
+    text = text.strip()
+    if notation == "latex":
+        # Display delimiters describe the container, not the formula's syntax tree.
+        for opening, closing in ((r"\[", r"\]"), (r"\(", r"\)"), ("$$", "$$"), ("$", "$")):
+            if text.startswith(opening) and text.endswith(closing):
+                text = text[len(opening) : -len(closing)]
+                break
     parser = _Parser(text, notation)
     if not parser.tokens:
         raise ValueError("Empty formula")

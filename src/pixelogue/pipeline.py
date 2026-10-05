@@ -462,7 +462,9 @@ class SynthesisCoordinator:
         )
         terminal_stage = "conversation_length"
         terminal_reason = "REQUESTED_TURN_COUNT_INCOMPLETE"
+        terminal_turn_index = min(count, len(turns) + 1)
         for turn_index in range(len(turns) + 1, count + 1):
+            terminal_turn_index = turn_index
             snapshot = build_history_snapshot(conversation_id, turn_index, transcript)
             candidates = instruction_candidates(
                 inventory,
@@ -578,7 +580,7 @@ class SynthesisCoordinator:
                 "conversation-stop-reasons",
                 {
                     "conversation_id": conversation_id,
-                    "turn_index": min(count, len(turns) + 1),
+                    "turn_index": terminal_turn_index,
                     "status": terminal_status,
                     "stage": terminal_stage,
                     "reason": terminal_reason,
@@ -2132,7 +2134,7 @@ class SynthesisCoordinator:
             # extending beyond its bound rectangle; the controller checks containment.
             max_tokens = (
                 self.config.tasks.evidence_max_tokens
-                if stage in {"table_source", "table_lookup_source"}
+                if stage in {"table_source", "table_lookup_source", "chart_source", "graph_source"}
                 or (stage.startswith("specialist_") and stage.endswith("_source"))
                 else 2048
             )

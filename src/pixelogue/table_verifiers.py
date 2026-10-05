@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from html.parser import HTMLParser
 from typing import Annotated, Literal
@@ -304,7 +305,7 @@ def _parse_json_table(answer: str) -> TableGrid | None:
 
 
 class _RestrictedTableParser(HTMLParser):
-    """Read only static table tags; reject scripts, attributes and nested markup."""
+    """Read the public static table grammar without rendering or executing it."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -320,26 +321,74 @@ class _RestrictedTableParser(HTMLParser):
         self.cells: list[TableCell] = []
         self.occupied: set[tuple[int, int]] = set()
         self.data_rows: set[int] = set()
+        self.stack: list[str] = []
+
+    @staticmethod
+    def _static_attributes(tag: str, attrs: list[tuple[str, str | None]]) -> bool:
+        """Accept only declared spans, header scopes and inert presentation choices."""
+        values = dict(attrs)
+        if len(values) != len(attrs):
+            return False
+        allowed = {"style"}
+        if tag == "table":
+            allowed |= {"border", "cellpadding", "cellspacing"}
+        if tag in {"th", "td"}:
+            allowed |= {"rowspan", "colspan"}
+        if tag == "th":
+            allowed.add("scope")
+        if set(values) - allowed or any(value is None for value in values.values()):
+            return False
+        for name in ("border", "cellpadding", "cellspacing"):
+            if name in values and not re.fullmatch(r"\d{1,2}", values[name] or ""):
+                return False
+        if "scope" in values and values["scope"] not in {"row", "col", "rowgroup", "colgroup"}:
+            return False
+        if "style" in values:
+            choices = {
+                "border-collapse": {"collapse", "separate"},
+                "text-align": {"left", "right", "center", "start", "end", "justify"},
+                "vertical-align": {"top", "middle", "bottom"},
+            }
+            seen = set()
+            for declaration in (values["style"] or "").split(";"):
+                if not declaration.strip():
+                    continue
+                parts = declaration.strip().lower().split(":")
+                if len(parts) != 2:
+                    return False
+                name, value = (part.strip() for part in parts)
+                if name in seen or name not in choices or value not in choices[name]:
+                    return False
+                seen.add(name)
+        return True
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "table" and not attrs and not self.table_open and not self.complete:
+        if tag == "br" and not attrs and self.cell_kind is not None:
+            self.cell_text += "\n"
+            return
+        if not self._static_attributes(tag, attrs):
+            self.invalid = True
+            return
+        if tag == "table" and not self.stack and not self.table_open and not self.complete:
             self.table_open = True
         elif (
             tag in {"thead", "tbody", "tfoot"}
-            and not attrs
+            and self.stack == ["table"]
             and self.table_open
             and not self.row_open
         ):
-            return
-        elif tag == "tr" and not attrs and self.table_open and not self.row_open:
+            pass
+        elif (
+            tag == "tr"
+            and self.table_open
+            and not self.row_open
+            and self.stack[-1] in {"table", "thead", "tbody", "tfoot"}
+        ):
             self.row += 1
             self.col = 0
             self.row_open = True
         elif tag in {"th", "td"} and self.row_open and self.cell_kind is None:
             attribute_map = dict(attrs)
-            if len(attribute_map) != len(attrs) or set(attribute_map) - {"rowspan", "colspan"}:
-                self.invalid = True
-                return
             try:
                 rowspan = int(attribute_map.get("rowspan") or "1")
                 colspan = int(attribute_map.get("colspan") or "1")
@@ -354,6 +403,14 @@ class _RestrictedTableParser(HTMLParser):
             self.cell_text = ""
         else:
             self.invalid = True
+            return
+        self.stack.append(tag)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "br":
+            self.handle_starttag(tag, attrs)
+        else:
+            self.invalid = True
 
     def handle_data(self, data: str) -> None:
         if self.cell_kind is not None:
@@ -362,6 +419,10 @@ class _RestrictedTableParser(HTMLParser):
             self.invalid = True
 
     def handle_endtag(self, tag: str) -> None:
+        if not self.stack or self.stack[-1] != tag:
+            self.invalid = True
+            return
+        self.stack.pop()
         if tag in {"td", "th"} and self.cell_kind == ("header" if tag == "th" else "data"):
             while (self.row, self.col) in self.occupied:
                 self.col += 1
@@ -394,6 +455,12 @@ class _RestrictedTableParser(HTMLParser):
             self.complete = True
         else:
             self.invalid = True
+
+    def handle_decl(self, decl: str) -> None:
+        self.invalid = True
+
+    def handle_pi(self, data: str) -> None:
+        self.invalid = True
 
 
 def _parse_html_table(answer: str, table_id: str) -> TableGrid | None:

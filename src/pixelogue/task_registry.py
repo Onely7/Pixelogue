@@ -37,13 +37,13 @@ REGISTRATIONS = {
         ValidatorRegistration("dual_visual_review", "2"),
         ValidatorRegistration("closed_set_check", "1"),
         ValidatorRegistration("exact_arithmetic_check", "2"),
-        ValidatorRegistration("transcript_alignment", "2"),
+        ValidatorRegistration("transcript_alignment", "3"),
         ValidatorRegistration("evidence_binding_check", "1"),
         ValidatorRegistration("ui_grounding_check", "1"),
         ValidatorRegistration("panel_comparison_check", "1"),
         ValidatorRegistration(
             "table_structure_check",
-            "2",
+            "3",
             supported_tasks=frozenset(
                 {
                     "table_cell_lookup",
@@ -55,7 +55,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "schema_check",
-            "1",
+            "2",
             supported_tasks=frozenset(
                 {
                     "table_structure_reconstruction",
@@ -67,7 +67,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "chart_encoding_check",
-            "1",
+            "2",
             supported_tasks=frozenset(
                 {
                     "chart_value_lookup",
@@ -81,12 +81,12 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "formula_structure_check",
-            "1",
+            "2",
             supported_tasks=frozenset({"formula_transcription"}),
         ),
         ValidatorRegistration(
             "graph_check",
-            "2",
+            "3",
             supported_tasks=frozenset(
                 {
                     "diagram_element_lookup",

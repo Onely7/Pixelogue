@@ -53,6 +53,9 @@ uv run --locked pytest
 
 [採用率と合成速度の比較手順](docs/validation/yield-and-speed_ja.md)に、比較条件・計測・監査・実例HTMLの解釈をまとめています。
 
+公開出力仕様、独立した根拠抽出、質問条件の固定と少数画像での比較は、
+[検証契約の改訂2](docs/tasks/verification-contract-v2_ja.md)を参照してください。
+
 ## モデルの役割
 
 | 役割 | 既定のリポジトリ |

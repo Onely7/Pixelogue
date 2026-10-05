@@ -57,6 +57,7 @@ def test_unicode_notation_is_supported_without_equation_solving() -> None:
 def test_unknown_notation_and_visual_disagreement_abstain() -> None:
     source = _source(r"\sqrt{x}")
     assert _check(source, r"\unknown{x}") is GateVerdict.UNKNOWN
+    assert _check(_source("arrow"), r"\leftarrow") is GateVerdict.UNKNOWN
     other = _source(r"\sqrt{y}")
     assert (
         verify_formula((source, other), "latex", "scope", "view", r"\sqrt{x}")
@@ -81,3 +82,14 @@ def test_malformed_root_and_nonlocal_region_are_rejected() -> None:
                 }
             ).model_dump_json()
         )
+
+
+@pytest.mark.parametrize(
+    "opening,closing", [(r"\[", r"\]"), (r"\(", r"\)"), ("$$", "$$"), ("$", "$")]
+)
+def test_display_containers_preserve_the_literal_formula(opening: str, closing: str) -> None:
+    source = _source(r"\frac{a+b}{2}")
+    assert _check(source, opening + r"\frac{a+b}{2}" + closing) is GateVerdict.MET
+    assert _check(source, opening + "(a+b)/2" + closing) is GateVerdict.NOT_MET
+    assert _check(source, opening + r"\frac{a+b}{2}") is GateVerdict.UNKNOWN
+    assert _check(source, opening + r"\frac{a+b}{2}" + closing + " extra") is GateVerdict.UNKNOWN

@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel
 
 from pixelogue.catalog import load_rubric_catalog
-from pixelogue.chart_verifiers import ChartSource
+from pixelogue.chart_verifiers import ChartAnswer, ChartQuery, ChartSource
 from pixelogue.config import EvaluationConfig, ModelEndpoint, load_config
 from pixelogue.contracts import (
     AtomicClaim,
@@ -882,6 +882,28 @@ def test_exhausted_candidate_binding_checks_abstain_without_accepting(
     assert private_count == 1
     assert stop["stage"] == "candidate_binding"
     assert stop["reason"] == "CANDIDATE_CHECKS_MISMATCH"
+
+
+def test_answer_stop_records_the_failed_turn_instead_of_the_next_turn(
+    tmp_path, image_artifact, monkeypatch
+):
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    monkeypatch.setattr(
+        coordinator, "_rate_turn", lambda *args, **kwargs: TurnRating(items=(), aggregate="ABSTAIN")
+    )
+    try:
+        conversation = coordinator.synthesize_image(image, root)
+        stop_hash = store.connection.execute(
+            "SELECT artifact_hash FROM artifact WHERE kind = 'conversation-stop-reasons'"
+        ).fetchone()[0]
+        stop = json.loads(store.read_artifact(stop_hash))
+    finally:
+        store.close()
+    assert conversation.status == "ABSTAINED"
+    assert len(conversation.turns) == 1
+    assert conversation.turns[0].status != "COMMITTED"
+    assert stop["turn_index"] == 1
 
 
 @pytest.mark.parametrize(
@@ -3553,6 +3575,90 @@ def test_blind_transcription_sees_full_context_and_rejects_an_incomplete_bound(
             (),
         )
         assert calls == ["transcript_source", "transcript_source"]
+        assert rating.aggregate == "ABSTAIN"
+        assert rating.items[-1].verdict is GateVerdict.UNKNOWN
+    finally:
+        store.close()
+
+
+def test_chart_inventory_uses_the_configured_evidence_budget_without_accepting_unknown(
+    tmp_path, image_artifact, monkeypatch
+):
+    image, root = image_artifact
+    coordinator, store, _, _, _ = _coordinator(tmp_path)
+    try:
+        original = coordinator._model_image(image, root)
+        instruction = InstructionCandidate(
+            candidate_id="ranking",
+            task_id="chart_extremum_ranking",
+            family="chart_map_understanding",
+            visible_scope="complete bar chart",
+            instruction_summary="Identify the highest and lowest bars",
+            required_capabilities=("readable_chart", "complete_series"),
+            catalog_version="7.0",
+            scope_id="chart",
+            evidence_refs=("chart-evidence",),
+            verification_contracts=(
+                "dual_visual_review",
+                "chart_encoding_check",
+                "closed_set_check",
+            ),
+            view_id=original.view_id,
+            scope_region=ImageRegion(left=0, top=0, right=1, bottom=1),
+            public_parameters=(
+                PublicParameter(name="rank_mode", value="max_min", origin="instruction"),
+                PublicParameter(name="rank_order", value="descending", origin="instruction"),
+            ),
+        )
+        monkeypatch.setattr(
+            coordinator, "_rate_base_turn", lambda *args: TurnRating(items=(), aggregate="PASS")
+        )
+        calls = []
+
+        def invoke(client, stage, payload, images, model, **kwargs):
+            calls.append(stage)
+            if stage == "chart_source":
+                assert "candidate_answer" not in payload
+                assert images == (original,)
+                assert kwargs["max_tokens"] == coordinator.config.tasks.evidence_max_tokens
+                assert instruction.scope_region is not None
+                return ChartSource(
+                    task_id=instruction.task_id,
+                    coverage="UNKNOWN",
+                    scope_id="chart",
+                    view_id=original.view_id,
+                    scope_region=instruction.scope_region,
+                    axis=None,
+                    legend_complete=False,
+                    closed=False,
+                    encoding="bar",
+                    marks=(),
+                    query=ChartQuery(operation="rank", rank_mode="max_min"),
+                    reason="Unclear labels.",
+                )
+            assert stage == "chart_answer" and not images
+            return ChartAnswer(coverage="UNKNOWN", reason="No unambiguous category.")
+
+        monkeypatch.setattr(coordinator, "_invoke", invoke)
+        rating = coordinator._rate_turn(
+            "conversation",
+            "a" * 64,
+            (),
+            PublicMessage(
+                message_id="q",
+                turn_index=1,
+                role="user",
+                content="Which bars are highest and lowest?",
+            ),
+            PublicMessage(message_id="a", turn_index=1, role="assistant", content="A and B."),
+            instruction,
+            "en",
+            [coordinator._view_metadata(image)],
+            original,
+            1,
+            (),
+        )
+        assert calls == ["chart_source", "chart_source", "chart_answer", "chart_answer"]
         assert rating.aggregate == "ABSTAIN"
         assert rating.items[-1].verdict is GateVerdict.UNKNOWN
     finally:
