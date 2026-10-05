@@ -1146,6 +1146,79 @@ class SynthesisCoordinator:
         rejected_question_fingerprints: frozenset[str] = frozenset(),
     ) -> TurnAttemptResult:
         """Generate and verify one selected operation against its unchanged public prefix."""
+        drafted = self._generate_question(
+            selected,
+            snapshot,
+            generator,
+            target_language,
+            model_image,
+            image_views,
+            previous_turns,
+            rejected_question_fingerprints=rejected_question_fingerprints,
+        )
+        if isinstance(drafted, TurnAttemptResult):
+            return drafted
+        question = drafted
+        turn_index = snapshot.turn_index
+        requirements: tuple[Requirement, ...] = ()
+        if self.config.evaluation.mode == "detailed" or selected.catalog_version is not None:
+            stopped = self._gate_question(
+                selected, snapshot, question, target_language, model_image, image_views
+            )
+            if stopped is not None:
+                return stopped
+        if self.config.evaluation.mode == "detailed":
+            requirement_status, requirements = self._extract_requirements(
+                snapshot.public_history,
+                question,
+                target_language,
+                turn_index,
+            )
+            if requirement_status is not GateVerdict.MET:
+                terminal_status = (
+                    "REJECTED" if requirement_status is GateVerdict.NOT_MET else "ABSTAINED"
+                )
+                terminal_stage = "requirement_extraction"
+                terminal_reason = f"REQUIREMENT_{requirement_status.value}"
+                return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        answered = self._generate_answer(
+            selected,
+            snapshot,
+            generator,
+            question,
+            requirements,
+            target_language,
+            model_image,
+            image_views,
+            previous_turns,
+        )
+        if isinstance(answered, TurnAttemptResult):
+            return answered
+        return self._review_answer(
+            selected,
+            snapshot,
+            generator,
+            question,
+            answered,
+            requirements,
+            target_language,
+            model_image,
+            image_views,
+        )
+
+    def _generate_question(
+        self,
+        selected: InstructionCandidate,
+        snapshot: HistorySnapshot,
+        generator: InferenceClient,
+        target_language: str,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+        previous_turns: tuple[TurnArtifact, ...],
+        *,
+        rejected_question_fingerprints: frozenset[str] = frozenset(),
+    ) -> PublicMessage | TurnAttemptResult:
+        """Write one public question and apply the deterministic pre-judge checks."""
         conversation_id = snapshot.conversation_id
         turn_index = snapshot.turn_index
         turns = previous_turns
@@ -1315,9 +1388,30 @@ class SynthesisCoordinator:
             terminal_stage = "question_generation"
             terminal_reason = "REPEATED_PUBLIC_QUESTION"
             return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
-        requirements: tuple[Requirement, ...] = ()
-        if self.config.evaluation.mode == "detailed" or selected.catalog_version is not None:
-            fit = self._question_intent(
+        return question
+
+    def _gate_question(
+        self,
+        selected: InstructionCandidate,
+        snapshot: HistorySnapshot,
+        question: PublicMessage,
+        target_language: str,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+    ) -> TurnAttemptResult | None:
+        """Run the blind operation classification and question-fit gates before answering."""
+        turn_index = snapshot.turn_index
+        fit = self._question_intent(
+            snapshot.public_history,
+            question,
+            selected,
+            target_language,
+            image_views,
+            model_image,
+            turn_index,
+        )
+        if fit is GateVerdict.MET:
+            fit = self._question_fit(
                 snapshot.public_history,
                 question,
                 selected,
@@ -1326,41 +1420,35 @@ class SynthesisCoordinator:
                 model_image,
                 turn_index,
             )
-            if fit is GateVerdict.MET:
-                fit = self._question_fit(
-                    snapshot.public_history,
-                    question,
-                    selected,
-                    target_language,
-                    image_views,
-                    model_image,
-                    turn_index,
-                )
-            if fit is not GateVerdict.MET:
-                terminal_status = "ABSTAINED" if fit is GateVerdict.UNKNOWN else "REJECTED"
-                terminal_stage = "question_gate"
-                terminal_reason = f"QUESTION_GATE_{fit.value}"
-                return TurnAttemptResult(
-                    None,
-                    terminal_status,
-                    terminal_stage,
-                    terminal_reason,
-                    question_fingerprint(question.content),
-                )
-        if self.config.evaluation.mode == "detailed":
-            requirement_status, requirements = self._extract_requirements(
-                snapshot.public_history,
-                question,
-                target_language,
-                turn_index,
+        if fit is not GateVerdict.MET:
+            terminal_status = "ABSTAINED" if fit is GateVerdict.UNKNOWN else "REJECTED"
+            terminal_stage = "question_gate"
+            terminal_reason = f"QUESTION_GATE_{fit.value}"
+            return TurnAttemptResult(
+                None,
+                terminal_status,
+                terminal_stage,
+                terminal_reason,
+                question_fingerprint(question.content),
             )
-            if requirement_status is not GateVerdict.MET:
-                terminal_status = (
-                    "REJECTED" if requirement_status is GateVerdict.NOT_MET else "ABSTAINED"
-                )
-                terminal_stage = "requirement_extraction"
-                terminal_reason = f"REQUIREMENT_{requirement_status.value}"
-                return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        return None
+
+    def _generate_answer(
+        self,
+        selected: InstructionCandidate,
+        snapshot: HistorySnapshot,
+        generator: InferenceClient,
+        question: PublicMessage,
+        requirements: tuple[Requirement, ...],
+        target_language: str,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+        previous_turns: tuple[TurnArtifact, ...],
+    ) -> PublicMessage | TurnAttemptResult:
+        """Generate the public answer and stop on deterministic disclosure checks."""
+        conversation_id = snapshot.conversation_id
+        turn_index = snapshot.turn_index
+        turns = previous_turns
         answer_payload = self._invoke(
             generator,
             "answer_generation",
@@ -1431,6 +1519,23 @@ class SynthesisCoordinator:
             terminal_stage = "answer_generation"
             terminal_reason = disclosure
             return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
+        return answer
+
+    def _review_answer(
+        self,
+        selected: InstructionCandidate,
+        snapshot: HistorySnapshot,
+        generator: InferenceClient,
+        question: PublicMessage,
+        answer: PublicMessage,
+        requirements: tuple[Requirement, ...],
+        target_language: str,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+    ) -> TurnAttemptResult:
+        """Rate one answered turn, repairing once in detailed mode, and build its artifact."""
+        conversation_id = snapshot.conversation_id
+        turn_index = snapshot.turn_index
         rating = self._rate_turn(
             conversation_id,
             snapshot.history_hash,
@@ -1935,20 +2040,14 @@ class SynthesisCoordinator:
             ],
             "image_views": image_views,
         }
-        votes = [
-            self._invoke(
-                client,
-                "question_intent",
-                public_payload,
-                (model_image,),
-                QuestionIntent,
-                max_tokens=128,
-                temperature=0.0,
-                seed=self.config.seed + turn_index,
-                trial_id=f"blind-judge:{judge_index}",
-            )
-            for judge_index, client in enumerate(self.generators.values())
-        ]
+        votes = self._invoke_judges(
+            "question_intent",
+            public_payload,
+            (model_image,),
+            QuestionIntent,
+            max_tokens=128,
+            seed=self.config.seed + turn_index,
+        )
         known = {task.id for task in catalog.tasks}
         task_ids = [vote.task_id for vote in votes]
         if any(task_id not in known for task_id in task_ids):
@@ -1984,26 +2083,20 @@ class SynthesisCoordinator:
         if focused is None:
             return GateVerdict.UNKNOWN
         model_image, image_views = focused
-        votes = [
-            self._invoke(
-                client,
-                "question_fit",
-                {
-                    "target_language": language,
-                    "public_history": self._history(history),
-                    "selected_instruction": operation_contract(instruction),
-                    "question": question.content,
-                    "image_views": image_views,
-                },
-                (model_image,),
-                QuestionFit,
-                max_tokens=256,
-                temperature=0.0,
-                seed=self.config.seed + turn_index,
-                trial_id=f"blind-judge:{judge_index}",
-            )
-            for judge_index, client in enumerate(self.generators.values())
-        ]
+        votes = self._invoke_judges(
+            "question_fit",
+            {
+                "target_language": language,
+                "public_history": self._history(history),
+                "selected_instruction": operation_contract(instruction),
+                "question": question.content,
+                "image_views": image_views,
+            },
+            (model_image,),
+            QuestionFit,
+            max_tokens=256,
+            seed=self.config.seed + turn_index,
+        )
         return question_fit_consensus(votes)
 
     def _local_verification_view(
@@ -2230,26 +2323,20 @@ class SynthesisCoordinator:
                 turn_index,
                 instruction,
             )
-        inventories = [
-            self._invoke(
-                client,
-                "claim_inventory",
-                {
-                    "target_language": language,
-                    "public_history": self._history(history),
-                    "question": question.content,
-                    "candidate_answer": answer.content,
-                    "answer_tokens": self._answer_tokens(answer.content),
-                },
-                (),
-                ClaimExtraction,
-                max_tokens=2048,
-                temperature=0.0,
-                seed=self.config.seed + turn_index,
-                trial_id=f"blind-judge:{judge_index}",
-            )
-            for judge_index, client in enumerate(self.generators.values())
-        ]
+        inventories = self._invoke_judges(
+            "claim_inventory",
+            {
+                "target_language": language,
+                "public_history": self._history(history),
+                "question": question.content,
+                "candidate_answer": answer.content,
+                "answer_tokens": self._answer_tokens(answer.content),
+            },
+            (),
+            ClaimExtraction,
+            max_tokens=2048,
+            seed=self.config.seed + turn_index,
+        )
         inventories = [
             ClaimInventory(
                 claims=tuple(self._bind_claim_span(claim, answer) for claim in inventory.claims),
@@ -2458,20 +2545,14 @@ class SynthesisCoordinator:
         votes = (
             []
             if invalid or focused is None
-            else [
-                self._invoke(
-                    client,
-                    "holistic_review",
-                    payload,
-                    (model_image,),
-                    RubricVerdict,
-                    max_tokens=384,
-                    temperature=0.0,
-                    seed=self.config.seed + turn_index,
-                    trial_id=f"blind-judge:{index}",
-                )
-                for index, client in enumerate(self.generators.values())
-            ]
+            else self._invoke_judges(
+                "holistic_review",
+                payload,
+                (model_image,),
+                RubricVerdict,
+                max_tokens=384,
+                seed=self.config.seed + turn_index,
+            )
         )
         if invalid:
             verdict = GateVerdict.NOT_MET
@@ -2905,6 +2986,36 @@ class SynthesisCoordinator:
                 else dict(rule_inputs)
             )
         return payload, images
+
+    def _invoke_judges(
+        self,
+        stage: str,
+        payload: dict[str, Any],
+        images: tuple[ModelImage, ...],
+        model: type[OutputModel],
+        *,
+        max_tokens: int,
+        seed: int,
+        trial_suffix: str = "",
+    ) -> list[OutputModel]:
+        """Ask both blind judges for one stage with separate trial identities.
+
+        Votes keep the configured judge order. Neither judge receives the other's response.
+        """
+        return [
+            self._invoke(
+                client,
+                stage,
+                payload,
+                images,
+                model,
+                max_tokens=max_tokens,
+                temperature=0.0,
+                seed=seed,
+                trial_id=f"blind-judge:{index}{trial_suffix}",
+            )
+            for index, client in enumerate(self.generators.values())
+        ]
 
     def _invoke(
         self,
