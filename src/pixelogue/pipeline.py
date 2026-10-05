@@ -9,7 +9,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol, TypeVar
+from typing import Any, Literal, NamedTuple, Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -202,6 +202,15 @@ class SynthesisJob:
     image: ImageArtifact
     target_language: Literal["en", "ja", "zh-Hans"]
     generator_role: Literal["generator_a", "generator_b"]
+
+
+class TerminalState(NamedTuple):
+    """Where and why a conversation's turn loop stopped."""
+
+    status: Literal["QUALITY_CANDIDATE", "REJECTED", "ABSTAINED", "ERROR"]
+    stage: str
+    reason: str
+    turn_index: int
 
 
 @dataclass(frozen=True)
@@ -444,6 +453,58 @@ class SynthesisCoordinator:
                 status="QUALITY_CANDIDATE",
             )
             return self._finish_conversation(conversation, persist=True)
+        terminal_status, terminal_stage, terminal_reason, terminal_turn_index = self._scoped_turns(
+            conversation_id,
+            image,
+            generator,
+            model_image,
+            image_views,
+            target_language,
+            count,
+            turns,
+            transcript,
+        )
+
+        if len(turns) != count or any(turn.status != "COMMITTED" for turn in turns):
+            if terminal_status == "QUALITY_CANDIDATE":
+                terminal_status = "REJECTED"
+        if terminal_status != "QUALITY_CANDIDATE":
+            self.store.write_json_artifact(
+                "conversation-stop-reasons",
+                {
+                    "conversation_id": conversation_id,
+                    "turn_index": terminal_turn_index,
+                    "status": terminal_status,
+                    "stage": terminal_stage,
+                    "reason": terminal_reason,
+                },
+            )
+        conversation = ConversationArtifact(
+            conversation_id=conversation_id,
+            image=image,
+            target_language=target_language,
+            generation_model=generator.endpoint.repo_id,
+            turns=tuple(turns),
+            status=terminal_status,
+        )
+        return self._finish_conversation(conversation, persist=True)
+
+    def _scoped_turns(
+        self,
+        conversation_id: str,
+        image: ImageArtifact,
+        generator: InferenceClient,
+        model_image: ModelImage,
+        image_views: list[dict[str, str]],
+        target_language: Literal["en", "ja", "zh-Hans"],
+        count: int,
+        turns: list[TurnArtifact],
+        transcript: tuple[PublicMessage, ...],
+    ) -> TerminalState:
+        """Extract scoped evidence once, then bind, select and attempt each planned turn.
+
+        Committed turns are appended to ``turns`` in place.
+        """
         if self.config.tasks.decision_routing.evidence_enabled:
             inventory = self._extract_decision_evidence(generator, image, model_image, image_views)
         else:
@@ -571,30 +632,7 @@ class SynthesisCoordinator:
                        ) VALUES (?, 'main', ?, 0, ?)""",
                     (conversation_id, turn_index, artifact_hash),
                 )
-
-        if len(turns) != count or any(turn.status != "COMMITTED" for turn in turns):
-            if terminal_status == "QUALITY_CANDIDATE":
-                terminal_status = "REJECTED"
-        if terminal_status != "QUALITY_CANDIDATE":
-            self.store.write_json_artifact(
-                "conversation-stop-reasons",
-                {
-                    "conversation_id": conversation_id,
-                    "turn_index": terminal_turn_index,
-                    "status": terminal_status,
-                    "stage": terminal_stage,
-                    "reason": terminal_reason,
-                },
-            )
-        conversation = ConversationArtifact(
-            conversation_id=conversation_id,
-            image=image,
-            target_language=target_language,
-            generation_model=generator.endpoint.repo_id,
-            turns=tuple(turns),
-            status=terminal_status,
-        )
-        return self._finish_conversation(conversation, persist=True)
+        return TerminalState(terminal_status, terminal_stage, terminal_reason, terminal_turn_index)
 
     def _extract_generator_evidence(
         self,
