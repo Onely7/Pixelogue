@@ -303,6 +303,11 @@ class SynthesisCoordinator:
             if decision_client is not None
             else None
         )
+        # Judge pairs and paired blind readers overlap; store writes stay serialized.
+        self._judge_pool = ThreadPoolExecutor(
+            max_workers=2 * config.runtime.max_concurrent_images,
+            thread_name_prefix="pixelogue-judge",
+        )
         # Direct drafting offers only normal-profile core operations with working validators.
         self._direct_tasks = {
             task.id: task
@@ -2906,9 +2911,7 @@ class SynthesisCoordinator:
             )
             return aggregate_rating((*rating.items, item))
 
-        def invoke(
-            stage: str, body: dict[str, Any], model: type[BaseModel], judge: int
-        ) -> BaseModel:
+        def read(stage: str, body: dict[str, Any], model: type[BaseModel], judge: int) -> BaseModel:
             client = tuple(self.generators.values())[judge]
             # Full context lets blind transcription readers detect a requested unit
             # extending beyond its bound rectangle; the controller checks containment.
@@ -2942,6 +2945,20 @@ class SynthesisCoordinator:
                 seed=self.config.seed + turn_index,
                 trial_id=f"blind-judge:{judge}",
             )
+
+        prefetched: dict[tuple[str, str, str], Future[BaseModel]] = {}
+
+        def invoke(
+            stage: str, body: dict[str, Any], model: type[BaseModel], judge: int
+        ) -> BaseModel:
+            # Validators ask judge 0 and then judge 1 for the same blind input; start the
+            # second judge's identical request immediately so the two readings overlap.
+            key = (stage, canonical_hash(body), model.__name__)
+            if judge == 0:
+                prefetched[key] = self._judge_pool.submit(read, stage, body, model, 1)
+                return read(stage, body, model, 0)
+            future = prefetched.pop(key, None) if judge == 1 else None
+            return future.result() if future is not None else read(stage, body, model, judge)
 
         items = list(rating.items)
         for check in verify_operation(
@@ -3723,12 +3740,13 @@ class SynthesisCoordinator:
         seed: int,
         trial_suffix: str = "",
     ) -> list[OutputModel]:
-        """Ask both blind judges for one stage with separate trial identities.
+        """Ask both blind judges for one stage concurrently with separate trial identities.
 
         Votes keep the configured judge order. Neither judge receives the other's response.
         """
-        return [
-            self._invoke(
+
+        def ask(index: int, client: InferenceClient) -> OutputModel:
+            return self._invoke(
                 client,
                 stage,
                 payload,
@@ -3739,8 +3757,12 @@ class SynthesisCoordinator:
                 seed=seed,
                 trial_id=f"blind-judge:{index}{trial_suffix}",
             )
+
+        futures = [
+            self._judge_pool.submit(ask, index, client)
             for index, client in enumerate(self.generators.values())
         ]
+        return [future.result() for future in futures]
 
     def _invoke(
         self,
