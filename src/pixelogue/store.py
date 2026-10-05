@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import fcntl
 import hashlib
+import json
 import os
 import shutil
 import sqlite3
@@ -173,6 +174,14 @@ class RunStore:
                 reserved_output_tokens INTEGER NOT NULL DEFAULT 0
             );
             INSERT OR IGNORE INTO budget(singleton) VALUES (1);
+            CREATE TABLE IF NOT EXISTS turn_route (
+                conversation_id TEXT NOT NULL,
+                turn_index INTEGER NOT NULL,
+                history_hash TEXT NOT NULL,
+                call_index INTEGER NOT NULL,
+                route_json TEXT NOT NULL,
+                PRIMARY KEY(conversation_id, turn_index, history_hash, call_index)
+            );
             CREATE TABLE IF NOT EXISTS model_call_attempt (
                 attempt_id TEXT PRIMARY KEY,
                 stage TEXT NOT NULL,
@@ -204,6 +213,53 @@ class RunStore:
             self.connection.execute(
                 "ALTER TABLE model_call ADD COLUMN usage_status TEXT NOT NULL DEFAULT 'LEGACY'"
             )
+
+    def saved_turn_route(
+        self, conversation_id: str, turn_index: int, history_hash: str, call_index: int
+    ) -> str | None:
+        """Return a durable direct-planner route chosen before an interruption."""
+        with self._mutex:
+            row = self.connection.execute(
+                """SELECT route_json FROM turn_route WHERE conversation_id = ?
+                   AND turn_index = ? AND history_hash = ? AND call_index = ?""",
+                (conversation_id, turn_index, history_hash, call_index),
+            ).fetchone()
+        return None if row is None else str(row[0])
+
+    def save_turn_route(
+        self,
+        conversation_id: str,
+        turn_index: int,
+        history_hash: str,
+        call_index: int,
+        route_json: str,
+    ) -> str:
+        """Record a route once; a concurrent or resumed caller receives the first record."""
+        with self.transaction() as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO turn_route(
+                       conversation_id, turn_index, history_hash, call_index, route_json
+                   ) VALUES (?, ?, ?, ?, ?)""",
+                (conversation_id, turn_index, history_hash, call_index, route_json),
+            )
+            row = connection.execute(
+                """SELECT route_json FROM turn_route WHERE conversation_id = ?
+                   AND turn_index = ? AND history_hash = ? AND call_index = ?""",
+                (conversation_id, turn_index, history_hash, call_index),
+            ).fetchone()
+        return str(row[0])
+
+    def committed_task_ids(self) -> tuple[str, ...]:
+        """Return the operation of every committed turn in this run, for routing counts."""
+        with self._mutex:
+            hashes = [
+                row[0] for row in self.connection.execute("SELECT artifact_hash FROM turn_commit")
+            ]
+        task_ids = []
+        for artifact_hash in hashes:
+            turn = json.loads(self.read_artifact(artifact_hash))
+            task_ids.append(turn["instruction"]["task_id"])
+        return tuple(task_ids)
 
     def begin_model_attempt(
         self,

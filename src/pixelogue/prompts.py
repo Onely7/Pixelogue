@@ -549,6 +549,8 @@ When image_views provides source_view_id and source_left/top/right/bottom, the d
 only that crop of the original view. The requested local subject and its material visual claims
 must be supported inside the crop; do not borrow a neighboring subject from omitted context.
 Use the source mapping for positional references, and UNKNOWN if omitted context is needed.
+When two image views are supplied, the first is the complete image and the second is that exact
+crop: judge the local subject inside the crop and use the complete image for context only.
 MET means the question is understandable and grounded, the answer fulfills its request and active
 public instructions, and its material claims and completeness are supported by the image/history.
 NOT_MET means an identifiable material defect makes this turn unsuitable for training. Name the
@@ -651,9 +653,104 @@ facts require local evidence refs; history facts require exact committed public 
 instruction choices have no refs. Omit a candidate when its target or required choice is unclear.
 The controller and a separate visual classifier will check references and every admission condition."""
 
+STAGE_INSTRUCTIONS["image_profile"] = """Profile this single image for task routing before any
+question exists. Return image_kind, readable_text (none, some or dense legible text), up to five
+salient visible subjects with short names and normalized boxes, and one feasibility judgment for
+EVERY family in family_definitions. A family is MET only when at least one of its listed
+operations could be asked and answered from clearly visible content; NOT_MET when the image lacks
+that kind of content (for example no chart, no table, no readable text); UNKNOWN when unsure.
+Judge only visible pixels. Do not write questions, answers or fine-grained category guesses.
+Boxes use normalized coordinates: 0 <= left < right <= 1 and 0 <= top < bottom <= 1.
+Use only family IDs from family_definitions."""
+
+STAGE_INSTRUCTIONS["question_draft"] = """Write up to draft_count distinct candidate user questions
+for the next turn of an image-grounded conversation. Each draft realizes exactly one operation
+from allowed_tasks. Follow preferred_task_ids in order: write the first drafts from the primary
+family in family_plan and the last draft from the secondary family when the image supports it.
+Skip any operation the image does not clearly support. Drafts must differ in operation or target.
+Each question must be natural, in target_language, answerable from the visible image and the
+exact public_history alone, and request a substantive new fact. Never repeat or paraphrase an
+earlier request, reverse an earlier identification, reformat an earlier answer, or ask about a
+fact listed in excluded_fact_keys.
+task_id is the allowed operation whose definition matches what the question actually asks; do not
+label an easier neighboring request with a harder operation. Ask exactly one operation; compound
+independent requests are unsupported.
+public_parameters contains target, a public locator describing which subject or region is meant
+(never the answer), plus every required_parameter_names entry with a permitted value from
+parameter_contract. Use only bindable_parameter_names; fixed policies and verdict vocabularies are
+not parameters. Every public parameter must be realized in the question wording.
+scope_description and scope_region describe the visual scope you actually used; target_region
+bounds the particular subject (null for a whole-scope request). Coordinates are normalized to the
+delivered image, and target_region must lie inside scope_region. For text transcription the scope
+must enclose the entire requested text unit, including punctuation and descenders.
+fact_key names the subject and the dimension of the requested fact (for example subject 'dog on
+the left', dimension 'fur color'); it never contains the answer. output_form is the natural form of
+the answer.
+Operation rules: For object_identification never name the category or a synonym; refer to the
+subject by location or non-category traits. For attribute_lookup ask for the named property
+without stating its value. For visible_action_relation identify the subject without stating the
+action, ask what it is doing or how it interacts with a visible object, and never ask what it can
+or could do; absence of motion blur proves nothing. A body-posture question is attribute_lookup.
+For scene_categorization state at least two contrastive, non-overlapping options in the question
+and list them in category_set. For text transcription use an absolute region or public scope,
+never a relative locator such as above, below or next to. For chart extrema distinguish maximum,
+minimum, both extrema and complete ranking, and preserve ties. For extractive document QA request
+the source-language span with its qualifiers. Do not request matrices or chemical diagrams as
+formula transcription. When output_contract is present, state its relevant output conditions in
+the question. Never print controller IDs, coordinates, private parameters or the words
+"selected region" in a question. Return drafts=[] and a reason when no allowed operation is
+clearly supported."""
+
+STAGE_INSTRUCTIONS["question_gate"] = """Judge one drafted question before any answer exists.
+First classify, independently of selected_instruction (which may be wrong), the single operation
+the question asks the assistant to perform: choose realized_task_id from task_definitions by what
+the question requests. Use null when the request is ambiguous, compound, or matches no definition.
+Distinguish naming an object from reporting its attributes, comparing positions, counting, reading
+text or explaining. A body-posture question is attribute_lookup; what a subject is doing or how it
+interacts with another visible object is visible_action_relation.
+Then judge selected_instruction with MET, NOT_MET or UNKNOWN for each field:
+local_anchor: the question refers to a visible object, region, text or complete image scope, or
+to committed public history, that actually exists. When target_region is supplied, the question
+must refer to the bound subject there, not a nearby object; UNKNOWN if this cannot be resolved.
+operation_coherent: the question realizes the selected operation exactly, every public parameter
+and eligibility check holds, and it does not change the task, even within one family. Counting or
+spatial ordering cannot realize correspondence matching. Ability or hypothetical actions, and
+unsupported motion claims from a still image, are NOT_MET for visible_action_relation. Compound
+independent operations or unsupported machine-readable output requests are NOT_MET.
+useful_request: NOT_MET when public_history already contains the same answered request or a
+paraphrase of it. Explicit regrouping of known facts is useful.
+When two image views are supplied, the first is the complete image and the second is an exact crop
+of the bound region given by source_left/top/right/bottom: the requested local subject must be
+visible inside that crop, and the complete image provides context and positions only.
+No candidate answer exists. Return the schema only."""
+
 STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "evidence_proposal": frozenset(
         {"capability_vocabulary", "max_scopes", "max_observations_per_scope", "image_views"}
+    ),
+    "image_profile": frozenset({"image_views", "family_definitions"}),
+    "question_draft": frozenset(
+        {
+            "target_language",
+            "turn_index",
+            "public_history",
+            "allowed_tasks",
+            "preferred_task_ids",
+            "family_plan",
+            "excluded_fact_keys",
+            "draft_count",
+            "image_views",
+        }
+    ),
+    "question_gate": frozenset(
+        {
+            "target_language",
+            "public_history",
+            "selected_instruction",
+            "task_definitions",
+            "question",
+            "image_views",
+        }
     ),
     "candidate_proposal": frozenset(
         {"target_language", "public_history", "candidates", "scope_evidence", "image_views"}
@@ -980,6 +1077,9 @@ def validate_stage_payload(stage: str, payload: Mapping[str, Any]) -> None:
         "evidence_extraction",
         "evidence_proposal",
         "attribute_recheck",
+        "image_profile",
+        "question_draft",
+        "question_gate",
         "question_generation",
         "question_intent",
         "question_fit",

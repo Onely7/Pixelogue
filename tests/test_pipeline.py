@@ -3552,7 +3552,9 @@ def test_empty_local_pixels_abstain_even_after_a_base_review_pass(
             target_region=ImageRegion(left=0, top=0, right=0.00001, bottom=0.00001),
         )
         monkeypatch.setattr(
-            coordinator, "_rate_base_turn", lambda *args: TurnRating(items=(), aggregate="PASS")
+            coordinator,
+            "_rate_base_turn",
+            lambda *args, **kwargs: TurnRating(items=(), aggregate="PASS"),
         )
         monkeypatch.setattr(
             coordinator,
@@ -3600,7 +3602,9 @@ def test_blind_transcription_sees_full_context_and_rejects_an_incomplete_bound(
             target_region=ImageRegion(left=0, top=0, right=1, bottom=0.5),
         )
         monkeypatch.setattr(
-            coordinator, "_rate_base_turn", lambda *args: TurnRating(items=(), aggregate="PASS")
+            coordinator,
+            "_rate_base_turn",
+            lambda *args, **kwargs: TurnRating(items=(), aggregate="PASS"),
         )
         calls = []
 
@@ -3674,7 +3678,9 @@ def test_chart_inventory_uses_the_configured_evidence_budget_without_accepting_u
             ),
         )
         monkeypatch.setattr(
-            coordinator, "_rate_base_turn", lambda *args: TurnRating(items=(), aggregate="PASS")
+            coordinator,
+            "_rate_base_turn",
+            lambda *args, **kwargs: TurnRating(items=(), aggregate="PASS"),
         )
         calls = []
 

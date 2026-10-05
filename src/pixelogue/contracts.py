@@ -144,6 +144,9 @@ class InstructionCandidate(StrictModel):
     evidence_refs: tuple[str, ...] = ()
     verification_contracts: tuple[str, ...] = ()
     calibrated_domain: str | None = None
+    origin: Literal["scoped", "direct"] = "scoped"
+    request_key: str | None = None
+    output_form: str | None = None
 
     @model_validator(mode="after")
     def validate_operation(self) -> InstructionCandidate:
@@ -173,8 +176,12 @@ class InstructionCandidate(StrictModel):
                 self.public_parameters
             ):
                 raise ValueError("Public parameter names must be unique")
-            if not self.scope_id or not self.view_id or not self.evidence_refs:
-                raise ValueError("V7 candidates need scope, view, and evidence bindings")
+            if not self.scope_id or not self.view_id:
+                raise ValueError("V7 candidates need scope and view bindings")
+            if self.origin == "scoped" and not self.evidence_refs:
+                raise ValueError("Scoped V7 candidates need evidence bindings")
+            if self.origin == "direct" and (self.evidence_refs or self.scope_region is None):
+                raise ValueError("Direct drafts carry a public scope region and no evidence IDs")
             required = (
                 task.verification_contracts if self.profile == "normal" else ("dual_visual_review",)
             )

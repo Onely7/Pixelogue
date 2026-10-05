@@ -18,8 +18,11 @@ from pydantic import BaseModel, ValidationError
 from pixelogue.call_usage import measure_usage
 from pixelogue.config import ModelEndpoint, RuntimeConfig
 from pixelogue.contracts import ClaimExtraction, EvidenceInventory, TextPayload
+from pixelogue.drafting import QuestionDraftBatch
 from pixelogue.errors import ExecutionError, ExternalInputError
+from pixelogue.gates import QuestionGateVote
 from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_payload
+from pixelogue.routing import ImageProfile
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import (
@@ -159,6 +162,35 @@ def _bind_chart_source_schema(schema: dict[str, Any], payload: dict[str, Any]) -
             },
         },
     ]
+
+
+def _bind_direct_schema(
+    schema: dict[str, Any], response_model: type[BaseModel], payload: dict[str, Any]
+) -> None:
+    """Restrict direct-planner identifiers to the operations and families offered."""
+    if response_model is QuestionDraftBatch:
+        offered = [item["task_id"] for item in payload.get("allowed_tasks", [])]
+        count = payload.get("draft_count")
+        if not offered or not isinstance(count, int) or not 1 <= count <= 4:
+            raise ExecutionError("MODEL_PAYLOAD_FIELD", "Drafting needs offered operations")
+        schema["$defs"]["QuestionDraft"]["properties"]["task_id"]["enum"] = offered
+        schema["properties"]["drafts"]["maxItems"] = count
+    elif response_model is QuestionGateVote:
+        known = [item["task_id"] for item in payload.get("task_definitions", [])]
+        if not known:
+            raise ExecutionError("MODEL_PAYLOAD_FIELD", "Question gate needs task definitions")
+        branch = next(
+            option
+            for option in schema["properties"]["realized_task_id"]["anyOf"]
+            if option.get("type") == "string"
+        )
+        branch["enum"] = known
+    elif response_model is ImageProfile:
+        families = [item["family"] for item in payload.get("family_definitions", [])]
+        if not families:
+            raise ExecutionError("MODEL_PAYLOAD_FIELD", "Image profile needs family definitions")
+        schema["$defs"]["FamilyFeasibility"]["properties"]["family"]["enum"] = families
+        schema["properties"]["feasible_families"]["maxItems"] = len(families)
 
 
 def _bind_specialist_source_schema(
@@ -635,6 +667,7 @@ class VllmClient:
                     "and an explicit xgrammar server with ordinary whitespace enabled",
                 )
             schema["x-pixelogue-max-whitespace-chars"] = whitespace_bound
+        _bind_direct_schema(schema, response_model, payload)
         if stage in SPECIALIST_SOURCE_STAGES:
             _bind_specialist_source_schema(schema, stage, payload)
         if response_model in (

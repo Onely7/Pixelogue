@@ -6,6 +6,8 @@ scoped planner keeps them until it is removed; a change here means scoped behavi
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from test_pipeline import _coordinator
 
@@ -235,7 +237,7 @@ EXPECTED = {
     },
 }
 
-SCENARIOS = {
+SCENARIOS: dict[str, dict[str, Any]] = {
     "holistic_success": {"evaluation_mode": "holistic"},
     "detailed_repair": {"fail_first_rating": True},
     "holistic_repeat_question": {"evaluation_mode": "holistic", "repeat_question": True},

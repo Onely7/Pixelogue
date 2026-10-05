@@ -318,6 +318,15 @@ class DecisionRoutingConfig(StrictModel):
         return self
 
 
+# Whole-structure reconstructions are kept reachable but drafted less often: their
+# verifiers need complete grids or series and abstain far more than targeted lookups.
+DEFAULT_TASK_WEIGHTS = {
+    "table_structure_reconstruction": 0.25,
+    "chart_data_reconstruction": 0.25,
+    "document_structure_reconstruction": 0.25,
+}
+
+
 class TaskRuntimeConfig(StrictModel):
     """Bound candidate and evidence work independently of taxonomy size."""
 
@@ -338,10 +347,45 @@ class TaskRuntimeConfig(StrictModel):
     enabled_extensions: tuple[str, ...] = ()
     calibration_manifest: Path | None = None
     decision_routing: DecisionRoutingConfig = DecisionRoutingConfig()
+    planner: Literal["scoped", "direct"] = "scoped"
+    draft_count: Annotated[int, Field(ge=1, le=4)] = 3
+    draft_max_tokens: Annotated[int, Field(ge=256, le=4096)] = 1024
+    extra_draft_calls_per_turn: Literal[0, 1] = 1
+    profile_max_tokens: Annotated[int, Field(ge=128, le=1024)] = 256
+    family_targets: Literal["uniform"] | dict[str, Annotated[float, Field(gt=0)]] = "uniform"
+    task_weights: dict[str, Annotated[float, Field(gt=0, le=1)]] = Field(
+        default_factory=lambda: dict(DEFAULT_TASK_WEIGHTS)
+    )
 
     @model_validator(mode="after")
     def validate_admission_settings(self) -> TaskRuntimeConfig:
         """Fail closed on unsupported extensions and repeated profile settings."""
+        from pixelogue.catalog import task_catalog
+
+        catalog = task_catalog()
+        if isinstance(self.family_targets, dict) and not set(self.family_targets) <= set(
+            catalog.families
+        ):
+            raise ValueError("Unknown task family in family_targets")
+        if not set(self.task_weights) <= {task.id for task in catalog.tasks}:
+            raise ValueError("Unknown task in task_weights")
+        if self.planner == "direct":
+            scoped_only = {
+                "evidence_format": self.evidence_format != "keyed",
+                "attribute_recheck_enabled": self.attribute_recheck_enabled,
+                "max_candidate_attempts": self.max_candidate_attempts != 1,
+                "question_operation_guidance": self.question_operation_guidance != "baseline",
+                "fact_novelty_enabled": self.fact_novelty_enabled,
+                "initial_binding_batch_size": self.initial_binding_batch_size != 8,
+                "decision_routing": self.decision_routing.evidence_enabled
+                or self.decision_routing.binding_enabled,
+            }
+            if changed := sorted(name for name, used in scoped_only.items() if used):
+                raise ValueError(
+                    f"Scoped-planner settings do not apply to direct drafting: {changed}"
+                )
+            if self.profiles != ("normal",):
+                raise ValueError("Direct drafting supports only the normal profile")
         if self.decision_routing.evidence_enabled and self.attribute_recheck_enabled:
             raise ValueError(
                 "Decision evidence routing cannot mix with generator-only attribute rechecks"
@@ -378,6 +422,23 @@ class EvaluationConfig(StrictModel):
 
     mode: Literal["holistic", "detailed"] = "holistic"
     retain_accepted_prefix: bool = True
+    question_gate_label_policy: Literal["strict", "same_contract"] = "strict"
+    judge_views: Literal["crop", "full_and_crop"] = "crop"
+    holistic_tiebreak: Literal["none", "full_view"] = "none"
+    repair_once: bool = False
+
+    @model_validator(mode="after")
+    def validate_holistic_options(self) -> EvaluationConfig:
+        """Keep v8 judge rules out of the legacy decomposed evaluator."""
+        changed = (
+            self.question_gate_label_policy != "strict"
+            or self.judge_views != "crop"
+            or self.holistic_tiebreak != "none"
+            or self.repair_once
+        )
+        if self.mode == "detailed" and changed:
+            raise ValueError("v8 judge options require evaluation.mode=holistic")
+        return self
 
 
 class PixelogueConfig(StrictModel):
@@ -402,6 +463,8 @@ class PixelogueConfig(StrictModel):
         if self.profile == "standard" and self.data.pilot:
             raise ValueError("standard profile cannot enable pilot mode")
         generator_repos = (self.models.generator_a.repo_id, self.models.generator_b.repo_id)
+        if self.tasks.planner == "direct" and self.evaluation.mode != "holistic":
+            raise ValueError("Direct drafting requires evaluation.mode=holistic")
         if self.profile == "standard" and generator_repos != PRIMARY_GENERATOR_REPOS:
             raise ValueError("standard profile requires the primary Qwen3.8/Gemma model pair")
         if self.runtime.json_whitespace_max_chars is not None:
