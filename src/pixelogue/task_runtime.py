@@ -65,6 +65,52 @@ GUARD_PARAMETERS = {
 }
 
 
+# Fixed public operation text shared by scoped bindings and direct drafts.
+BOUNDARY_OPERATION_TEXT = {
+    "object_identification": "Request a visible category at supported granularity. "
+    "Generic person categories are permitted; individual identity is not.",
+    "attribute_lookup": "Request only the public attribute or object part of the "
+    "bound subject. A neighboring subject's property does not answer this request.",
+    "visible_action_relation": "Request a directly visible action or interaction. "
+    "Body posture alone is an attribute; static placement is a spatial relation. "
+    "Contact can support an interaction, but does not establish intent or motion.",
+    "referring_object_resolution": "Resolve the unique entity satisfying the public "
+    "description; do not replace this operation with naming its category.",
+    "entity_count": "Count the publicly defined units in a closed scope. "
+    "Unclear membership, occlusion, or an incomplete enumeration means UNKNOWN.",
+    "spatial_relation": "State a relation in the public reference frame between "
+    "resolved visible subjects; do not infer an action from static placement.",
+}
+OUTPUT_CONTRACT_TEXT = {
+    "chart_extremum_ranking": "Use the public rank_mode and rank_order. Include all ties. "
+    "max_min asks for maximum and minimum only; all asks for the complete ordering.",
+    "document_extractive_qa": "Return the complete minimal answer-bearing span in the "
+    "source language, preserving qualifiers, negation and exceptions. Only "
+    "sentence-initial case and a final prose period may differ. Translation, "
+    "paraphrase and extra claims are not extractive output.",
+    "formula_transcription": "Use the registered literal mathematical grammar: symbols, "
+    "numbers, grouping, arithmetic, equality, scripts, fractions and square roots. "
+    "Whole LaTeX display delimiters are allowed. Chemical bond diagrams, arrays, "
+    "matrices and unregistered commands are unsupported; choose another eligible "
+    "operation rather than promising their transcription.",
+    "table_structure_reconstruction": "For html_table return exactly one static table "
+    "using balanced table, thead/tbody/tfoot, tr, th and td tags, with br for cell "
+    "line breaks. Cells allow rowspan/colspan; th allows scope=row/col/rowgroup/colgroup. "
+    "table allows numeric border/cellpadding/cellspacing. Optional style supports only "
+    "border-collapse=collapse/separate, text-align=left/right/center/start/end/justify "
+    "and vertical-align=top/middle/bottom. No other CSS, scripts, event handlers, "
+    "external assets or tags. "
+    "Preserve blank cells, header/data roles and merged-cell spans. For structured_json "
+    "use table_id, rows, cols, cells, data_rows, closed; each cell has row, col, "
+    "rowspan, colspan, text, kind (header or data), without private image regions. "
+    "markdown_simple_only supports unmerged tables with one header row.",
+}
+RUNTIME_RESTRICTIONS = {
+    "grounded_arithmetic": "One primitive add/subtract/multiply/divide expression, exact result, no rounding or "
+    "derived percentages. Units must satisfy the primitive calculator contract.",
+}
+
+
 def admission_report(
     settings: TaskRuntimeConfig | None = None,
     models: ModelConfig | None = None,
@@ -190,21 +236,9 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
         "boundary_contract": {
             "region": "Coordinates are normalized to the exact delivered view. Keep the bound "
             "subject and scope; do not expand the region or borrow another subject's evidence.",
-            "operation": {
-                "object_identification": "Request a visible category at supported granularity. "
-                "Generic person categories are permitted; individual identity is not.",
-                "attribute_lookup": "Request only the public attribute or object part of the "
-                "bound subject. A neighboring subject's property does not answer this request.",
-                "visible_action_relation": "Request a directly visible action or interaction. "
-                "Body posture alone is an attribute; static placement is a spatial relation. "
-                "Contact can support an interaction, but does not establish intent or motion.",
-                "referring_object_resolution": "Resolve the unique entity satisfying the public "
-                "description; do not replace this operation with naming its category.",
-                "entity_count": "Count the publicly defined units in a closed scope. "
-                "Unclear membership, occlusion, or an incomplete enumeration means UNKNOWN.",
-                "spatial_relation": "State a relation in the public reference frame between "
-                "resolved visible subjects; do not infer an action from static placement.",
-            }.get(task.id, "Preserve the declared operation and its public conditions."),
+            "operation": BOUNDARY_OPERATION_TEXT.get(
+                task.id, "Preserve the declared operation and its public conditions."
+            ),
         },
         **(
             {"target_region": candidate.target_region.model_dump(mode="json")}
@@ -221,40 +255,12 @@ def operation_contract(candidate: InstructionCandidate) -> dict[str, Any]:
             if not (private_target_task and p.name == "target")
         ],
         "parameter_contract": task.parameters,
-        "output_contract": {
-            "chart_extremum_ranking": "Use the public rank_mode and rank_order. Include all ties. "
-            "max_min asks for maximum and minimum only; all asks for the complete ordering.",
-            "document_extractive_qa": "Return the complete minimal answer-bearing span in the "
-            "source language, preserving qualifiers, negation and exceptions. Only "
-            "sentence-initial case and a final prose period may differ. Translation, "
-            "paraphrase and extra claims are not extractive output.",
-            "formula_transcription": "Use the registered literal mathematical grammar: symbols, "
-            "numbers, grouping, arithmetic, equality, scripts, fractions and square roots. "
-            "Whole LaTeX display delimiters are allowed. Chemical bond diagrams, arrays, "
-            "matrices and unregistered commands are unsupported; choose another eligible "
-            "operation rather than promising their transcription.",
-            "table_structure_reconstruction": "For html_table return exactly one static table "
-            "using balanced table, thead/tbody/tfoot, tr, th and td tags, with br for cell "
-            "line breaks. Cells allow rowspan/colspan; th allows scope=row/col/rowgroup/colgroup. "
-            "table allows numeric border/cellpadding/cellspacing. Optional style supports only "
-            "border-collapse=collapse/separate, text-align=left/right/center/start/end/justify "
-            "and vertical-align=top/middle/bottom. No other CSS, scripts, event handlers, "
-            "external assets or tags. "
-            "Preserve blank cells, header/data roles and merged-cell spans. For structured_json "
-            "use table_id, rows, cols, cells, data_rows, closed; each cell has row, col, "
-            "rowspan, colspan, text, kind (header or data), without private image regions. "
-            "markdown_simple_only supports unmerged tables with one header row.",
-        }.get(task.id),
+        "output_contract": OUTPUT_CONTRACT_TEXT.get(task.id),
         "eligibility_checks": checks,
         "do_not_infer": task.do_not_infer,
         "required_verification_contracts": list(candidate.verification_contracts),
         "calibrated_domain": candidate.calibrated_domain,
-        "runtime_restrictions": (
-            "One primitive add/subtract/multiply/divide expression, exact result, no rounding or "
-            "derived percentages. Units must satisfy the primitive calculator contract."
-            if task.id == "grounded_arithmetic"
-            else None
-        ),
+        "runtime_restrictions": RUNTIME_RESTRICTIONS.get(task.id),
     }
 
 
