@@ -3802,7 +3802,7 @@ class SynthesisCoordinator:
         }
         retry_feedback: str | None = None
         detection = self.config.runtime.repetition_detection
-        if detection is not None and stage in detection.stages and detection.recovery == "retry":
+        if detection is not None and detection.applies_to(stage) and detection.recovery == "retry":
             retryable.add("MODEL_OUTPUT_REPETITION")
         prior_error: str | None = None
         for attempt in range(self.config.runtime.structured_output_max_attempts):

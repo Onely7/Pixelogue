@@ -359,6 +359,14 @@ class VllmClient:
             timeout=runtime.request_timeout_seconds,
         )
 
+    def _timeout(self, max_tokens: int) -> httpx.Timeout:
+        """Allow long structured outputs to finish instead of timing out and resending."""
+        seconds = float(self.runtime.request_timeout_seconds)
+        per_1k = self.runtime.timeout_seconds_per_1k_output_tokens
+        if per_1k is not None:
+            seconds = min(900.0, max(seconds, 60.0 + max_tokens * per_1k / 1000))
+        return httpx.Timeout(seconds, connect=min(seconds, 30.0))
+
     def _validate_local_endpoint(self) -> None:
         host = urlparse(str(self.endpoint.base_url)).hostname
         if host not in {"127.0.0.1", "localhost", "::1"}:
@@ -993,7 +1001,7 @@ class VllmClient:
             ),
         }
         detection = self.runtime.repetition_detection
-        if detection is not None and stage in detection.stages:
+        if detection is not None and detection.applies_to(stage):
             body["repetition_detection"] = detection.model_dump(exclude={"stages", "recovery"})
         body.update(self.adapter.extra_body())
         return body
@@ -1027,7 +1035,9 @@ class VllmClient:
                 )
             started = time.perf_counter()
             try:
-                response = self.client.post("chat/completions", json=body)
+                response = self.client.post(
+                    "chat/completions", json=body, timeout=self._timeout(max_tokens)
+                )
                 duration_ms = round((time.perf_counter() - started) * 1000)
                 if self.store is not None and attempt_id is not None:
                     self.store.save_model_attempt_response(

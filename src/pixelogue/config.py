@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 from collections.abc import Mapping
 from fractions import Fraction
@@ -257,6 +258,12 @@ class StorageConfig(StrictModel):
     require_local_wal: bool = True
 
 
+# Structured extraction stages whose runaway output can be stopped and retried.
+REPETITION_GUARD_STAGES = frozenset(
+    {"evidence_extraction", "candidate_binding", "question_draft", "image_profile"}
+)
+
+
 class RepetitionDetectionConfig(StrictModel):
     """Bound engine-side repetition stopping to the two extraction stages."""
 
@@ -265,24 +272,41 @@ class RepetitionDetectionConfig(StrictModel):
     min_count: Annotated[int, Field(ge=2, le=1024)] = 64
     recovery: Literal["retry", "abstain"] = "retry"
     stages: Annotated[
-        tuple[Literal["evidence_extraction", "candidate_binding"], ...],
-        Field(min_length=1, max_length=2),
+        tuple[Annotated[str, Field(min_length=1, max_length=64)], ...],
+        Field(min_length=1, max_length=8),
     ] = ("evidence_extraction", "candidate_binding")
 
     @model_validator(mode="after")
     def validate_patterns(self) -> RepetitionDetectionConfig:
-        """Reject inverted pattern ranges and repeated stage names."""
+        """Reject inverted ranges and stage patterns outside structured extraction stages.
+
+        Patterns use shell-style matching. Public question and answer generation and every
+        judge keep their unmodified decoding.
+        """
+        from pixelogue.prompts import STAGE_INSTRUCTIONS
+
         if self.min_pattern_size > self.max_pattern_size:
             raise ValueError("minimum pattern size exceeds maximum")
         if len(self.stages) != len(set(self.stages)):
             raise ValueError("repetition detection stages must be unique")
+        for pattern in self.stages:
+            matched = fnmatch.filter(STAGE_INSTRUCTIONS, pattern)
+            if not matched or not set(matched) <= REPETITION_GUARD_STAGES | {
+                stage for stage in STAGE_INSTRUCTIONS if stage.endswith("_source")
+            }:
+                raise ValueError(f"Repetition detection pattern {pattern!r} is not allowed")
         return self
+
+    def applies_to(self, stage: str) -> bool:
+        """Return whether the guard covers one model stage."""
+        return any(fnmatch.fnmatchcase(stage, pattern) for pattern in self.stages)
 
 
 class RuntimeConfig(StrictModel):
     """Inference request and retry boundaries."""
 
     request_timeout_seconds: Annotated[int, Field(ge=1, le=600)] = 180
+    timeout_seconds_per_1k_output_tokens: Annotated[int, Field(ge=1, le=600)] | None = None
     transport_max_attempts: Literal[1, 2, 3] = 3
     structured_output_max_attempts: Literal[1, 2, 3] = 2
     max_concurrent_images: Annotated[int, Field(ge=1, le=64)] = 1
