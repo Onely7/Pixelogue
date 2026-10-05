@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+import pytest
+
 from pixelogue.contracts import (
     ConversationArtifact,
     InstructionCandidate,
@@ -119,6 +121,119 @@ def test_three_independent_votes_and_adjudication_keep_originals(tmp_path: Path)
     row = next(item for item in adjudicated["items"] if item["audit_id"] == audit_id)
     assert row["question"]["state"] == "adjudicated"
     assert len(row["question"]["votes"]) == 3
+
+
+def test_single_rater_resolution_keeps_provisional_labels_and_unknowns(tmp_path: Path) -> None:
+    pack = build_audit_pack(_cases(tmp_path / "image.png"), rate=1.0, seed=13)
+    met_id, not_met_id, unknown_id = (item.audit_id for item in pack.items[:3])
+    question_votes = (
+        QuestionBallot(
+            audit_id=met_id,
+            rater_id="human-1",
+            grounding="MET",
+            operation_match="MET",
+            answerability="MET",
+            nonredundancy="MET",
+            naturalness="MET",
+            note="",
+        ),
+        QuestionBallot(
+            audit_id=not_met_id,
+            rater_id="human-1",
+            grounding="MET",
+            operation_match="MET",
+            answerability="MET",
+            nonredundancy="NOT_MET",
+            naturalness="MET",
+            note="Question repeats a public fact",
+        ),
+        QuestionBallot(
+            audit_id=unknown_id,
+            rater_id="human-1",
+            grounding="MET",
+            operation_match="UNKNOWN",
+            answerability="MET",
+            nonredundancy="MET",
+            naturalness="MET",
+            note="Operation not supplied",
+        ),
+    )
+    answer_votes = (
+        AnswerBallot(
+            audit_id=met_id,
+            rater_id="human-1",
+            correctness="MET",
+            evidence="MET",
+            note="",
+        ),
+        AnswerBallot(
+            audit_id=not_met_id,
+            rater_id="human-1",
+            correctness="NOT_MET",
+            evidence="MET",
+            note="Incorrect answer",
+        ),
+        AnswerBallot(
+            audit_id=unknown_id,
+            rater_id="human-1",
+            correctness="MET",
+            evidence="UNKNOWN",
+            note="Image detail is unclear",
+        ),
+    )
+
+    report = resolve_audit(pack, question_votes, answer_votes, required_raters=1)
+
+    assert report["required_raters"] == 1
+    for ballot in ("question", "answer"):
+        rows = {item["audit_id"]: item[ballot] for item in report["items"]}
+        assert (rows[met_id]["state"], rows[met_id]["label"]) == ("single_rater", "MET")
+        assert (rows[not_met_id]["state"], rows[not_met_id]["label"]) == (
+            "single_rater",
+            "NOT_MET",
+        )
+        assert (rows[unknown_id]["state"], rows[unknown_id]["label"]) == ("unknown", None)
+        assert all(rows[item.audit_id]["state"] == "unreviewed" for item in pack.items[3:])
+        assert report["summary"][ballot]["original_agreement_rate"] is None
+        assert report["summary"][ballot]["rated"] == 3
+
+
+def test_one_vote_does_not_complete_default_three_rater_audit(tmp_path: Path) -> None:
+    pack = build_audit_pack(_cases(tmp_path / "image.png"), rate=0.5, seed=13)
+    audit_id = pack.items[0].audit_id
+    question_vote = QuestionBallot(
+        audit_id=audit_id,
+        rater_id="human-1",
+        grounding="MET",
+        operation_match="MET",
+        answerability="MET",
+        nonredundancy="MET",
+        naturalness="MET",
+        note="",
+    )
+    answer_vote = AnswerBallot(
+        audit_id=audit_id,
+        rater_id="human-1",
+        correctness="MET",
+        evidence="MET",
+        note="",
+    )
+
+    report = resolve_audit(pack, (question_vote,), (answer_vote,))
+
+    assert report["required_raters"] == 3
+    row = next(item for item in report["items"] if item["audit_id"] == audit_id)
+    assert row["question"]["state"] == "unreviewed"
+    assert row["answer"]["state"] == "unreviewed"
+    assert row["question"]["votes"] == [question_vote.model_dump(mode="json")]
+    assert row["answer"]["votes"] == [answer_vote.model_dump(mode="json")]
+
+
+def test_audit_resolution_rejects_zero_required_raters(tmp_path: Path) -> None:
+    pack = build_audit_pack(_cases(tmp_path / "image.png"), rate=0.5, seed=13)
+
+    with pytest.raises(ValueError):
+        resolve_audit(pack, (), (), required_raters=0)
 
 
 def test_audit_frame_keeps_accepted_prefix_and_unanswered_stops(

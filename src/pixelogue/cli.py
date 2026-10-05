@@ -11,6 +11,7 @@ from typing import Annotated, Literal, cast
 
 import typer
 
+from pixelogue.audit_ui import AuditSession, SupplementalPack, make_audit_server
 from pixelogue.capabilities import evaluate_capabilities
 from pixelogue.config import load_config
 from pixelogue.contracts import (
@@ -202,7 +203,7 @@ def audit_resolve_command(
     adjudications: Annotated[
         Path | None, typer.Option("--adjudications", exists=True, dir_okay=False)
     ] = None,
-    required_raters: Annotated[int, typer.Option(min=2, max=10)] = 3,
+    required_raters: Annotated[int, typer.Option(min=1, max=10)] = 3,
 ) -> None:
     """Resolve independent human votes while preserving originals and unknowns."""
     pack = read_json(pack_path, AuditPack)
@@ -215,6 +216,37 @@ def audit_resolve_command(
     )
     write_audit_resolution(report, output)
     typer.echo(json.dumps({"output": str(output), "items": len(pack.items)}))
+
+
+@app.command("audit-ui")
+def audit_ui_command(
+    pack_path: Annotated[Path, typer.Option("--pack", exists=True, dir_okay=False)],
+    output_dir: Annotated[Path, typer.Option("--output-dir", file_okay=False)],
+    rater_id: Annotated[str, typer.Option("--rater-id")],
+    context_path: Annotated[
+        Path | None, typer.Option("--context", exists=True, dir_okay=False)
+    ] = None,
+    supplemental_path: Annotated[
+        Path | None, typer.Option("--supplemental", exists=True, dir_okay=False)
+    ] = None,
+    port: Annotated[int, typer.Option(min=0, max=65535)] = 8765,
+) -> None:
+    """Serve resumable local annotations and provisional single-person results."""
+    from pixelogue.serialization import strict_json_object
+
+    pack = read_json(pack_path, AuditPack)
+    context = strict_json_object(context_path.read_text()) if context_path else None
+    supplement = read_json(supplemental_path, SupplementalPack) if supplemental_path else None
+    session = AuditSession(pack, output_dir, rater_id, context, supplement)
+    server = make_audit_server(session, port)
+    typer.echo(f"http://127.0.0.1:{server.server_port}/", err=True)
+    typer.echo(f"Ballots: {output_dir.resolve()} (single-rater provisional)", err=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
 
 
 @app.command("research-history")

@@ -300,13 +300,16 @@ def resolve_audit(
     *,
     required_raters: int = 3,
 ) -> dict[str, Any]:
-    """Keep all original human votes and unresolved states in the report."""
-    if required_raters < 2:
-        raise ValueError("Independent audit needs at least two raters")
+    """Keep original votes and distinguish one-rater results from agreement."""
+    if required_raters < 1:
+        raise ValueError("Audit needs at least one rater")
+    if required_raters == 1 and adjudications:
+        raise ValueError("A single-rater audit cannot be adjudicated")
     ids = {item.audit_id for item in pack.items}
     result: dict[str, Any] = {
         "pack_hash": pack.pack_hash,
         "required_raters": required_raters,
+        "evidence_level": "single_rater_provisional" if required_raters == 1 else "independent",
         "frame_counts": pack.frame_counts,
         "selected_counts": pack.selected_counts,
         "actual_rates": pack.actual_rates,
@@ -348,6 +351,8 @@ def resolve_audit(
                 }
                 continue
             current = [vote for vote in ballots if vote.audit_id == item.audit_id]
+            if required_raters == 1 and len(current) > 1:
+                raise ValueError("A single-rater audit cannot combine multiple votes")
             # Question consensus requires all five dimensions; answer consensus requires both.
             labels = [
                 tuple(
@@ -380,6 +385,9 @@ def resolve_audit(
             elif any("UNKNOWN" in label_set for label_set in labels):
                 state = "unknown"
                 label = None
+            elif required_raters == 1:
+                state = "single_rater"
+                label = "MET" if all(value == "MET" for value in labels[0]) else "NOT_MET"
             elif len(set(labels)) != 1:
                 state = "disagreement"
                 label = None
@@ -403,7 +411,9 @@ def resolve_audit(
         rated = len(rows) - states["unreviewed"] - states["not_applicable"]
         result["summary"][ballot] = {
             "states": dict(states),
-            "original_agreement_rate": states["agreed"] / rated if rated else None,
+            "original_agreement_rate": (
+                states["agreed"] / rated if rated and required_raters > 1 else None
+            ),
             "rated": rated,
         }
     return result
@@ -436,7 +446,9 @@ def write_audit_resolution(report: dict[str, Any], output: Path) -> None:
                 )
             )
     lines = [
-        "# Human audit resolution",
+        "# Single-rater provisional audit"
+        if report["required_raters"] == 1
+        else "# Human audit resolution",
         "",
         f"Pack: `{report['pack_hash']}`",
         "",
@@ -446,5 +458,12 @@ def write_audit_resolution(report: dict[str, Any], output: Path) -> None:
     for ballot in ("question", "answer"):
         item = report["summary"][ballot]
         lines.append(f"| {ballot} | {item['rated']} | {item['original_agreement_rate']} |")
-    lines += ["", "Unreviewed, unknown and disagreements remain separate in the JSON and CSV.", ""]
+    if report["required_raters"] == 1:
+        lines += ["", "One person's ratings are provisional; agreement is not measured.", ""]
+    else:
+        lines += [
+            "",
+            "Unreviewed, unknown and disagreements remain separate in the JSON and CSV.",
+            "",
+        ]
     output.with_suffix(".md").write_text("\n".join(lines), encoding="utf-8")

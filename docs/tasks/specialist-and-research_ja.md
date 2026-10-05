@@ -74,9 +74,21 @@ uv run --locked pixelogue research-exposure-report --output-dir artifacts/resear
 
 `audit-cases` は保存済みの生成結果から母集団を作ります。確定済み往復は accepted のターン例とし、次の公開質問・回答がないまま会話が止まった場合は別の停止例を残します。停止例も抽出母集団に含め、存在しない質問票・回答票は対象外とします。実行エラーは別件数で報告します。個別ターンの合格と品質候補の完成を混同しません。
 
+利用者1名が暫定的に確認するときは、`audit-ui` でlocalhost上の画面を開きます。候補回答を隠した質問票を対象全件について先に表示し、すべて回答した後に回答票を開きます。各票は送信時に `--output-dir` の `question-votes.jsonl` または `answer-votes.jsonl` へ保存され、同じ場所の `resolution.json` に1名の暫定集計を残します。同じpack、出力先、評価者IDで再開できます。質問の5項目と回答の2項目にはそれぞれ `MET`・`NOT_MET`・`UNKNOWN` を選べます。既存packには各質問の意図した操作が必ずしも含まれないため、表示資料だけで操作一致を判定できないときは `operation_match` を `UNKNOWN` にします。元の採否、手法、モデル、自動判定は評価画面へ出しません。
+
+画面では「はい」「いいえ」「判断できない」を選びます。選択中の下書きはブラウザーへ保存され、送信した票だけが集計対象です。送信した票は確定し、後の会話履歴で先行回答を見た後に変更できません。質問は履歴の浅い段階から順に表示します。`--context` で監査IDごとの公開操作を指定でき、`--supplemental` では画像の操作機会と抽出内容の真偽を別票で収集できます。画像だけの操作機会、全質問、全回答、抽出内容の順で表示し、モデルの抽出内容が質問・回答の判断に影響しないようにします。操作機会の対象範囲と抽出標本は別の来歴記録へ残し、未確認の操作や標本外の情報まで評価済みにはしません。
+
+当面は1名の実票で暫定集計を行います。保存票から再生成するときは `audit-resolve --required-raters 1` を使います。1名の結果は `single_rater_provisional` として記録し、一致率は未測定です。独立3名の合意や裁定済みの人手正解とは区別します。将来、複数名の監査を行う場合は元票を別に保持して不一致を裁定できます。既存の `audit-resolve` の既定値3名は変更していません。
+
+再開時は `state.json` を正本として票と集計を復元します。画像のバイト、pack、公開操作、追加票のいずれかが変わった場合は同じ保存先で続行できません。別の評価対象には新しい保存先を使ってください。追加票は `supplemental-votes.jsonl` と `supplemental-summary.json` へ保存します。`--port 0` は空いているlocalhostのポートを割り当てます。モデル呼び出しやGPUは不要です。
+
+リモートサーバーで実行するときは、アプリのポート転送で表示されたlocalhostのURLを開きます。手元の転送ポートはサーバー側の `--port` と異なっていても構いません。SSHで手動転送する場合は、手元の端末で `ssh -N -L 18765:127.0.0.1:8765 USER@SERVER` を実行し、`http://localhost:18765/` を開きます。踏み台が必要ならSSHに `-J JUMP_HOST` を追加します。転送中はSSHを開いたままにしてください。アノテーションサーバーはリモート側の `127.0.0.1` で待ち受け、保存先はリモート側です。
+
 ```bash
 uv run --locked pixelogue audit-cases --conversations artifacts/pilot/conversations.jsonl --artifact-root artifacts/prepared --output artifacts/audit-cases.jsonl
 uv run --locked pixelogue audit-pack --cases validation/local-audit-cases.jsonl --output-dir artifacts/audit --rate 0.1
+uv run --locked pixelogue audit-ui --pack artifacts/audit/pack.json --output-dir artifacts/audit/user-1 --rater-id user-1
+uv run --locked pixelogue audit-resolve --pack artifacts/audit/pack.json --question-votes artifacts/audit/user-1/question-votes.jsonl --answer-votes artifacts/audit/user-1/answer-votes.jsonl --required-raters 1 --output artifacts/audit/user-1/resolution.json
 uv run --locked pixelogue audit-resolve --pack artifacts/audit/pack.json --question-votes artifacts/audit/question-votes.jsonl --answer-votes artifacts/audit/answer-votes.jsonl --output artifacts/audit/resolution.json
 ```
 
