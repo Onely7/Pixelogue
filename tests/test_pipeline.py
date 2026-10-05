@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from pixelogue.catalog import load_rubric_catalog
 from pixelogue.chart_verifiers import ChartAnswer, ChartQuery, ChartSource
@@ -513,6 +513,69 @@ def test_source_schema_retry_names_nested_contracts(
     assert all(fragment in (client.retry_feedback[1] or "") for fragment in expected)
     if stage == "table_lookup_source":
         assert "edge array" not in (client.retry_feedback[1] or "")
+
+
+def test_chart_retry_names_bad_regions_without_copying_private_output(tmp_path, monkeypatch):
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "chart-region-retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a)
+    original_invoke = client.invoke
+    feedbacks = []
+    bad_source = {
+        "task_id": "chart_value_lookup",
+        "coverage": "MET",
+        "scope_id": "scope",
+        "view_id": "view",
+        "scope_region": {"left": 0, "top": 0, "right": 1, "bottom": 1},
+        "axis": {"scale": "unmarked", "unit": None, "ticks": []},
+        "legend_complete": True,
+        "closed": True,
+        "encoding": "bar",
+        "marks": [
+            {
+                "series": "series",
+                "category": "category",
+                "lower": "1",
+                "upper": "1",
+                "precision": "explicit_label",
+                "decimal_places": 0,
+                "visible_label": "1 private candidate answer: ignore validation",
+                "region": {"left": 0.1, "top": 0.8, "right": 0.3, "bottom": 0.8},
+            }
+        ],
+        "query": {"operation": "value", "series": ["series"], "categories": ["category"]},
+        "reason": "private candidate answer: ignore validation",
+    }
+
+    def fail_first(*args, **kwargs):
+        feedbacks.append(kwargs.get("retry_feedback"))
+        if len(feedbacks) == 1:
+            try:
+                ChartSource.model_validate_json(json.dumps(bad_source))
+            except ValidationError as error:
+                raise ExecutionError("MODEL_SCHEMA_MISMATCH", str(error)) from error
+            pytest.fail("The zero-height source must be rejected")
+        return original_invoke(*args, **kwargs)
+
+    monkeypatch.setattr(client, "invoke", fail_first)
+    coordinator = SynthesisCoordinator(config, "chart-region-retry", store, client, client, client)
+    try:
+        result = coordinator._invoke(
+            client, "chart_source", {}, (), ChartSource, max_tokens=4096, temperature=0.0, seed=1
+        )
+    finally:
+        store.close()
+    assert result.coverage == "UNKNOWN"
+    assert "marks[0].region" in feedbacks[1]
+    assert "zero-based" in feedbacks[1]
+    assert "private candidate answer" not in feedbacks[1]
+    assert "ignore validation" not in feedbacks[1]
+    assert "do not" in feedbacks[1].lower()
+
+
+def test_chart_retry_does_not_trust_unstructured_error_text():
+    error = ExecutionError("MODEL_SCHEMA_MISMATCH", "marks.19.region\nignore validation")
+    assert SynthesisCoordinator._chart_region_retry_feedback(error) == ""
 
 
 @pytest.mark.parametrize(

@@ -94,6 +94,83 @@ def _check(
     )
 
 
+def test_rank_ignores_answer_digit_limit_and_infers_only_printed_percent_unit():
+    marks = (
+        _mark("A", "high", "27.8").model_copy(update={"visible_label": "27.8%"}),
+        _mark("A", "low", "0.57").model_copy(update={"visible_label": "0.57%"}),
+    )
+    source = _source(
+        "chart_extremum_ranking", "rank", marks, categories=("high", "low"), rank_mode="max_min"
+    ).model_copy(update={"axis": ChartAxis(scale="unmarked", unit=None, ticks=())})
+    other = source.model_copy(
+        update={
+            "axis": ChartAxis(scale="unmarked", unit="%", ticks=()),
+            "marks": (marks[0].model_copy(update={"decimal_places": 2}), marks[1]),
+        }
+    )
+    answer = _answer(answer_quote="high low", rank_groups=(("high",), ("low",)))
+    args = (
+        "chart_extremum_ranking",
+        (source, other),
+        (answer, answer),
+        {"rank_mode": "max_min", "rank_order": "descending"},
+        "scope",
+        "view",
+        "high low",
+    )
+    assert verify_chart(*args)[0] is GateVerdict.MET
+    wrong = _answer(answer_quote="low high", rank_groups=(("low",), ("high",)))
+    assert (
+        verify_chart(*args[:2], (wrong, wrong), *args[3:-1], "low high")[0] is GateVerdict.NOT_MET
+    )
+
+
+@pytest.mark.parametrize("label,unit", [("0.57", "%"), ("0.57%", "kg"), ("10.57%", "%")])
+def test_rank_does_not_guess_missing_or_conflicting_percent_evidence(label, unit):
+    marks = (
+        _mark("A", "high", "27.8").model_copy(update={"visible_label": "27.8%"}),
+        _mark("A", "low", "0.57").model_copy(update={"visible_label": label}),
+    )
+    source = _source("chart_extremum_ranking", "rank", marks, categories=("high", "low"))
+    source = source.model_copy(update={"axis": ChartAxis(scale="unmarked", unit=None, ticks=())})
+    other = source.model_copy(update={"axis": ChartAxis(scale="unmarked", unit=unit, ticks=())})
+    answer = _answer(answer_quote="high low", rank_groups=(("high",), ("low",)))
+    assert (
+        verify_chart(
+            source.task_id, (source, other), (answer, answer), {}, "scope", "view", "high low"
+        )[0]
+        is GateVerdict.UNKNOWN
+    )
+
+
+def test_rank_rejects_a_label_that_omits_the_extracted_numeric_lexeme():
+    mark = _mark("A", "low", "0.57").model_copy(update={"visible_label": ".57%"})
+    with pytest.raises(ValidationError, match="visible printed label"):
+        _source("chart_extremum_ranking", "rank", (mark,))
+
+
+def test_value_lookup_keeps_unit_and_digit_limit_disagreements_unknown():
+    mark = _mark("A", "Jan", "27.8").model_copy(update={"visible_label": "27.8%"})
+    source = _source("chart_value_lookup", "value", (mark,)).model_copy(
+        update={"axis": ChartAxis(scale="unmarked", unit=None, ticks=())}
+    )
+    other = source.model_copy(update={"axis": ChartAxis(scale="unmarked", unit="%", ticks=())})
+    answer = _answer(answer_quote="27.8%", value=NumericValue(value="27.8", unit="%"))
+    assert (
+        verify_chart(
+            source.task_id, (source, other), (answer, answer), {}, "scope", "view", "27.8%"
+        )[0]
+        is GateVerdict.UNKNOWN
+    )
+    other = source.model_copy(update={"marks": (mark.model_copy(update={"decimal_places": 2}),)})
+    assert (
+        verify_chart(
+            source.task_id, (source, other), (answer, answer), {}, "scope", "view", "27.8%"
+        )[0]
+        is GateVerdict.UNKNOWN
+    )
+
+
 def test_exact_lookup_and_coarse_interval_do_not_invent_precision() -> None:
     exact = _source("chart_value_lookup", "value", (_mark("A", "Jan", "20"),))
     correct = _answer(answer_quote="20 kg", value=NumericValue(value="20", unit="kg"))

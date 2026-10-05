@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from pixelogue.catalog import load_task_catalog, task_catalog
 from pixelogue.config import ModelEndpoint, PixelogueConfig
@@ -3118,6 +3118,7 @@ class SynthesisCoordinator:
                                 " N/A or unknown as a numeric endpoint. All mark boxes must be"
                                 " positive-extent rectangles inside scope_region."
                             )
+                            retry_feedback += self._chart_region_retry_feedback(error)
                     elif error.reason == "EVIDENCE_IMAGE_MISMATCH":
                         retry_feedback = (
                             "The previous response referred to another image. Re-examine only the "
@@ -3166,6 +3167,34 @@ class SynthesisCoordinator:
                 raise
             return response.value
         raise AssertionError("structured output attempt loop did not return")
+
+    @staticmethod
+    def _chart_region_retry_feedback(error: ExecutionError) -> str:
+        """Name invalid chart regions without copying model values or repairing geometry."""
+        cause = error.__cause__
+        if not isinstance(cause, ValidationError):
+            return ""
+        indices = sorted(
+            {
+                loc[1]
+                for item in cause.errors(
+                    include_input=False, include_context=False, include_url=False
+                )
+                if len(loc := item["loc"]) >= 3
+                and loc[0] == "marks"
+                and isinstance(loc[1], int)
+                and loc[2] == "region"
+            }
+        )[:8]
+        if not indices:
+            return ""
+        paths = ", ".join(f"marks[{index}].region" for index in indices)
+        return (
+            f" Invalid region fields (zero-based indices): {paths}."
+            " Re-read those visible marks in the attached image. Keep every rectangle"
+            " positive in width and height and inside the public scope. Do not invent or"
+            " automatically expand a box; if it cannot be grounded, return UNKNOWN."
+        )
 
     @staticmethod
     def _structured_retry_feedback(reason: str) -> str:

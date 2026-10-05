@@ -67,7 +67,7 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "chart_encoding_check",
-            "2",
+            "3",
             supported_tasks=frozenset(
                 {
                     "chart_value_lookup",

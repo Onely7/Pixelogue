@@ -201,8 +201,33 @@ def _canonical(source: ChartSource) -> dict[str, object]:
     result = source.model_dump(mode="json", exclude={"reason"})
     for mark in result["marks"]:
         mark.pop("region", None)
+        if source.task_id == "chart_extremum_ranking" and source.query.operation == "rank":
+            # Ranking returns category labels; output digit limits cannot change their order.
+            mark.pop("decimal_places", None)
+    if (
+        source.task_id == "chart_extremum_ranking"
+        and source.query.operation == "rank"
+        and source.axis is not None
+        and source.axis.scale == "unmarked"
+        and source.axis.unit in {None, "%"}
+        and _has_printed_percent_unit(source)
+    ):
+        result["axis"]["unit"] = "%"
     result["marks"].sort(key=lambda item: (item["series"], item["category"]))
     return result
+
+
+def _has_printed_percent_unit(source: ChartSource) -> bool:
+    """Infer a percent unit only from every complete, exact numeric mark label."""
+    if not source.marks:
+        return False
+    for mark in source.marks:
+        if mark.precision != "explicit_label" or mark.visible_label is None:
+            return False
+        match = re.fullmatch(r"\s*([+-]?\d+(?:\.\d+)?)\s*%\s*", mark.visible_label)
+        if match is None or parse_numeric_lexeme(match[1]) != parse_numeric_lexeme(mark.lower):
+            return False
+    return True
 
 
 def _interval(mark: ChartMark) -> tuple[Fraction, Fraction]:

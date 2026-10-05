@@ -19,6 +19,13 @@ code and catalog. A CPU fixture pass does not establish natural-image accuracy.
   instead of first truncating a large closed series at a fixed 2,048 tokens.
   Separated intervals can establish an extremum without establishing an exact
   number. Overlapping intervals cannot prove which mark is greater.
+- Ranking compares category order without an unused answer digit limit. An
+  unmarked axis may omit its unit when every exact numeric mark visibly prints
+  the same `%` unit and that printed number equals the extracted value. This
+  narrow correspondence does not apply to numeric lookup or reconstruction;
+  missing labels, conflicting units and different values remain unresolved.
+  Chart retries name invalid region indices without copying raw model content
+  or inventing corrected coordinates.
 - Registered positional descriptions for unlabeled chart marks resolve only
   within a closed set of horizontally separated marks. Both independent
   readings must agree on values, scope and corresponding overlapping regions.
