@@ -46,6 +46,18 @@ def test_required_servers_receive_distinct_gpus_or_report_shortfall() -> None:
     assert sum(not group for group in short.values()) == 1
 
 
+def test_bf16_standard_pair_needs_two_48gb_gpus_per_model() -> None:
+    endpoints = (
+        ("generator_a", _endpoint("Qwen/Qwen3.8-27B", 2), True),
+        ("generator_b", _endpoint("google/gemma-4-31B-it", 2), True),
+    )
+    enough = _allocate_required_gpus(endpoints, _gpus(4))
+    assert all(enough.values())
+    assert len({gpu for group in enough.values() for gpu in group}) == 4
+    short = _allocate_required_gpus(endpoints, _gpus(2))
+    assert sum(not group for group in short.values()) == 1
+
+
 @pytest.mark.parametrize("missing", ["N/A", "[N/A]"])
 def test_unknown_utilization_is_reported_without_admitting_the_device(
     missing: str,

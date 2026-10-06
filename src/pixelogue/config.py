@@ -22,7 +22,11 @@ from pixelogue.errors import ConfigurationError
 from pixelogue.serialization import canonical_hash, canonical_json, load_yaml
 
 PRIMARY_GENERATOR_REPOS = ("Qwen/Qwen3.8-27B-FP8", "google/gemma-4-31B-it-qat-w4a16-ct")
+BF16_GENERATOR_REPOS = ("Qwen/Qwen3.8-27B", "google/gemma-4-31B-it")
+STANDARD_GENERATOR_PAIRS = frozenset({PRIMARY_GENERATOR_REPOS, BF16_GENERATOR_REPOS})
 PILOT_GENERATOR_REPOS = ("Qwen/Qwen3.5-9B", "Qwen/Qwen3.5-9B")
+# The 2B router is the default; the unquantized Qwen3.8-27B may be named explicitly.
+ROUTER_REPOS = frozenset({"Qwen/Qwen3.5-2B", "Qwen/Qwen3.8-27B"})
 ALLOWED_QUANTIZATIONS = {
     "Qwen/Qwen3.8-27B-FP8": "fp8",
     "google/gemma-4-31B-it-qat-w4a16-ct": "compressed-tensors",
@@ -142,13 +146,15 @@ class ModelConfig(StrictModel):
     @model_validator(mode="after")
     def validate_roles(self) -> ModelConfig:
         """Require the approved image router and generation repositories."""
-        if self.router.repo_id != "Qwen/Qwen3.5-2B":
-            raise ValueError("router must be the approved Qwen/Qwen3.5-2B image router")
+        if self.router.repo_id not in ROUTER_REPOS:
+            raise ValueError("router must be Qwen/Qwen3.5-2B or the unquantized Qwen/Qwen3.8-27B")
+        if self.router.quantization is not None:
+            raise ValueError("the image router runs unquantized")
         generator_repos = (self.generator_a.repo_id, self.generator_b.repo_id)
-        if generator_repos not in {PRIMARY_GENERATOR_REPOS, PILOT_GENERATOR_REPOS}:
+        if generator_repos not in STANDARD_GENERATOR_PAIRS | {PILOT_GENERATOR_REPOS}:
             raise ValueError(
-                "generators must use the primary Qwen3.8-FP8/Gemma-w4a16 pair or the temporary "
-                "Qwen3.5-9B pilot pair"
+                "generators must use the quantized or bf16 Qwen3.8/Gemma 4 pair, or the "
+                "temporary Qwen3.5-9B pilot pair"
             )
         for endpoint in (self.generator_a, self.generator_b):
             expected_quantization = ALLOWED_QUANTIZATIONS.get(endpoint.repo_id)
@@ -390,8 +396,8 @@ class PixelogueConfig(StrictModel):
         if self.profile == "standard" and self.data.pilot:
             raise ValueError("standard profile cannot enable pilot mode")
         generator_repos = (self.models.generator_a.repo_id, self.models.generator_b.repo_id)
-        if self.profile == "standard" and generator_repos != PRIMARY_GENERATOR_REPOS:
-            raise ValueError("standard profile requires the primary Qwen3.8/Gemma model pair")
+        if self.profile == "standard" and generator_repos not in STANDARD_GENERATOR_PAIRS:
+            raise ValueError("standard profile requires the Qwen3.8/Gemma 4 model pair")
         return self
 
     @property

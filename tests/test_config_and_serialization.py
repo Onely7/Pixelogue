@@ -88,7 +88,41 @@ def test_unknown_model_and_quantization_are_rejected() -> None:
 def test_generator_pairs_cannot_mix_standard_and_pilot_models() -> None:
     base = load_config(Path("configs/pilot.yaml")).model_dump(mode="json")
     base["models"]["generator_a"]["repo_id"] = "Qwen/Qwen3.8-27B-FP8"
-    with pytest.raises(ValidationError, match="primary Qwen3.8-FP8/Gemma-w4a16 pair"):
+    with pytest.raises(ValidationError, match="quantized or bf16 Qwen3.8/Gemma 4 pair"):
+        PixelogueConfig.model_validate(base)
+
+
+def _bf16_standard() -> dict:
+    base = load_config(Path("configs/standard.yaml")).model_dump()
+    for role, repo in (
+        ("generator_a", "Qwen/Qwen3.8-27B"),
+        ("generator_b", "google/gemma-4-31B-it"),
+    ):
+        base["models"][role].update(repo_id=repo, quantization=None)
+    return base
+
+
+def test_standard_profile_accepts_the_unquantized_pair_and_a_qwen_router() -> None:
+    base = _bf16_standard()
+    config = PixelogueConfig.model_validate(base)
+    assert config.models.generator_b.quantization is None
+    base["models"]["router"] = {**base["models"]["generator_a"]}
+    assert PixelogueConfig.model_validate(base).models.router.repo_id == "Qwen/Qwen3.8-27B"
+
+
+@pytest.mark.parametrize(
+    ("role", "change"),
+    [
+        ("generator_a", {"quantization": "fp8"}),
+        ("generator_b", {"repo_id": "google/gemma-4-31B-it-qat-w4a16-ct"}),
+        ("router", {"repo_id": "Qwen/Qwen3.8-27B-FP8"}),
+        ("router", {"repo_id": "Qwen/Qwen3.8-27B", "quantization": "fp8"}),
+    ],
+)
+def test_unquantized_pair_rejects_quantization_and_mixed_checkpoints(role, change) -> None:
+    base = _bf16_standard()
+    base["models"][role].update(change)
+    with pytest.raises(ValidationError):
         PixelogueConfig.model_validate(base)
 
 

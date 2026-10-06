@@ -20,6 +20,9 @@ PARAMETER_COUNTS = {
     "Qwen/Qwen3.5-9B": 9_000_000_000,
     "Qwen/Qwen3.8-27B-FP8": 27_000_000_000,
     "google/gemma-4-31B-it-qat-w4a16-ct": 31_000_000_000,
+    # Unquantized checkpoints, from their published BF16 safetensors sizes.
+    "Qwen/Qwen3.8-27B": 27_800_000_000,
+    "google/gemma-4-31B-it": 31_250_000_000,
 }
 # Rounded above the resident weight sizes observed for the pinned quantized snapshots.
 # A model revision change requires a new startup check before relying on these estimates.

@@ -15,7 +15,7 @@ Pixelogue は、画像に基づく複数往復の質問と回答を作る Python
 - Open Images V7 の validation 画像とその近似画像グループは検証専用です。学習用には出力できません。
 - モデルの要求、応答、revision、processor revision、トークン数を保存します。
 - SQLite の WAL はローカルファイルシステムに置き、整合したバックアップだけを共有領域へコピーします。
-- モデルのdtypeはBF16に固定します。量子化は各生成器に固定されたチェックイン済みの方式(Qwen3.8-27BはFP8、Gemma 4 31BはW4A16 compressed-tensors)だけを許可し、それ以外の値は設定エラーとして拒否します。
+- モデルのdtypeはBF16に固定します。量子化版の組は、チェックイン済みの方式(Qwen3.8-27BはFP8、Gemma 4 31BはW4A16 compressed-tensors)だけを許可します。非量子化の `Qwen/Qwen3.8-27B` と `google/gemma-4-31B-it` の組には量子化の値を設定せず、それ以外は設定エラーとして拒否します。
 
 ## CPU だけで始める
 

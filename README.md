@@ -15,7 +15,7 @@ The repository implements the pipeline and a diagnostic pilot. It does not conta
 - Open Images V7 validation images and their visual-copy groups are evaluation-only and cannot be exported for training.
 - Model requests, responses, revisions, processor revisions, and token use are content-addressed.
 - SQLite WAL state stays on a local filesystem; consistent backups can be copied elsewhere.
-- Model dtype is fixed to BF16; only each generator's checked-in quantization method (FP8 for Qwen3.8-27B, compressed-tensors W4A16 for Gemma 4 31B) is accepted, and configuration rejects any other quantization value.
+- Model dtype is fixed to BF16. The quantized pair accepts only its checked-in methods (FP8 for Qwen3.8-27B, compressed-tensors W4A16 for Gemma 4 31B); the unquantized `Qwen/Qwen3.8-27B` and `google/gemma-4-31B-it` pair takes no quantization value, and configuration rejects anything else.
 
 ## Start on CPU
 

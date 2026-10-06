@@ -8,7 +8,9 @@ Pixelogue は、画像の割り当てと、対話の生成・評価を別の役�
 | 生成器・評価器A | `Qwen/Qwen3.8-27B-FP8` | `http://127.0.0.1:8002/v1` |
 | 生成器・評価器B | `google/gemma-4-31B-it-qat-w4a16-ct` | `http://127.0.0.1:8003/v1` |
 
-`configs/standard.yaml` では、Qwen3.8-27B-FP8 と Gemma 4 31B が対話を同数ずつ生成します。割り当てたモデルが、その対話の質問案、回答、1回だけ許される回答修復を最後まで担当します。さらに、すべての往復を両方のモデルが別々の盲検呼び出しで評価します。回答前の質問ゲート、往復全体の総合評価、各操作検証器の2回の読み取りを、それぞれのモデルが1回ずつ担当します。ゲートと総合評価は、2つの `MET` が揃った場合だけ合格です。互いの判定は入力へ含めません。ルーター（`models.router`、`Qwen/Qwen3.5-2B` に固定）は、タスク系統の割り当てのために各画像を分析するだけです。1回の要求で受け取る画像は1枚で、対話は書きません。
+`configs/standard.yaml` では、Qwen3.8-27B-FP8 と Gemma 4 31B が対話を同数ずつ生成します。割り当てたモデルが、その対話の質問案、回答、1回だけ許される回答修復を最後まで担当します。さらに、すべての往復を両方のモデルが別々の盲検呼び出しで評価します。回答前の質問ゲート、往復全体の総合評価、各操作検証器の2回の読み取りを、それぞれのモデルが1回ずつ担当します。ゲートと総合評価は、2つの `MET` が揃った場合だけ合格です。互いの判定は入力へ含めません。ルーター（`models.router`、既定は `Qwen/Qwen3.5-2B`）は、タスク系統の割り当てのために各画像を分析するだけです。1回の要求で受け取る画像は1枚で、対話は書きません。
+
+同じ役割には、量子化していない BF16 の組 `Qwen/Qwen3.8-27B` と `google/gemma-4-31B-it` も使えます。この組には量子化の値を設定しません。量子化版と非量子化版を混ぜた組は拒否します。BF16 版は約2倍のメモリが必要で、1モデルあたり 48 GiB の GPU 2台で tensor parallel にする（`runtime/vllm/generator-a-bf16.yaml`、`generator-b-bf16.yaml`）か、96 GiB の GPU 1台を使います。`served-model-name` にリポジトリIDを保てば、チェックポイントのローカル複製を読み込んでも構いません。`models.router` には 2B の代わりに非量子化の `Qwen/Qwen3.8-27B` も指定でき、その場合は生成器Aのサーバーを共有できます。
 
 `configs/pilot.yaml` は、一時的な検証用の設定です。2つの論理的な役割を、port 8002で動く1つの `Qwen/Qwen3.5-9B` サーバーへ割り当てます。評価要求は別々に送りますが、同じ重みを使うため、確認できるのはパイプラインの接続です。異なるモデルによる評価の多様性は確認できません。
 
@@ -39,7 +41,7 @@ GPU用パッケージがCPU開発環境を暗黙に変えないよう、vLLMは�
 uv sync --project runtime/vllm --locked
 ```
 
-vLLMは0.29.0に固定しています。サーバー設定には、モデルのrevision、dtype(BF16)、context長、tensor parallel数、GPUメモリ使用率、生成時の既定値を記録しています。標準生成モデルは同時系列数を64に制限します。1GPU起動試験ではvLLMのより大きい既定値がQwenのMambaキャッシュ容量を超えました。量子化は生成器ごとに固定されており、`generator-a.yaml`はQwen3.8-27B-FP8向けに`quantization: fp8`を、`generator-b.yaml`はW4A16版Gemma向けに`quantization: compressed-tensors`を指定します。`configs/standard.yaml`も同じ値を反映しており、`ModelConfig.validate_roles`はこれら以外の量子化指定を拒否します。
+vLLMは0.29.0に固定しています。サーバー設定には、モデルのrevision、dtype(BF16)、context長、tensor parallel数、GPUメモリ使用率、生成時の既定値を記録しています。標準生成モデルは同時系列数を64に制限します。1GPU起動試験ではvLLMのより大きい既定値がQwenのMambaキャッシュ容量を超えました。量子化は生成器ごとに固定されており、`generator-a.yaml`はQwen3.8-27B-FP8向けに`quantization: fp8`を、`generator-b.yaml`はW4A16版Gemma向けに`quantization: compressed-tensors`を指定します。`configs/standard.yaml`も同じ値を反映しており、`ModelConfig.validate_roles`はこれら以外の量子化指定を拒否します。非量子化のチェックポイントとルーターには、量子化の値を設定できません。
 
 評価器には画像全体と、結び付けた領域の切り出し画像を1回の要求で渡すことがあるため、生成器用のサーバー設定はすべて `limit-mm-per-prompt` を画像2枚にしています。ルーター用の設定は1枚のままです。
 
