@@ -16,7 +16,7 @@ original cohort. Scope amendments and final local results are stored under
 ```sh
 uv run --locked python validation/fetch_open_images_eval_2000.py
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/open-images-v7-eval-2000/sources.jsonl \
   --rights data/open-images-v7-eval-2000/rights.jsonl \
   --image-root data/open-images-v7-eval-2000 \
@@ -25,12 +25,13 @@ uv run --locked pixelogue ingest \
 
 ## Frozen synthesis conditions
 
-Copy `configs/paired-one-gpu-pilot.yaml` into `artifacts/open-images-2000/config.yaml`.
+Copy `configs/split-pilot.yaml` into `artifacts/open-images-2000/config.yaml`.
 Set `profile: standard`, `data.pilot: false`, `data.target_dialogues: 2000`, and `seed: 20261001`.
 Set `data.open_images.enabled: false` and `image_ids_manifest: null` to use the independently
 prepared manifest rather than the unchanged 20-image `prepare` route.
-Keep the primary Qwen/Gemma pair, default Qwen3.5-2B selector, pinned quantization and bfloat16.
-The already checked one-device server configuration is specific to zao01's 96 GiB GPU.
+The recorded campaign ran the since-retired FP8/W4A16 pair with the Qwen3.5-2B selector, from a
+former one-GPU configuration on zao01's 96 GiB GPU. A repeat uses the standard BF16 pair, the
+Qwen3.8-27B router and the split layout instead, so its results are not directly comparable.
 Keep eight candidates, two concurrent images, at least two committed turns and both judges.
 The seven uncalibrated specialist extensions remain outside normal selection.
 

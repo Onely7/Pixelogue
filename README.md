@@ -1,21 +1,21 @@
 # Pixelogue
 
-Pixelogue is a Python 3.12 pipeline for building image-grounded, multi-turn question-answer dialogues. It validates image rights, profiles each image with a small router model, drafts two to six turns that two blind evaluators check before and after each answer, selects a diverse subset, and exports public training content separately from ratings and provenance.
+Pixelogue is a Python 3.12 pipeline for building image-grounded, multi-turn question-answer dialogues. It validates image rights, profiles each image for task-family routing, drafts two to six turns that two blind evaluators check before and after each answer, selects a diverse subset, and exports public training content separately from ratings and provenance.
 
 The repository implements the pipeline and a diagnostic pilot. It does not contain a completed 30,000-dialogue corpus or fine-tuned weights.
 
 ## Safeguards built into the workflow
 
-- The router (`models.router`) is fixed to `Qwen/Qwen3.5-2B` and only profiles each image for task-family routing. It writes no dialogue, and no other model replaces it after a failure.
+- The router (`models.router`) is generator A's own `Qwen/Qwen3.8-27B` server and only profiles each image for task-family routing. It writes no dialogue, and no other model replaces it after a failure. Only the temporary Qwen3.5-9B pilot keeps a separate `Qwen/Qwen3.5-2B` router.
 - The conversation's generator drafts candidate questions for the operations routed to each turn. Deterministic checks and a merged question gate by both judges run before any answer exists, and only the first question that passes is answered.
 - Holistic review checks image facts, request fulfillment, history, target language, explicit formats, and safety together. Only two MET votes accept a turn; disagreement or uncertainty abstains, apart from one full-view tie-break and one answer repair that both judges review again. Every applicable operation validator must also pass.
 - Empty text, exact repeated questions, repeated facts, and substantial private-prompt echoes fail controller checks. A requested regrouping can be useful without adding a new fact.
 - With `evaluation.retain_accepted_prefix: true`, a quality stop retains an accepted prefix of at least two turns. Failed tails stay in private `conversation-stops` artifacts, never training output. Operational errors are not converted to accepted conversations. Changing evaluation settings requires a new run ID.
-- Evaluator roles A and B receive separate blind calls. Neither receives the other verdict or the generator role. The standard profile uses Qwen3.8-27B-FP8 and Gemma 4 31B (W4A16 compressed-tensors) as distinct model lineages.
+- Evaluator roles A and B receive separate blind calls. Neither receives the other verdict or the generator role. The standard profile uses Qwen3.8-27B and Gemma 4 31B as distinct model lineages.
 - Open Images V7 validation images and their visual-copy groups are evaluation-only and cannot be exported for training.
 - Model requests, responses, revisions, processor revisions, and token use are content-addressed.
 - SQLite WAL state stays on a local filesystem; consistent backups can be copied elsewhere.
-- Model dtype is fixed to BF16. The quantized pair accepts only its checked-in methods (FP8 for Qwen3.8-27B, compressed-tensors W4A16 for Gemma 4 31B); the unquantized `Qwen/Qwen3.8-27B` and `google/gemma-4-31B-it` pair takes no quantization value, and configuration rejects anything else.
+- Model dtype is fixed to BF16 and no model is quantized. Configuration accepts only the unquantized `Qwen/Qwen3.8-27B` and `google/gemma-4-31B-it` pair, or the temporary Qwen3.5-9B pilot, and rejects a `quantization` setting as an unknown field.
 
 ## Start on CPU
 
@@ -63,12 +63,12 @@ Japanese documentation begins at [README_ja.md](README_ja.md).
 
 | Role | Default repository |
 |---|---|
-| Image router | `Qwen/Qwen3.5-2B` |
-| Generator and evaluator A | [`Qwen/Qwen3.8-27B-FP8`](https://huggingface.co/Qwen/Qwen3.8-27B-FP8) |
-| Generator and evaluator B | [`google/gemma-4-31B-it-qat-w4a16-ct`](https://huggingface.co/google/gemma-4-31B-it-qat-w4a16-ct) |
+| Image router | `Qwen/Qwen3.8-27B` (generator A's server) |
+| Generator and evaluator A | [`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B) |
+| Generator and evaluator B | [`google/gemma-4-31B-it`](https://huggingface.co/google/gemma-4-31B-it) |
 | Independent training-side image processor | `Qwen/Qwen3-VL-8B-Instruct` |
 
-`configs/pilot.yaml` is a temporary one-GPU validation profile. It maps both logical generator and evaluator roles to one `Qwen/Qwen3.5-9B` endpoint, so it checks pipeline operation without providing evaluator-model diversity. It does not change the intended models in `configs/standard.yaml`.
+`configs/pilot.yaml` is a temporary one-GPU validation profile. It maps both logical generator and evaluator roles to one `Qwen/Qwen3.5-9B` endpoint, so it checks pipeline operation without providing evaluator-model diversity. Its images are routed by a separate `Qwen/Qwen3.5-2B` server. It does not change the intended models in `configs/standard.yaml`.
 
 All repository and processor revisions are pinned in the example configurations. Re-run `doctor` after intentionally changing any lock.
 

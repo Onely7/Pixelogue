@@ -111,7 +111,7 @@ uv run --locked pixelogue ingest \
 uv sync --locked --directory runtime/validators
 runtime/validators/.venv/bin/python validation/fetch_pubchem_chemical_eval.py
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/pubchem-2d-simple-eval/sources.jsonl \
   --rights data/pubchem-2d-simple-eval/rights.jsonl \
   --image-root data/pubchem-2d-simple-eval \
@@ -126,7 +126,7 @@ uv run --locked python validation/build_pubchem_chemical_cases.py
 ```sh
 runtime/validators/.venv/bin/python validation/fetch_pubchem_chemical_eval.py --cohort v2
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/pubchem-2d-v2-eval/sources.jsonl \
   --rights data/pubchem-2d-v2-eval/rights.jsonl \
   --image-root data/pubchem-2d-v2-eval \
@@ -143,7 +143,7 @@ uv run --locked python validation/build_pubchem_chemical_cases_v2.py
 ```sh
 uv run --locked python validation/fetch_screenspot_ui_eval.py
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/screenspot-ui-eval/sources.jsonl \
   --rights data/screenspot-ui-eval/rights.jsonl \
   --image-root data/screenspot-ui-eval \
@@ -158,7 +158,7 @@ uv run --locked python validation/build_screenspot_ui_cases.py
 ```sh
 uv run --locked python validation/fetch_screenspot_ui_eval.py --holdout
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/screenspot-ui-holdout/sources.jsonl \
   --rights data/screenspot-ui-holdout/rights.jsonl \
   --image-root data/screenspot-ui-holdout \
@@ -174,7 +174,7 @@ uv run --locked python validation/build_screenspot_ui_cases.py --holdout
 uv sync --locked --directory runtime/validators
 uv run --locked python validation/fetch_primus_music_eval.py
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/primus-music-eval/sources.jsonl \
   --rights data/primus-music-eval/rights.jsonl \
   --image-root data/primus-music-eval \

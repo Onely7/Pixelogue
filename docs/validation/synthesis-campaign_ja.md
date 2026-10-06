@@ -17,7 +17,7 @@ Open Images V7のvalidation splitから選んだ2,000画像は、合成パイプ
 ```sh
 uv run --locked python validation/fetch_open_images_eval_2000.py
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/open-images-v7-eval-2000/sources.jsonl \
   --rights data/open-images-v7-eval-2000/rights.jsonl \
   --image-root data/open-images-v7-eval-2000 \
@@ -27,9 +27,10 @@ uv run --locked pixelogue ingest \
 
 ## 実行条件
 
-合成用設定は標準Qwen/Gemma対、既定Qwen3.5-2B選択器、既存の量子化とbfloat16を保持します。
-今回のzao01では既に確認した1枚の96 GiB GPU用サーバー構成を使います。
-`configs/paired-one-gpu-pilot.yaml` のコピーで `profile: standard`、
+記録したキャンペーンは、現在は廃止した FP8・W4A16 の組と Qwen3.5-2B 選択器を、zao01 の
+96 GiB GPU 1枚用の旧設定で実行しました。再実行では標準の BF16 の組、Qwen3.8-27B ルーター、
+分割配置を使うため、結果は直接比較できません。
+`configs/split-pilot.yaml` のコピーで `profile: standard`、
 `data.pilot: false`、`data.target_dialogues: 2000`、`seed: 20261001` とします。
 `data.open_images.enabled: false`、`image_ids_manifest: null` とし、
 20画像用の `prepare` 設定から独立した取り込み済みmanifestを渡します。

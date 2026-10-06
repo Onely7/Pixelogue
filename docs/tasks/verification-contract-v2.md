@@ -80,7 +80,7 @@ also published in the operation contract.
 Bounded JSON whitespace requires the verified vLLM 0.29.0 XGrammar patch,
 explicit `xgrammar`, and ordinary whitespace enabled. Configuration loading
 now rejects an incompatible generator runtime before starting image calls.
-Do not invent a runtime manifest or change quantization to satisfy this check.
+Do not invent a runtime manifest to satisfy this check.
 
 Terminal stop records use the actual attempted turn index. Failures, invalid
 outputs and retries remain saved. Production vLLM usage outside the request's

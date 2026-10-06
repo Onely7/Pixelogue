@@ -1,21 +1,21 @@
 # Models and GPU checks
 
-Pixelogue separates image routing from dialogue generation and judging. The standard profile uses two different generator and evaluator model lineages. A temporary one-GPU pilot substitutes a smaller model to validate the complete execution path.
+Pixelogue separates image routing from dialogue generation and judging. The standard profile uses two different generator and evaluator model lineages, both unquantized. A temporary one-GPU pilot substitutes a smaller model to validate the complete execution path.
 
 | Role | Model | Default endpoint |
 |---|---|---|
-| Image router | `Qwen/Qwen3.5-2B` | `http://127.0.0.1:8000/v1` |
-| Generator and evaluator A | `Qwen/Qwen3.8-27B-FP8` | `http://127.0.0.1:8002/v1` |
-| Generator and evaluator B | `google/gemma-4-31B-it-qat-w4a16-ct` | `http://127.0.0.1:8003/v1` |
+| Image router | `Qwen/Qwen3.8-27B` (generator A's server) | `http://127.0.0.1:8002/v1` |
+| Generator and evaluator A | `Qwen/Qwen3.8-27B` | `http://127.0.0.1:8002/v1` |
+| Generator and evaluator B | `google/gemma-4-31B-it` | `http://127.0.0.1:8003/v1` |
 
-In `configs/standard.yaml`, Qwen3.8-27B-FP8 and Gemma 4 31B generate an equal share of conversations. The assigned model drafts the questions, writes the answers, and makes the one allowed answer repair for the entire conversation. Both models also judge every turn through separate blind calls: one question-gate call each before the answer, one holistic review each of the whole turn, and both readings of every operation validator. A gate or review passes only with two MET votes. The router (`models.router`, `Qwen/Qwen3.5-2B` by default) only profiles each image for task-family routing; it receives one image per request and writes no dialogue.
+In `configs/standard.yaml`, Qwen3.8-27B and Gemma 4 31B generate an equal share of conversations. The assigned model drafts the questions, writes the answers, and makes the one allowed answer repair for the entire conversation. Both models also judge every turn through separate blind calls: one question-gate call each before the answer, one holistic review each of the whole turn, and both readings of every operation validator. A gate or review passes only with two MET votes. The router (`models.router`) only profiles each image for task-family routing; it receives one image per request and writes no dialogue. It is generator A's own server: `models.router` must repeat `models.generator_a` exactly (the checked-in files use a YAML anchor), so routing needs no extra server or memory.
 
-The configuration also accepts the unquantized BF16 pair `Qwen/Qwen3.8-27B` and `google/gemma-4-31B-it` for the same roles, without a quantization value; a pair that mixes quantized and unquantized checkpoints is rejected. The BF16 checkpoints need about twice the memory: two 48 GiB GPUs per model with tensor parallelism (`runtime/vllm/generator-a-bf16.yaml` and `generator-b-bf16.yaml`), or one 96 GiB GPU per model. A server may load a local copy of a checkpoint as long as `served-model-name` keeps the repository ID. `models.router` may name the unquantized `Qwen/Qwen3.8-27B` instead of the 2B router and can then share generator A's server.
+No model is quantized, and dtype stays BF16. Configuration accepts only the `Qwen/Qwen3.8-27B` and `google/gemma-4-31B-it` pair, or the temporary Qwen3.5-9B pilot pair, and rejects any `quantization` setting as an unknown field. The earlier FP8 and W4A16 checkpoints and their separate Qwen3.5-2B router are no longer accepted for the standard pair.
 
-`configs/pilot.yaml` is a temporary validation override. It maps both logical roles to a shared `Qwen/Qwen3.5-9B` server on port 8002. The calls remain separate and blind, but the shared checkpoint means this profile tests pipeline wiring rather than evaluator-model diversity.
+`configs/pilot.yaml` is a temporary validation override. It maps both logical roles to a shared `Qwen/Qwen3.5-9B` server on port 8002, and a separate `Qwen/Qwen3.5-2B` server on port 8000 routes its images. The calls remain separate and blind, but the shared checkpoint means this profile tests pipeline wiring rather than evaluator-model diversity.
 
-`configs/paired-one-gpu-pilot.yaml` keeps the exact standard Qwen3.8/Gemma 4 pair and Qwen3.5-2B router, but schedules all three servers on a single idle 96 GiB-class GPU. Its paired `runtime/vllm/*-onegpu.yaml` files use ports 18102, 18103, and 18100 with memory fractions 0.44, 0.41, and 0.10. Start them sequentially on the same explicitly selected device, then run `doctor --config configs/paired-one-gpu-pilot.yaml --check-servers`. This is a pilot scheduling profile with the standard model identities and quantization, not a change to the standard profile. The three-server startup, image requests, synthesis, and replay were exercised on one RTX PRO 6000 Blackwell GPU; recheck capacity on other hardware.
-`configs/paired-one-gpu-diverse.yaml` uses the same endpoints and model locks with a 60-image evaluation target for the pinned Commons category sweep. It keeps evaluation-only inputs separate from training exports.
+`configs/split-pilot.yaml` keeps the standard models but places them on three GPUs that need not share a host: Gemma 4 31B on two 48 GiB GPUs (`runtime/vllm/generator-b-split.yaml`, port 18703) and Qwen3.8-27B, which also routes images, on one 96 GiB GPU (`runtime/vllm/generator-a-split.yaml`, port 18702, memory fraction 0.88). This layout ran with Gemma on two RTX 6000 Ada GPUs and Qwen on an RTX PRO 6000 Blackwell GPU of another host behind an SSH forward ([section 3](#split-layout-across-two-hosts)); recheck capacity on other hardware. This is a pilot scheduling profile, not a change to the standard profile.
+`configs/split-diverse.yaml` uses the same endpoints and model locks with a 60-image evaluation target for the pinned Commons category sweep. It keeps evaluation-only inputs separate from training exports.
 
 ## 1. Inspect before using a GPU
 
@@ -28,8 +28,8 @@ uv run --locked pixelogue doctor --config configs/pilot.yaml
 
 A GPU is considered idle by `doctor` only when utilization is 0% and used memory is below 1 GiB. Inspect the process table in `nvidia-smi` as well. Never take a device used by another process.
 
-Static `ready: true` means the pinned BF16 model servers can be assigned to the currently idle devices. Generator roles that share the same repository, revision, and endpoint are counted as one server. Static readiness is a capacity check, not a successful inference.
-For the pinned FP8 and W4A16 standard checkpoints, `doctor` uses conservative rounded resident-weight estimates and an 8 GiB cache allowance per shard. Recheck these estimates after a checkpoint revision or hardware change.
+Static `ready: true` means the pinned BF16 model servers can be assigned to the currently idle devices. Roles that share the same repository, revision, and endpoint, such as the router and generator A, are counted as one server. Static readiness is a capacity check, not a successful inference.
+`doctor` estimates resident BF16 weights from the published checkpoint sizes plus 10%: about 57 GiB for Qwen3.8-27B and 64 GiB for Gemma 4 31B, split evenly across tensor-parallel shards. Each model therefore needs two 48 GiB GPUs or one 96 GiB GPU. Recheck these estimates after a checkpoint revision or hardware change.
 
 After launch, `doctor --check-servers` checks the configured served model names. The chosen GPU is no longer idle at that point; a healthy already-running server can satisfy its role without being allocated again.
 
@@ -41,37 +41,66 @@ The application and vLLM use different lock files so GPU packages cannot silentl
 uv sync --project runtime/vllm --locked
 ```
 
-The runtime is pinned to vLLM 0.29.0. Server files pin model revisions, dtype (BF16), context length, tensor parallelism, memory utilization, and generation defaults. Both standard generators cap concurrent sequences at 64; vLLM's higher default exceeded the Qwen model's available Mamba cache blocks in a one-GPU startup probe. Quantization is pinned per generator: `generator-a.yaml` sets `quantization: fp8` for Qwen3.8-27B-FP8, and `generator-b.yaml` sets `quantization: compressed-tensors` for the W4A16 Gemma checkpoint. `configs/standard.yaml` mirrors the same pinned values, and `ModelConfig.validate_roles` rejects any other quantization value for these repositories. The unquantized checkpoints and the router must not set a quantization value.
+The runtime is pinned to vLLM 0.29.0. Server files set dtype (BF16), context length, tensor parallelism, memory utilization, the structured-output backend, and generation defaults. Both generators cap concurrent sequences at 32, the value used in the measured runs; vLLM's higher default exceeded the Qwen model's available Mamba cache blocks in an earlier one-GPU startup probe. Both select `xgrammar` with `disable_any_whitespace: false`. No server file sets a quantization method.
 
-Every generator server file sets `limit-mm-per-prompt` to two images, because a judge can receive the complete image and a crop of the bound region in one request. The router files keep one image.
+Every generator server file sets `limit-mm-per-prompt` to two images, because a judge can receive the complete image and a crop of the bound region in one request. The pilot router files keep one image.
+
+### Download the pinned weights
+
+The server files read the weights from `models/`, which is local-only and never committed, and serve them under their repository IDs. Start every server from the repository root. Download each pinned revision once to shared storage:
+
+```sh
+uv run --project runtime/vllm --locked hf download Qwen/Qwen3.8-27B \
+  --revision 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0 --local-dir models/Qwen3.8-27B
+uv run --project runtime/vllm --locked hf download google/gemma-4-31B-it \
+  --revision 842da3794eaa0b77d5f08bae87a17459d91ff475 --local-dir models/gemma-4-31B-it
+```
+
+Gemma requires accepting its license on Hugging Face and a token in the environment. Before serving, compare every file against the Hub's SHA-256 listing for the pinned revision and keep that record with the weights; the configurations pin the same revisions for model locks. vLLM detects a network filesystem and prefetches the checkpoint into the page cache. On the measured NFS mount, each model's weights loaded in under 30 seconds, and a server became ready in four to five minutes including compilation.
 
 ## 3. Run long GPU work in tmux
 
 The standard servers use these files:
 
 ```text
-runtime/vllm/generator-a.yaml        -> Qwen3.8-27B-FP8, port 8002, tensor parallel size 2
-runtime/vllm/generator-b.yaml        -> Gemma 4 31B, port 8003, tensor parallel size 2
-runtime/vllm/router-default.yaml   -> Qwen3.5-2B, port 8000, tensor parallel size 1
+runtime/vllm/generator-a.yaml   -> Qwen3.8-27B, port 8002, tensor parallel size 2 (also the router)
+runtime/vllm/generator-b.yaml   -> Gemma 4 31B, port 8003, tensor parallel size 2
 ```
 
-Run `doctor --config configs/standard.yaml` immediately before launch and assign only the idle GPUs it reports. Start each server in its own `tmux` window. For example, after replacing the device IDs with GPUs confirmed to be idle:
+Run `doctor --config configs/standard.yaml` immediately before launch and assign only the idle GPUs it reports. Start each server in its own `tmux` window from the repository root. For example, after replacing the device IDs with GPUs confirmed to be idle:
 
 ```sh
-CUDA_VISIBLE_DEVICES=0,1 HF_HOME=/var/tmp/pixelogue-hf \
+CUDA_VISIBLE_DEVICES=0,1 HF_HUB_OFFLINE=1 \
   uv run --project runtime/vllm --locked vllm serve \
   --config runtime/vllm/generator-a.yaml
 
-CUDA_VISIBLE_DEVICES=2,3 HF_HOME=/var/tmp/pixelogue-hf \
+CUDA_VISIBLE_DEVICES=2,3 HF_HUB_OFFLINE=1 \
   uv run --project runtime/vllm --locked vllm serve \
   --config runtime/vllm/generator-b.yaml
-
-CUDA_VISIBLE_DEVICES=4 HF_HOME=/var/tmp/pixelogue-hf \
-  uv run --project runtime/vllm --locked vllm serve \
-  --config runtime/vllm/router-default.yaml
 ```
 
-These device numbers are examples. Required memory depends on the hardware and serving runtime, so the static `doctor` result and an actual startup check are both required.
+These device numbers are examples. Required memory depends on the hardware and serving runtime, so the static `doctor` result and an actual startup check are both required. On 96 GiB GPUs, one GPU per model is enough when `tensor-parallel-size` is 1, as in the split files.
+
+### Split layout across two hosts
+
+The split files fit hosts with different GPUs. Run Pixelogue on the host with the two 48 GiB GPUs, start Gemma there, start Qwen on the 96 GiB GPU of the other host, and forward that host's port to the same local port. Both servers listen only on 127.0.0.1.
+
+```sh
+# Host with the 96 GiB GPU (replace the UUID with an inspected idle device)
+CUDA_VISIBLE_DEVICES=GPU-QWEN HF_HUB_OFFLINE=1 \
+  uv run --project runtime/vllm --locked vllm serve \
+  --config runtime/vllm/generator-a-split.yaml
+
+# Host with the two 48 GiB GPUs, which also runs Pixelogue
+CUDA_VISIBLE_DEVICES=GPU-GEMMA-0,GPU-GEMMA-1 HF_HUB_OFFLINE=1 \
+  uv run --project runtime/vllm --locked vllm serve \
+  --config runtime/vllm/generator-b-split.yaml
+ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=15 -L 127.0.0.1:18702:127.0.0.1:18702 QWEN-HOST
+uv run --locked pixelogue doctor --config configs/split-pilot.yaml --check-servers
+```
+
+Keep the forward in its own `tmux` window and restart it if it exits. Disable SSH connection sharing for the forward as shown: with a shared master connection, the master owns the forwarded port and keeps it after the forwarding client ends. If that happens, remove it with `ssh -O cancel -L 127.0.0.1:18702:127.0.0.1:18702 QWEN-HOST`.
 
 ### Temporary one-GPU pilot
 
@@ -146,7 +175,7 @@ For a completed frozen ABBA comparison, run `python3 validation/compare_paired_r
 A resumed comparison must record each GPU allocation interval and retain interrupted phase attempts. The report includes model loading, interrupted work and teardown, and excludes gaps between model sessions from experiment GPU hours. Reservation time stays in the cumulative ledger. Wall time and the number of model sessions are reported separately; a comparison spanning multiple sessions does not establish performance within a single model startup session.
 
 For an explicitly authorized later validation round, add `--campaign-id recheck-YYYYMMDD --additional-gpu-hours 2` to the `watch` command. The extension is added to the preserved cumulative ledger once per campaign ID. Reusing that ID on restart neither adds budget again nor reruns a completed pilot. The watcher runs one new pilot for a new campaign, then reacquires an idle GPU after the job until its extended budget expires.
-Each named extension can now allocate up to 24 GPU-hours for sustained, user-authorized validation. Record all model loading, inference and reservation intervals in the same ledger. A larger allowance does not change model identities, quantization or the idle-device check.
+Each named extension can now allocate up to 24 GPU-hours for sustained, user-authorized validation. Record all model loading, inference and reservation intervals in the same ledger. A larger allowance does not change model identities or the idle-device check.
 
 Add `--reserve-only` while diagnosing a failed pilot. This holds an idle GPU without launching the pilot; stop the watcher and restart with the same campaign ID without that flag to run the corrected job. Both phases consume the same cumulative GPU ledger.
 
@@ -161,13 +190,12 @@ vLLM continues with compilation, CUDA graph capture, and multimodal warmup after
 ```sh
 curl -fsS http://127.0.0.1:8002/v1/models
 curl -fsS http://127.0.0.1:8003/v1/models
-curl -fsS http://127.0.0.1:8000/v1/models
 uv run --locked pixelogue doctor \
   --config configs/standard.yaml \
   --check-servers
 ```
 
-Use `configs/pilot.yaml` and omit the port 8003 check when validating the temporary one-GPU profile.
+For the temporary one-GPU pilot, check ports 8002 and 8000 with `configs/pilot.yaml`.
 
 Before a 50-image run, send one image through the same structured-output stages. A server can pass the model-list check while its guided-decoding backend rejects a particular JSON Schema.
 
@@ -221,7 +249,7 @@ standard model servers. They do not launch or allocate another model server. Run
 PIXELOGUE_LIVE_RUBRIC=1 uv run --locked pytest -q -s tests/test_rubric_semantics.py
 ```
 
-For the checked one-GPU standard-pair configuration on ports 18102 and 18103, set `PIXELOGUE_LIVE_CONFIG=configs/paired-one-gpu-pilot.yaml` as well. This changes only the test endpoint addresses and keeps the standard model identities.
+For the split layout on ports 18702 and 18703, set `PIXELOGUE_LIVE_CONFIG=configs/split-pilot.yaml` as well. This changes only the test endpoint addresses and keeps the standard model identities.
 
 Ordinary test runs skip these external checks. The holistic checks include both supported answers
 and deliberately false image claims. `rate-existing` can compare holistic review on immutable
@@ -241,15 +269,7 @@ compare changes in backend and whitespace as a combined condition.
 
 ## Stop runaway JSON generation
 
-The experimental `runtime/vllm/*-whitespace.yaml` generator configurations select
-`xgrammar` and `disable_any_whitespace: true`. This constrains whitespace between JSON tokens;
-ordinary spaces inside strings remain available. In the pinned vLLM 0.29.0 backend,
-this setting must be applied when launching the server. Sending a similarly named
-request field alone does not establish that the setting was applied.
-Restart existing servers and record their launch manifest before comparing runs.
-The standard server configurations retain their existing decoding behavior. A faster
-experimental condition must also preserve supported candidate yield and task coverage
-before adoption.
+The generator server files keep whitespace between JSON tokens available (`xgrammar`, `disable_any_whitespace: false`). Suppressing it was evaluated earlier and not adopted. To test it again, set `disable_any_whitespace: true` when launching the server: in the pinned vLLM 0.29.0 backend the setting applies only at launch, and a similarly named request field alone does not establish that it was applied. Ordinary spaces inside strings remain available either way. Restart existing servers, record their launch manifest before comparing runs, and adopt a faster condition only if it also preserves supported candidate yield and task coverage.
 
 The engine repetition guard is on by default:
 
@@ -270,7 +290,7 @@ and every judge keep unmodified decoding; a pattern that matches any of those st
 fails validation. The thresholds are experimental, and a long legitimate repeated sequence
 may also stop. Set `runtime.repetition_detection: null` to disable the guard.
 `configs/repetition-detection-pilot.yaml` spells out the default guard and otherwise
-matches `configs/paired-one-gpu-pilot.yaml`.
+matches `configs/split-pilot.yaml`.
 
 `finish_reason: repetition` is recorded as `MODEL_OUTPUT_REPETITION`, preserves the
 raw response and incurred usage, and rejects even parseable JSON from the stopped

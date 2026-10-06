@@ -6,7 +6,7 @@ The visible output of one turn is only a question and an answer. Reaching that p
 
 ## 1. Start from healthy model servers
 
-Long GPU processes must run in `tmux`. Inspect `nvidia-smi`, choose an idle device explicitly, start the larger server first, and wait for `/v1/models` before starting the smaller router. The following files belong to the temporary one-GPU pilot, which substitutes Qwen3.5-9B for the standard Qwen3.8-27B-FP8 and Gemma 4 31B pair:
+Long GPU processes must run in `tmux`. Inspect `nvidia-smi`, choose an idle device explicitly, start the larger server first, and wait for `/v1/models` before starting the smaller router. The following files belong to the temporary one-GPU pilot, which substitutes Qwen3.5-9B for the standard Qwen3.8-27B and Gemma 4 31B pair and keeps a separate Qwen3.5-2B router:
 
 ```text
 runtime/vllm/generator-qwen35-9b.yaml  -> port 8002
@@ -105,7 +105,7 @@ flowchart TD
 
 ### Step 1: profile the image once
 
-The router (`models.router`, fixed to `Qwen/Qwen3.5-2B`) receives the image and a description of every task family that has an available operation: the family ID, its label, and its operation names. It returns `image_kind`, `readable_text`, `supported_families`, and a short reason. The decoder accepts only the listed family IDs. The router never sees a question, an answer, public history, or a dataset label, and it writes no public text.
+The router (`models.router`, generator A's own `Qwen/Qwen3.8-27B` server; `Qwen/Qwen3.5-2B` in the temporary pilot) receives the image and a description of every task family that has an available operation: the family ID, its label, and its operation names. It returns `image_kind`, `readable_text`, `supported_families`, and a short reason. The decoder accepts only the listed family IDs. The router never sees a question, an answer, public history, or a dataset label, and it writes no public text.
 
 Routing uses `supported_families` and whether `image_kind` is `screen`. If the profile is still malformed after the bounded retries, a private `image-profile-abstentions` record is written and routing falls back to fixed broad families; the image continues.
 

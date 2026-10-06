@@ -115,7 +115,7 @@ The [pinned PubChem manifest](../validation/pubchem_2d_eval_manifest.jsonl) iden
 uv sync --locked --directory runtime/validators
 runtime/validators/.venv/bin/python validation/fetch_pubchem_chemical_eval.py
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/pubchem-2d-simple-eval/sources.jsonl \
   --rights data/pubchem-2d-simple-eval/rights.jsonl \
   --image-root data/pubchem-2d-simple-eval \
@@ -130,7 +130,7 @@ The [second PubChem cohort](../validation/pubchem_2d_eval_v2_manifest.jsonl) exc
 ```sh
 runtime/validators/.venv/bin/python validation/fetch_pubchem_chemical_eval.py --cohort v2
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/pubchem-2d-v2-eval/sources.jsonl \
   --rights data/pubchem-2d-v2-eval/rights.jsonl \
   --image-root data/pubchem-2d-v2-eval \
@@ -147,7 +147,7 @@ The [pinned ScreenSpot manifest](../validation/screenspot_ui_eval_manifest.jsonl
 ```sh
 uv run --locked python validation/fetch_screenspot_ui_eval.py
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/screenspot-ui-eval/sources.jsonl \
   --rights data/screenspot-ui-eval/rights.jsonl \
   --image-root data/screenspot-ui-eval \
@@ -162,7 +162,7 @@ The separate [ScreenSpot holdout manifest](../validation/screenspot_ui_holdout_m
 ```sh
 uv run --locked python validation/fetch_screenspot_ui_eval.py --holdout
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/screenspot-ui-holdout/sources.jsonl \
   --rights data/screenspot-ui-holdout/rights.jsonl \
   --image-root data/screenspot-ui-holdout \
@@ -178,7 +178,7 @@ The [pinned PrIMuS manifest](../validation/primus_music_eval_manifest.jsonl) ide
 uv sync --locked --directory runtime/validators
 uv run --locked python validation/fetch_primus_music_eval.py
 uv run --locked pixelogue ingest \
-  --config configs/paired-one-gpu-pilot.yaml \
+  --config configs/split-pilot.yaml \
   --sources data/primus-music-eval/sources.jsonl \
   --rights data/primus-music-eval/rights.jsonl \
   --image-root data/primus-music-eval \

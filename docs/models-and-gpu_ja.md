@@ -1,21 +1,21 @@
 # モデルとGPUの確認
 
-Pixelogue は、画像の割り当てと、対話の生成・評価を別の役割に分けます。standard プロファイルでは、生成器と評価器に異なる2つのモデル系列を使います。一時的な1 GPU用の pilot では、パイプライン全体の動作を確認するため、小さい代替モデルを使います。
+Pixelogue は、画像の割り当てと、対話の生成・評価を別の役割に分けます。standard プロファイルでは、生成器と評価器に異なる2つのモデル系列を使い、どちらも量子化しません。一時的な1 GPU用の pilot では、パイプライン全体の動作を確認するため、小さい代替モデルを使います。
 
 | 役割 | モデル | 既定のエンドポイント |
 |---|---|---|
-| 画像のルーター | `Qwen/Qwen3.5-2B` | `http://127.0.0.1:8000/v1` |
-| 生成器・評価器A | `Qwen/Qwen3.8-27B-FP8` | `http://127.0.0.1:8002/v1` |
-| 生成器・評価器B | `google/gemma-4-31B-it-qat-w4a16-ct` | `http://127.0.0.1:8003/v1` |
+| 画像のルーター | `Qwen/Qwen3.8-27B`（生成器Aのサーバー） | `http://127.0.0.1:8002/v1` |
+| 生成器・評価器A | `Qwen/Qwen3.8-27B` | `http://127.0.0.1:8002/v1` |
+| 生成器・評価器B | `google/gemma-4-31B-it` | `http://127.0.0.1:8003/v1` |
 
-`configs/standard.yaml` では、Qwen3.8-27B-FP8 と Gemma 4 31B が対話を同数ずつ生成します。割り当てたモデルが、その対話の質問案、回答、1回だけ許される回答修復を最後まで担当します。さらに、すべての往復を両方のモデルが別々の盲検呼び出しで評価します。回答前の質問ゲート、往復全体の総合評価、各操作検証器の2回の読み取りを、それぞれのモデルが1回ずつ担当します。ゲートと総合評価は、2つの `MET` が揃った場合だけ合格です。互いの判定は入力へ含めません。ルーター（`models.router`、既定は `Qwen/Qwen3.5-2B`）は、タスク系統の割り当てのために各画像を分析するだけです。1回の要求で受け取る画像は1枚で、対話は書きません。
+`configs/standard.yaml` では、Qwen3.8-27B と Gemma 4 31B が対話を同数ずつ生成します。割り当てたモデルが、その対話の質問案、回答、1回だけ許される回答修復を最後まで担当します。さらに、すべての往復を両方のモデルが別々の盲検呼び出しで評価します。回答前の質問ゲート、往復全体の総合評価、各操作検証器の2回の読み取りを、それぞれのモデルが1回ずつ担当します。ゲートと総合評価は、2つの `MET` が揃った場合だけ合格です。互いの判定は入力へ含めません。ルーター（`models.router`）は、タスク系統の割り当てのために各画像を分析するだけです。1回の要求で受け取る画像は1枚で、対話は書きません。ルーターは生成器Aのサーバーそのものです。`models.router` には `models.generator_a` と完全に同じ内容を書く必要があり（チェックイン済みの設定は YAML のアンカーを使います）、割り当て用のサーバーやメモリを追加しません。
 
-同じ役割には、量子化していない BF16 の組 `Qwen/Qwen3.8-27B` と `google/gemma-4-31B-it` も使えます。この組には量子化の値を設定しません。量子化版と非量子化版を混ぜた組は拒否します。BF16 版は約2倍のメモリが必要で、1モデルあたり 48 GiB の GPU 2台で tensor parallel にする（`runtime/vllm/generator-a-bf16.yaml`、`generator-b-bf16.yaml`）か、96 GiB の GPU 1台を使います。`served-model-name` にリポジトリIDを保てば、チェックポイントのローカル複製を読み込んでも構いません。`models.router` には 2B の代わりに非量子化の `Qwen/Qwen3.8-27B` も指定でき、その場合は生成器Aのサーバーを共有できます。
+量子化したモデルは使わず、dtype は BF16 のままです。設定で受け付けるのは `Qwen/Qwen3.8-27B` と `google/gemma-4-31B-it` の組か、一時的な Qwen3.5-9B パイロットの組だけで、`quantization` の設定は未知の項目として拒否します。以前の FP8・W4A16 のチェックポイントと、別の Qwen3.5-2B ルーターは、標準の組では使えなくなりました。
 
-`configs/pilot.yaml` は、一時的な検証用の設定です。2つの論理的な役割を、port 8002で動く1つの `Qwen/Qwen3.5-9B` サーバーへ割り当てます。評価要求は別々に送りますが、同じ重みを使うため、確認できるのはパイプラインの接続です。異なるモデルによる評価の多様性は確認できません。
+`configs/pilot.yaml` は、一時的な検証用の設定です。2つの論理的な役割を、port 8002で動く1つの `Qwen/Qwen3.5-9B` サーバーへ割り当て、画像の割り当ては port 8000 の別の `Qwen/Qwen3.5-2B` サーバーが行います。評価要求は別々に送りますが、同じ重みを使うため、確認できるのはパイプラインの接続です。異なるモデルによる評価の多様性は確認できません。
 
-`configs/paired-one-gpu-pilot.yaml` は標準の Qwen3.8／Gemma 4 の組と Qwen3.5-2B ルーターを維持し、空いている 96 GiB 級 GPU 1 台へ3サーバーを配置する pilot 設定です。対応する `runtime/vllm/*-onegpu.yaml` はポート 18102・18103・18100、メモリ比率 0.44・0.41・0.10 を使います。同じ GPU を明示指定して順番に起動し、`doctor --config configs/paired-one-gpu-pilot.yaml --check-servers` で確認します。標準設定のモデル名や量子化は変更しません。RTX PRO 6000 Blackwell 1 台で3サーバーの起動、画像要求、合成、replayを確認しました。他の GPU では容量を再確認してください。
-`configs/paired-one-gpu-diverse.yaml` は同じendpointとモデル固定値を使い、Commonsの60分類を検証専用で処理するため、対象数を60にします。学習exportには含めません。
+`configs/split-pilot.yaml` は標準のモデルを維持したまま、同じホストにあるとは限らない3台の GPU へ配置します。Gemma 4 31B は 48 GiB の GPU 2台（`runtime/vllm/generator-b-split.yaml`、port 18703）、画像の割り当ても行う Qwen3.8-27B は 96 GiB の GPU 1台（`runtime/vllm/generator-a-split.yaml`、port 18702、メモリ比率 0.88）です。Gemma を RTX 6000 Ada 2台、Qwen を別ホストの RTX PRO 6000 Blackwell 1台に置き、SSH のポート転送でつないで動作を確認しました（[3節](#ホストをまたぐ分割配置)）。他の GPU では容量を再確認してください。これは pilot 用の配置で、standard プロファイルは変更しません。
+`configs/split-diverse.yaml` は同じendpointとモデル固定値を使い、Commonsの60分類を検証専用で処理するため、対象数を60にします。学習exportには含めません。
 
 ## 1. GPUを使う直前に調べる
 
@@ -28,8 +28,8 @@ uv run --locked pixelogue doctor --config configs/pilot.yaml
 
 `doctor` が空きとみなすのは、使用率が0%で、使用メモリが1 GiB未満のGPUです。`nvidia-smi` のプロセス一覧も確認し、他の処理が使っているGPUは選びません。
 
-静的検査の `ready: true` は、固定したBF16モデルサーバーを現在の空きGPUへ割り当てられるという意味です。同じリポジトリ、revision、エンドポイントを共有する生成器の役割は、1つのサーバーとして数えます。この検査だけでは、実際の推論成功を確認できません。
-固定したFP8とW4A16の標準チェックポイントについては、常駐重みの保守的な概算値とシャードごとに8 GiBのキャッシュ余裕を使います。チェックポイントのrevisionやハードウェアを変えた場合は再測定します。
+静的検査の `ready: true` は、固定したBF16モデルサーバーを現在の空きGPUへ割り当てられるという意味です。ルーターと生成器Aのように、同じリポジトリ、revision、エンドポイントを共有する役割は、1つのサーバーとして数えます。この検査だけでは、実際の推論成功を確認できません。
+`doctor` は、公開されているチェックポイントの大きさに10%を加えて、BF16 の常駐重みを見積もります。Qwen3.8-27B は約57 GiB、Gemma 4 31B は約64 GiB で、tensor parallel のシャードに均等に分けます。そのため1モデルあたり、48 GiB の GPU 2台か、96 GiB の GPU 1台が必要です。チェックポイントのrevisionやハードウェアを変えた場合は再測定します。
 
 起動後の `doctor --check-servers` は、設定した配信モデル名（served model name）を確認します。この時点では、選んだGPUが使用中に見えるのが正常です。既に正常に動いているサーバーへ、別のGPUを割り当て直す必要はありません。
 
@@ -41,37 +41,66 @@ GPU用パッケージがCPU開発環境を暗黙に変えないよう、vLLMは�
 uv sync --project runtime/vllm --locked
 ```
 
-vLLMは0.29.0に固定しています。サーバー設定には、モデルのrevision、dtype(BF16)、context長、tensor parallel数、GPUメモリ使用率、生成時の既定値を記録しています。標準生成モデルは同時系列数を64に制限します。1GPU起動試験ではvLLMのより大きい既定値がQwenのMambaキャッシュ容量を超えました。量子化は生成器ごとに固定されており、`generator-a.yaml`はQwen3.8-27B-FP8向けに`quantization: fp8`を、`generator-b.yaml`はW4A16版Gemma向けに`quantization: compressed-tensors`を指定します。`configs/standard.yaml`も同じ値を反映しており、`ModelConfig.validate_roles`はこれら以外の量子化指定を拒否します。非量子化のチェックポイントとルーターには、量子化の値を設定できません。
+vLLMは0.29.0に固定しています。サーバー設定には、dtype(BF16)、context長、tensor parallel数、GPUメモリ使用率、構造化出力のbackend、生成時の既定値を記録しています。どちらの生成モデルも同時系列数を、計測時と同じ32に制限します。以前の1GPU起動試験では、vLLMのより大きい既定値がQwenのMambaキャッシュ容量を超えました。構造化出力は、どちらも `xgrammar` と `disable_any_whitespace: false` です。量子化の方式を指定するサーバー設定はありません。
 
-評価器には画像全体と、結び付けた領域の切り出し画像を1回の要求で渡すことがあるため、生成器用のサーバー設定はすべて `limit-mm-per-prompt` を画像2枚にしています。ルーター用の設定は1枚のままです。
+評価器には画像全体と、結び付けた領域の切り出し画像を1回の要求で渡すことがあるため、生成器用のサーバー設定はすべて `limit-mm-per-prompt` を画像2枚にしています。パイロットのルーター用の設定は1枚のままです。
+
+### 固定した重みを取得する
+
+サーバー設定は `models/` から重みを読み込み、リポジトリIDの名前で配信します。`models/` はローカル専用で、コミットしません。サーバーは必ずリポジトリ直下から起動してください。固定した revision を、共有ストレージへ1回だけ取得します。
+
+```sh
+uv run --project runtime/vllm --locked hf download Qwen/Qwen3.8-27B \
+  --revision 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0 --local-dir models/Qwen3.8-27B
+uv run --project runtime/vllm --locked hf download google/gemma-4-31B-it \
+  --revision 842da3794eaa0b77d5f08bae87a17459d91ff475 --local-dir models/gemma-4-31B-it
+```
+
+Gemma は Hugging Face でライセンスへの同意と、環境変数のトークンが必要です。配信する前に、固定した revision について Hub が公開している SHA-256 の一覧と全ファイルを照合し、その記録を重みと一緒に残してください。設定ファイルも、モデル lock 用に同じ revision を固定しています。vLLM はネットワークファイルシステムを検出すると、チェックポイントをページキャッシュへ先読みします。計測した NFS では、各モデルの重みの読み込みは30秒未満で、compile を含めてサーバーが応答できるまで4〜5分でした。
 
 ## 3. 長時間の GPU 処理を tmux 内で動かす
 
 standard 構成では、次のサーバー設定を使います。
 
 ```text
-runtime/vllm/generator-a.yaml        -> Qwen3.8-27B-FP8、port 8002、tensor parallel size 2
-runtime/vllm/generator-b.yaml        -> Gemma 4 31B、port 8003、tensor parallel size 2
-runtime/vllm/router-default.yaml   -> Qwen3.5-2B、port 8000、tensor parallel size 1
+runtime/vllm/generator-a.yaml   -> Qwen3.8-27B、port 8002、tensor parallel size 2（ルーターを兼ねる）
+runtime/vllm/generator-b.yaml   -> Gemma 4 31B、port 8003、tensor parallel size 2
 ```
 
-起動直前に `doctor --config configs/standard.yaml` を実行し、空いていると判定された GPU だけを割り当てます。各サーバーは、別々の `tmux` ウィンドウで起動します。次の例では、GPU番号を実際に空いていた番号へ置き換えてください。
+起動直前に `doctor --config configs/standard.yaml` を実行し、空いていると判定された GPU だけを割り当てます。各サーバーは、リポジトリ直下から別々の `tmux` ウィンドウで起動します。次の例では、GPU番号を実際に空いていた番号へ置き換えてください。
 
 ```sh
-CUDA_VISIBLE_DEVICES=0,1 HF_HOME=/var/tmp/pixelogue-hf \
+CUDA_VISIBLE_DEVICES=0,1 HF_HUB_OFFLINE=1 \
   uv run --project runtime/vllm --locked vllm serve \
   --config runtime/vllm/generator-a.yaml
 
-CUDA_VISIBLE_DEVICES=2,3 HF_HOME=/var/tmp/pixelogue-hf \
+CUDA_VISIBLE_DEVICES=2,3 HF_HUB_OFFLINE=1 \
   uv run --project runtime/vllm --locked vllm serve \
   --config runtime/vllm/generator-b.yaml
-
-CUDA_VISIBLE_DEVICES=4 HF_HOME=/var/tmp/pixelogue-hf \
-  uv run --project runtime/vllm --locked vllm serve \
-  --config runtime/vllm/router-default.yaml
 ```
 
-ここで示したGPU番号は例です。必要なメモリは、ハードウェアと推論環境によって変わります。`doctor` による静的検査と、実際の起動確認の両方を行ってください。
+ここで示したGPU番号は例です。必要なメモリは、ハードウェアと推論環境によって変わります。`doctor` による静的検査と、実際の起動確認の両方を行ってください。96 GiB の GPU なら、分割配置の設定のように `tensor-parallel-size` を1にして、1モデルあたり1台で足ります。
+
+### ホストをまたぐ分割配置
+
+分割配置の設定は、GPU の種類が違うホストを組み合わせるためのものです。Pixelogue は 48 GiB の GPU 2台があるホストで動かし、そこで Gemma を起動します。Qwen はもう一方のホストの 96 GiB の GPU で起動し、そのポートを手元の同じポートへ転送します。どちらのサーバーも 127.0.0.1 だけで待ち受けます。
+
+```sh
+# 96 GiB の GPU があるホスト（UUID は確認済みの空き GPU に置き換える）
+CUDA_VISIBLE_DEVICES=GPU-QWEN HF_HUB_OFFLINE=1 \
+  uv run --project runtime/vllm --locked vllm serve \
+  --config runtime/vllm/generator-a-split.yaml
+
+# 48 GiB の GPU 2台があり、Pixelogue も動かすホスト
+CUDA_VISIBLE_DEVICES=GPU-GEMMA-0,GPU-GEMMA-1 HF_HUB_OFFLINE=1 \
+  uv run --project runtime/vllm --locked vllm serve \
+  --config runtime/vllm/generator-b-split.yaml
+ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=15 -L 127.0.0.1:18702:127.0.0.1:18702 QWEN-HOST
+uv run --locked pixelogue doctor --config configs/split-pilot.yaml --check-servers
+```
+
+転送は専用の `tmux` ウィンドウで動かし、終了したら再起動します。転送では、例のように SSH の接続共有を無効にしてください。共有したマスター接続を使うと、転送したポートはマスター側が保持し、転送を頼んだ ssh が終了しても残ります。残った場合は `ssh -O cancel -L 127.0.0.1:18702:127.0.0.1:18702 QWEN-HOST` で取り消します。
 
 ### 一時的な1 GPU用 pilot
 
@@ -146,7 +175,7 @@ pilotが成功・失敗のどちらで終了しても、直後に次のGPU予約
 中断した比較を再開する場合、GPUの割当区間を個別に記録し、中断した段階の試行も残します。実験GPU時間にはモデル読み込み、中断前の処理、停止処理を含め、モデル起動間の空白時間を除きます。予約時間は累積台帳に残します。経過時間とモデル起動回数は別々に報告し、複数の起動をまたいだ比較を同じ起動内での速度比較として扱いません。
 
 後から明示的に許可された検証では、`watch` コマンドへ `--campaign-id recheck-YYYYMMDD --additional-gpu-hours 2` を加えます。既存の累積台帳にこの時間をキャンペーンIDごとに1回だけ加算します。同じIDで再起動しても予算を再加算せず、完了済みのpilotも再実行しません。新しいキャンペーンはpilotを1回実行し、job後に空きGPUを再予約して延長予算の上限まで保持します。
-継続的な検証を利用者が許可した場合、名前付きの延長1件につき最大24 GPU時間を指定できます。モデル読み込み、推論、予約の時間を同じ台帳へ算入します。延長してもモデル名、量子化、空きGPUの判定条件は変わりません。
+継続的な検証を利用者が許可した場合、名前付きの延長1件につき最大24 GPU時間を指定できます。モデル読み込み、推論、予約の時間を同じ台帳へ算入します。延長してもモデル名と空きGPUの判定条件は変わりません。
 
 失敗したpilotを調査する間は `--reserve-only` を加えます。空きGPUを保持してpilotを起動しません。修正後にwatcherを停止し、同じキャンペーンIDでこの指定を外して再起動します。両方の段階を同じ累積GPU台帳に算入します。
 
@@ -161,13 +190,12 @@ vLLMは重みを読み込んだ後も、compile、CUDA graphの準備、画像�
 ```sh
 curl -fsS http://127.0.0.1:8002/v1/models
 curl -fsS http://127.0.0.1:8003/v1/models
-curl -fsS http://127.0.0.1:8000/v1/models
 uv run --locked pixelogue doctor \
   --config configs/standard.yaml \
   --check-servers
 ```
 
-一時的な1 GPU用プロファイルを検証するときは `configs/pilot.yaml` を使い、port 8003の確認を省きます。
+一時的な1 GPU用プロファイルを検証するときは `configs/pilot.yaml` を使い、port 8002と8000を確認します。
 
 50画像の処理を始める前に、本番と同じ構造化出力を使って1画像だけ試します。モデル一覧を返せても、guided decodingが特定のJSON Schemaを受理できない場合があるためです。
 
@@ -215,7 +243,7 @@ GPUを確認して `doctor --check-servers` が通った後、起動済みの標
 PIXELOGUE_LIVE_RUBRIC=1 uv run --locked pytest -q -s tests/test_rubric_semantics.py
 ```
 
-1 GPUで標準モデルの組を動かす設定（port 18102と18103）では、`PIXELOGUE_LIVE_CONFIG=configs/paired-one-gpu-pilot.yaml` も指定します。変わるのはテストの接続先だけで、モデルの識別と量子化は標準構成のままです。
+分割配置（port 18702と18703）では、`PIXELOGUE_LIVE_CONFIG=configs/split-pilot.yaml` も指定します。変わるのはテストの接続先だけで、モデルの識別は標準構成のままです。
 
 通常のテスト実行では、この外部検査をスキップします。総合評価の検査には、画像に支持される回答と、意図的に誤った画像上の主張の両方を含めます。`rate-existing` は変更不能な保存済みの質問と回答について総合評価を比較できますが、生成されなかったターンを補うことはありません。大規模な本番コーパスに採用する前に、採用率だけでなく人手で確認した欠陥とも照合してください。
 
@@ -226,14 +254,7 @@ PIXELOGUE_LIVE_RUBRIC=1 uv run --locked pytest -q -s tests/test_rubric_semantics
 
 ## JSONの空白暴走を抑える
 
-実験用の `runtime/vllm/*-whitespace.yaml` 生成器設定は `xgrammar` と
-`disable_any_whitespace: true` を指定します。JSONトークン間の任意の空白を
-制限し、文字列内の通常の空白は維持します。固定したvLLM 0.29.0では、
-サーバー起動時に設定する必要があります。リクエストに同名のフィールドを
-送っただけでは有効化を確認できません。既存サーバーを再起動し、起動manifestを
-記録したうえで比較してください。
-標準サーバー設定は従来のデコード設定を維持します。高速化した実験条件は、
-根拠が支持する候補数とタスク範囲も維持できた場合に採用します。
+生成器のサーバー設定は、JSONトークン間の空白を制限しません（`xgrammar`、`disable_any_whitespace: false`）。空白の抑制は以前に評価し、採用しませんでした。再び試す場合は、サーバーの起動時に `disable_any_whitespace: true` を指定します。固定したvLLM 0.29.0では起動時の設定だけが有効で、リクエストに同名のフィールドを送っただけでは有効化を確認できません。どちらの場合も、文字列内の通常の空白は維持します。既存サーバーを再起動し、起動manifestを記録したうえで比較してください。高速化した条件は、根拠が支持する候補数とタスク範囲も維持できた場合に採用します。
 
 エンジンの反復停止は既定で有効です。
 
@@ -254,7 +275,7 @@ runtime:
 閾値は実験用で、正しい長い反復も停止する可能性があります。
 無効にするには `runtime.repetition_detection: null` を指定します。
 `configs/repetition-detection-pilot.yaml` は既定の反復停止を明記した設定で、
-それ以外は `configs/paired-one-gpu-pilot.yaml` と同じです。
+それ以外は `configs/split-pilot.yaml` と同じです。
 
 `finish_reason: repetition` は `MODEL_OUTPUT_REPETITION` として記録し、
 生の応答と使用トークンを保存し、構文が正しいJSONでも途中停止した応答は拒否します。

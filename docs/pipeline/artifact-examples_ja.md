@@ -280,7 +280,7 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
 ```json
 {
   "conversation_id": "conv-example-001",
-  "generation_model": "Qwen/Qwen3.8-27B-FP8",
+  "generation_model": "Qwen/Qwen3.8-27B",
   "target_language": "en",
   "status": "QUALITY_CANDIDATE",
   "image": {
@@ -358,7 +358,7 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
   "source_id": "local:example-001",
   "image_id": "image-example-001",
   "visual_group_id": "visual-group-example-001",
-  "generation_model": "Qwen/Qwen3.8-27B-FP8",
+  "generation_model": "Qwen/Qwen3.8-27B",
   "student_processor_lock": {
     "repo_id": "Qwen/Qwen3-VL-8B-Instruct",
     "revision": "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",

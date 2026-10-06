@@ -22,7 +22,7 @@ All 7 specialist validators are implemented within declared first-version ranges
 
 The [generation guide](../pipeline/generation-and-evaluation.md) describes each step in detail.
 
-1. The router model (`Qwen/Qwen3.5-2B`) profiles the image once and lists the families its visible content can support. Malformed output falls back to broad default families.
+1. The router (generator A's `Qwen/Qwen3.8-27B` server) profiles the image once and lists the families its visible content can support. Malformed output falls back to broad default families.
 2. For each planned turn, the controller routes a primary family with up to four operations and a secondary family with up to two. It prefers families not yet used in the conversation and with the largest deficit against the run-wide family targets. Routes are saved, so a resumed turn receives the same offer.
 3. The conversation's generator drafts up to `tasks.draft_count` questions for the offered operations. Each draft carries its public target and parameters, its scope and target regions, and a private fact key. The controller validates parameters against the catalog and applies deterministic public-text checks.
 4. Both blind judges gate each admitted question, one call each, before any answer exists: local anchor, operation coherence, usefulness, and an independent operation label.

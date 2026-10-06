@@ -6,7 +6,7 @@
 
 ## 1. モデルサーバーが正常であることを確認する
 
-時間のかかるGPU処理は `tmux` 内で実行します。`nvidia-smi` で空いているGPUを調べて明示的に選び、大きいモデルから起動します。`/v1/models` が応答するまで待ってから、小さいルーターを起動します。次のファイルは、本来のQwen3.8-27B-FP8とGemma 4 31Bの代わりにQwen3.5-9Bを使う、一時的な1 GPU用pilotの設定です。
+時間のかかるGPU処理は `tmux` 内で実行します。`nvidia-smi` で空いているGPUを調べて明示的に選び、大きいモデルから起動します。`/v1/models` が応答するまで待ってから、小さいルーターを起動します。次のファイルは、本来のQwen3.8-27BとGemma 4 31Bの代わりにQwen3.5-9Bを使い、別のQwen3.5-2Bルーターを残した、一時的な1 GPU用pilotの設定です。
 
 ```text
 runtime/vllm/generator-qwen35-9b.yaml  -> port 8002
@@ -105,7 +105,7 @@ flowchart TD
 
 ### 手順1：画像を1回だけ分析する
 
-ルーター（`models.router`、`Qwen/Qwen3.5-2B` に固定）には、画像と、実行可能な操作を持つ各タスク系統の説明（系統ID、名称、操作名）を渡します。ルーターは `image_kind`、`readable_text`、`supported_families` と短い理由を返します。デコーダーは提示した系統IDしか出力できません。ルーターは質問、回答、公開履歴、データセットのラベルを見ず、公開文も書きません。
+ルーター（`models.router`。標準では生成器Aの `Qwen/Qwen3.8-27B` サーバー、一時的なpilotでは `Qwen/Qwen3.5-2B`）には、画像と、実行可能な操作を持つ各タスク系統の説明（系統ID、名称、操作名）を渡します。ルーターは `image_kind`、`readable_text`、`supported_families` と短い理由を返します。デコーダーは提示した系統IDしか出力できません。ルーターは質問、回答、公開履歴、データセットのラベルを見ず、公開文も書きません。
 
 割り当てに使うのは `supported_families` と、`image_kind` が `screen` かどうかです。上限付きの再試行後も出力が不正な場合は、非公開の `image-profile-abstentions` に記録し、固定した汎用系統で割り当てを続けます。画像の処理は止まりません。
 
