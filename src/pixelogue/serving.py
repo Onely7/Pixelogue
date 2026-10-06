@@ -408,7 +408,6 @@ class VllmClient:
             "revision": self.endpoint.revision,
             "processor_revision": self.endpoint.processor_revision,
             "dtype": self.endpoint.dtype,
-            "quantization": self.endpoint.quantization,
             "max_model_len": self.endpoint.max_model_len,
             "gpu_memory_utilization": self.endpoint.gpu_memory_utilization,
             "serving_runtime": (

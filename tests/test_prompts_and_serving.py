@@ -387,7 +387,7 @@ def test_model_adapters_disable_thinking_and_reject_reasoning_leak() -> None:
     assert ModelAdapter("Qwen/Qwen3.5-2B").extra_body() == {
         "chat_template_kwargs": {"enable_thinking": False}
     }
-    gemma = ModelAdapter("google/gemma-4-31B-it-qat-w4a16-ct")
+    gemma = ModelAdapter("google/gemma-4-31B-it")
     assert gemma.extra_body() == {"reasoning_effort": "none"}
     assert gemma.clean_content('<|channel|>thought\n<|channel|>{"verdict":"MET"}') == (
         '{"verdict":"MET"}'

@@ -1,4 +1,5 @@
-# Evaluation-only engine guard; standard model/processor/quantization identities preserved.
+# Evaluation-only engine guard in the split three-GPU layout; standard model and processor
+# identities preserved.
 version: '1.0'
 profile: pilot
 seed: 20260915
@@ -27,28 +28,22 @@ data:
     image_ids_manifest: ../validation/open_images_v7_manifest.jsonl
     metadata_url: https://storage.googleapis.com/openimages/2018_04/validation/validation-images-with-rotation.csv
 models:
-  router:
-    repo_id: Qwen/Qwen3.5-2B
-    revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
-    processor_revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
-    base_url: http://127.0.0.1:18100/v1
-    gpu_memory_utilization: 0.1
-  generator_a:
-    repo_id: Qwen/Qwen3.8-27B-FP8
-    revision: 017b9c7af6b5689d5dd426a76e0bc077eb5ca20a
-    processor_revision: 017b9c7af6b5689d5dd426a76e0bc077eb5ca20a
-    base_url: http://127.0.0.1:18102/v1
+  generator_a: &generator_a
+    repo_id: Qwen/Qwen3.8-27B
+    revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+    processor_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+    base_url: http://127.0.0.1:18702/v1
     tensor_parallel_size: 1
-    quantization: fp8
-    gpu_memory_utilization: 0.44
+    gpu_memory_utilization: 0.88
+  # Images are routed by generator A's own server; the router repeats its endpoint.
+  router: *generator_a
   generator_b:
-    repo_id: google/gemma-4-31B-it-qat-w4a16-ct
-    revision: 52f3f65bc7a02d555763bc923bd1d9094898219d
-    processor_revision: 52f3f65bc7a02d555763bc923bd1d9094898219d
-    base_url: http://127.0.0.1:18103/v1
-    tensor_parallel_size: 1
-    quantization: compressed-tensors
-    gpu_memory_utilization: 0.41
+    repo_id: google/gemma-4-31B-it
+    revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
+    processor_revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
+    base_url: http://127.0.0.1:18703/v1
+    tensor_parallel_size: 2
+    gpu_memory_utilization: 0.9
   generation_allocation:
     generator_a: 1
     generator_b: 1

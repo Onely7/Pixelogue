@@ -1,11 +1,12 @@
-# Qwen/Qwen3.8-27B in BF16, revision 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0, read from
-# models/Qwen3.8-27B (start from the repository root). This server also answers image-router calls.
+# Split layout: Qwen/Qwen3.8-27B in BF16 (revision 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0) on one
+# 96 GiB GPU, read from models/Qwen3.8-27B. This server also answers image-router calls.
 model: models/Qwen3.8-27B
 served-model-name: Qwen/Qwen3.8-27B
 host: 127.0.0.1
-port: 8002
+port: 18702
 dtype: bfloat16
-tensor-parallel-size: 2
+tensor-parallel-size: 1
+gpu-memory-utilization: 0.88
 max-model-len: 32768
 max-num-seqs: 32
 generation-config: vllm

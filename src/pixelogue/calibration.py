@@ -80,7 +80,6 @@ def model_calibration_lock(endpoint: object) -> str:
             "revision": endpoint.revision,
             "processor_revision": endpoint.processor_revision,
             "dtype": endpoint.dtype,
-            "quantization": endpoint.quantization,
             "max_model_len": endpoint.max_model_len,
         }
     )

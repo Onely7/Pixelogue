@@ -18,11 +18,10 @@ def test_example_profiles_are_valid_and_separate() -> None:
     assert standard.data.target_dialogues == 30_000
     assert pilot.models.router.repo_id == "Qwen/Qwen3.5-2B"
     assert (standard.models.generator_a.repo_id, standard.models.generator_b.repo_id) == (
-        "Qwen/Qwen3.8-27B-FP8",
-        "google/gemma-4-31B-it-qat-w4a16-ct",
+        "Qwen/Qwen3.8-27B",
+        "google/gemma-4-31B-it",
     )
-    assert standard.models.generator_a.quantization == "fp8"
-    assert standard.models.generator_b.quantization == "compressed-tensors"
+    assert standard.models.router == standard.models.generator_a
     assert (pilot.models.generator_a.repo_id, pilot.models.generator_b.repo_id) == (
         "Qwen/Qwen3.5-9B",
         "Qwen/Qwen3.5-9B",
@@ -87,49 +86,40 @@ def test_unknown_model_and_quantization_are_rejected() -> None:
 
 def test_generator_pairs_cannot_mix_standard_and_pilot_models() -> None:
     base = load_config(Path("configs/pilot.yaml")).model_dump(mode="json")
-    base["models"]["generator_a"]["repo_id"] = "Qwen/Qwen3.8-27B-FP8"
-    with pytest.raises(ValidationError, match="quantized or bf16 Qwen3.8/Gemma 4 pair"):
+    base["models"]["generator_a"]["repo_id"] = "Qwen/Qwen3.8-27B"
+    with pytest.raises(ValidationError, match="unquantized Qwen/Qwen3.8-27B"):
         PixelogueConfig.model_validate(base)
 
 
-def _bf16_standard() -> dict:
-    base = load_config(Path("configs/standard.yaml")).model_dump()
-    for role, repo in (
-        ("generator_a", "Qwen/Qwen3.8-27B"),
-        ("generator_b", "google/gemma-4-31B-it"),
-    ):
-        base["models"][role].update(repo_id=repo, quantization=None)
-    return base
-
-
-def test_standard_profile_accepts_the_unquantized_pair_and_a_qwen_router() -> None:
-    base = _bf16_standard()
-    config = PixelogueConfig.model_validate(base)
-    assert config.models.generator_b.quantization is None
-    base["models"]["router"] = {**base["models"]["generator_a"]}
-    assert PixelogueConfig.model_validate(base).models.router.repo_id == "Qwen/Qwen3.8-27B"
+@pytest.mark.parametrize("path", ["configs/standard.yaml", "configs/split-pilot.yaml"])
+def test_standard_pair_routes_images_through_generator_a(path: str) -> None:
+    models = load_config(Path(path)).models
+    assert models.router == models.generator_a
+    assert models.router.repo_id == "Qwen/Qwen3.8-27B"
 
 
 @pytest.mark.parametrize(
     ("role", "change"),
     [
-        ("generator_a", {"quantization": "fp8"}),
+        ("generator_a", {"repo_id": "Qwen/Qwen3.8-27B-FP8"}),
         ("generator_b", {"repo_id": "google/gemma-4-31B-it-qat-w4a16-ct"}),
-        ("router", {"repo_id": "Qwen/Qwen3.8-27B-FP8"}),
-        ("router", {"repo_id": "Qwen/Qwen3.8-27B", "quantization": "fp8"}),
+        ("generator_a", {"quantization": "fp8"}),
+        ("router", {"quantization": "fp8"}),
+        ("router", {"repo_id": "Qwen/Qwen3.5-2B"}),
+        ("router", {"base_url": "http://127.0.0.1:8000/v1"}),
     ],
 )
-def test_unquantized_pair_rejects_quantization_and_mixed_checkpoints(role, change) -> None:
-    base = _bf16_standard()
+def test_standard_pair_rejects_quantization_and_other_routers(role: str, change: dict) -> None:
+    base = load_config(Path("configs/standard.yaml")).model_dump()
     base["models"][role].update(change)
     with pytest.raises(ValidationError):
         PixelogueConfig.model_validate(base)
 
 
-def test_generator_quantization_must_match_pinned_method() -> None:
-    base = load_config(Path("configs/standard.yaml")).model_dump(mode="json")
-    base["models"]["generator_a"]["quantization"] = "compressed-tensors"
-    with pytest.raises(ValidationError, match="pinned quantization method"):
+def test_pilot_pair_keeps_its_separate_2b_router() -> None:
+    base = load_config(Path("configs/pilot.yaml")).model_dump()
+    base["models"]["router"]["repo_id"] = "Qwen/Qwen3.8-27B"
+    with pytest.raises(ValidationError, match="uses the Qwen/Qwen3.5-2B router"):
         PixelogueConfig.model_validate(base)
 
 

@@ -21,16 +21,11 @@ from pydantic import (
 from pixelogue.errors import ConfigurationError
 from pixelogue.serialization import canonical_hash, canonical_json, load_yaml
 
-PRIMARY_GENERATOR_REPOS = ("Qwen/Qwen3.8-27B-FP8", "google/gemma-4-31B-it-qat-w4a16-ct")
-BF16_GENERATOR_REPOS = ("Qwen/Qwen3.8-27B", "google/gemma-4-31B-it")
-STANDARD_GENERATOR_PAIRS = frozenset({PRIMARY_GENERATOR_REPOS, BF16_GENERATOR_REPOS})
+STANDARD_GENERATOR_REPOS = ("Qwen/Qwen3.8-27B", "google/gemma-4-31B-it")
 PILOT_GENERATOR_REPOS = ("Qwen/Qwen3.5-9B", "Qwen/Qwen3.5-9B")
-# The 2B router is the default; the unquantized Qwen3.8-27B may be named explicitly.
-ROUTER_REPOS = frozenset({"Qwen/Qwen3.5-2B", "Qwen/Qwen3.8-27B"})
-ALLOWED_QUANTIZATIONS = {
-    "Qwen/Qwen3.8-27B-FP8": "fp8",
-    "google/gemma-4-31B-it-qat-w4a16-ct": "compressed-tensors",
-}
+# The standard pair routes images through generator A's own Qwen3.8-27B server; only the
+# temporary Qwen3.5-9B pilot keeps the separate Qwen3.5-2B router.
+PILOT_ROUTER_REPO = "Qwen/Qwen3.5-2B"
 SPECIALIST_TASK_IDS = frozenset(
     {
         "geometric_constraint_solving",
@@ -119,7 +114,6 @@ class ModelEndpoint(StrictModel):
     tensor_parallel_size: Annotated[int, Field(ge=1)] = 1
     gpu_memory_utilization: Annotated[float, Field(gt=0, le=0.95)] = 0.9
     dtype: Literal["bfloat16"] = "bfloat16"
-    quantization: Literal["fp8", "compressed-tensors"] | None = None
     max_model_len: Annotated[int, Field(ge=4096)] = 32768
     api_key_env: str = "PIXELLOGUE_API_KEY"
     serving_runtime: ServingRuntimeIdentity | None = None
@@ -133,10 +127,14 @@ class ModelEndpoint(StrictModel):
 class ModelConfig(StrictModel):
     """Assign fixed models to image routing, question drafting, answering and judging."""
 
-    router: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.5-2B")
-    generator_a: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.8-27B-FP8", quantization="fp8")
+    router: ModelEndpoint = ModelEndpoint(
+        repo_id="Qwen/Qwen3.8-27B", base_url=HttpUrl("http://127.0.0.1:8002/v1")
+    )
+    generator_a: ModelEndpoint = ModelEndpoint(
+        repo_id="Qwen/Qwen3.8-27B", base_url=HttpUrl("http://127.0.0.1:8002/v1")
+    )
     generator_b: ModelEndpoint = ModelEndpoint(
-        repo_id="google/gemma-4-31B-it-qat-w4a16-ct", quantization="compressed-tensors"
+        repo_id="google/gemma-4-31B-it", base_url=HttpUrl("http://127.0.0.1:8003/v1")
     )
     generation_allocation: dict[Literal["generator_a", "generator_b"], int] = {
         "generator_a": 1,
@@ -145,24 +143,27 @@ class ModelConfig(StrictModel):
 
     @model_validator(mode="after")
     def validate_roles(self) -> ModelConfig:
-        """Require the approved image router and generation repositories."""
-        if self.router.repo_id not in ROUTER_REPOS:
-            raise ValueError("router must be Qwen/Qwen3.5-2B or the unquantized Qwen/Qwen3.8-27B")
-        if self.router.quantization is not None:
-            raise ValueError("the image router runs unquantized")
+        """Require the unquantized generator pair and its matching image router.
+
+        The standard pair routes images through generator A's own Qwen3.8-27B server, so the
+        router must repeat that endpoint exactly. Only the temporary Qwen3.5-9B pilot pair
+        keeps the separate Qwen3.5-2B router.
+        """
         generator_repos = (self.generator_a.repo_id, self.generator_b.repo_id)
-        if generator_repos not in STANDARD_GENERATOR_PAIRS | {PILOT_GENERATOR_REPOS}:
-            raise ValueError(
-                "generators must use the quantized or bf16 Qwen3.8/Gemma 4 pair, or the "
-                "temporary Qwen3.5-9B pilot pair"
-            )
-        for endpoint in (self.generator_a, self.generator_b):
-            expected_quantization = ALLOWED_QUANTIZATIONS.get(endpoint.repo_id)
-            if endpoint.quantization != expected_quantization:
+        if generator_repos == STANDARD_GENERATOR_REPOS:
+            if self.router != self.generator_a:
                 raise ValueError(
-                    f"{endpoint.repo_id} must use its pinned quantization method "
-                    f"({expected_quantization!r}), not {endpoint.quantization!r}"
+                    "the standard pair routes images through generator A's Qwen/Qwen3.8-27B "
+                    "server; models.router must repeat models.generator_a"
                 )
+        elif generator_repos == PILOT_GENERATOR_REPOS:
+            if self.router.repo_id != PILOT_ROUTER_REPO:
+                raise ValueError("the Qwen3.5-9B pilot pair uses the Qwen/Qwen3.5-2B router")
+        else:
+            raise ValueError(
+                "generators must use the unquantized Qwen/Qwen3.8-27B and "
+                "google/gemma-4-31B-it pair, or the temporary Qwen3.5-9B pilot pair"
+            )
         if any(weight <= 0 for weight in self.generation_allocation.values()):
             raise ValueError("generation allocation weights must be positive")
         return self
@@ -396,7 +397,7 @@ class PixelogueConfig(StrictModel):
         if self.profile == "standard" and self.data.pilot:
             raise ValueError("standard profile cannot enable pilot mode")
         generator_repos = (self.models.generator_a.repo_id, self.models.generator_b.repo_id)
-        if self.profile == "standard" and generator_repos not in STANDARD_GENERATOR_PAIRS:
+        if self.profile == "standard" and generator_repos != STANDARD_GENERATOR_REPOS:
             raise ValueError("standard profile requires the Qwen3.8/Gemma 4 model pair")
         return self
 

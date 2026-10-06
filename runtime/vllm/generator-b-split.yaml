@@ -1,11 +1,12 @@
-# google/gemma-4-31B-it in BF16, revision 842da3794eaa0b77d5f08bae87a17459d91ff475, read from
-# models/gemma-4-31B-it (start from the repository root).
+# Split layout: google/gemma-4-31B-it in BF16 (revision 842da3794eaa0b77d5f08bae87a17459d91ff475)
+# across two 48 GiB GPUs, read from models/gemma-4-31B-it.
 model: models/gemma-4-31B-it
 served-model-name: google/gemma-4-31B-it
 host: 127.0.0.1
-port: 8003
+port: 18703
 dtype: bfloat16
 tensor-parallel-size: 2
+gpu-memory-utilization: 0.9
 max-model-len: 32768
 max-num-seqs: 32
 generation-config: vllm

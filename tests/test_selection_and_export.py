@@ -126,7 +126,7 @@ def _conversation(image_artifact, purpose: SourcePurpose) -> ConversationArtifac
                 question=question,
                 answer=answer,
                 history_hash=canonical_hash(transcript),
-                generation_model="Qwen/Qwen3.8-27B-FP8",
+                generation_model="Qwen/Qwen3.8-27B",
                 selector_model="Qwen/Qwen3.5-2B",
                 rating=TurnRating(items=(), aggregate="PASS"),
                 status="COMMITTED",
@@ -137,7 +137,7 @@ def _conversation(image_artifact, purpose: SourcePurpose) -> ConversationArtifac
         conversation_id="conversation",
         image=image,
         target_language="en",
-        generation_model="Qwen/Qwen3.8-27B-FP8",
+        generation_model="Qwen/Qwen3.8-27B",
         turns=tuple(turns),
         status="QUALITY_CANDIDATE",
     )

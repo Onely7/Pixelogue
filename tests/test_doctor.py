@@ -31,31 +31,22 @@ def _gpus(count: int) -> tuple[GpuDevice, ...]:
     )
 
 
-def test_required_servers_receive_distinct_gpus_or_report_shortfall() -> None:
+def test_shared_router_is_one_server_and_bf16_models_need_two_48gb_gpus() -> None:
+    qwen = _endpoint("Qwen/Qwen3.8-27B", 2)
     endpoints = (
-        ("router", _endpoint("Qwen/Qwen3.5-2B", 1), True),
-        ("generator_a", _endpoint("Qwen/Qwen3.8-27B-FP8", 2), True),
-        ("generator_b", _endpoint("google/gemma-4-31B-it-qat-w4a16-ct", 2), True),
-    )
-    enough = _allocate_required_gpus(endpoints, _gpus(5))
-    assigned = [gpu for group in enough.values() for gpu in group]
-    assert all(enough.values())
-    assert len(assigned) == len(set(assigned)) == 5
-
-    short = _allocate_required_gpus(endpoints, _gpus(4))
-    assert sum(not group for group in short.values()) == 1
-
-
-def test_bf16_standard_pair_needs_two_48gb_gpus_per_model() -> None:
-    endpoints = (
-        ("generator_a", _endpoint("Qwen/Qwen3.8-27B", 2), True),
+        ("router", qwen, True),
+        ("generator_a", qwen, True),
         ("generator_b", _endpoint("google/gemma-4-31B-it", 2), True),
     )
     enough = _allocate_required_gpus(endpoints, _gpus(4))
     assert all(enough.values())
+    assert enough["router"] == enough["generator_a"]
     assert len({gpu for group in enough.values() for gpu in group}) == 4
-    short = _allocate_required_gpus(endpoints, _gpus(2))
-    assert sum(not group for group in short.values()) == 1
+
+    # The larger Gemma server takes two GPUs; the one shared Qwen server, and so both of its
+    # roles, are then short.
+    short = _allocate_required_gpus(endpoints, _gpus(3))
+    assert short["generator_b"] and not short["generator_a"] and not short["router"]
 
 
 @pytest.mark.parametrize("missing", ["N/A", "[N/A]"])
@@ -78,9 +69,9 @@ def test_unknown_utilization_is_reported_without_admitting_the_device(
     assert _allocate_required_gpus(endpoints, gpus) == {"router": (1,)}
 
 
-def test_quantized_standard_pair_can_share_one_large_idle_gpu() -> None:
-    gpu = GpuDevice(
-        index=4,
+def test_split_layout_places_qwen_on_the_96gb_gpu() -> None:
+    large = GpuDevice(
+        index=2,
         name="96 GiB test device",
         total_mib=97_887,
         used_mib=0,
@@ -88,29 +79,15 @@ def test_quantized_standard_pair_can_share_one_large_idle_gpu() -> None:
         utilization_percent=0,
         idle=True,
     )
+    qwen = _endpoint("Qwen/Qwen3.8-27B", 1).model_copy(update={"gpu_memory_utilization": 0.88})
     endpoints = (
-        (
-            "router",
-            _endpoint("Qwen/Qwen3.5-2B", 1).model_copy(update={"gpu_memory_utilization": 0.10}),
-            True,
-        ),
-        (
-            "generator_a",
-            _endpoint("Qwen/Qwen3.8-27B-FP8", 1).model_copy(
-                update={"gpu_memory_utilization": 0.44, "quantization": "fp8"}
-            ),
-            True,
-        ),
-        (
-            "generator_b",
-            _endpoint("google/gemma-4-31B-it-qat-w4a16-ct", 1).model_copy(
-                update={"gpu_memory_utilization": 0.35, "quantization": "compressed-tensors"}
-            ),
-            True,
-        ),
+        ("router", qwen, True),
+        ("generator_a", qwen, True),
+        ("generator_b", _endpoint("google/gemma-4-31B-it", 2), True),
     )
-    assert _allocate_required_gpus(endpoints, (gpu,)) == {
-        "generator_a": (4,),
-        "generator_b": (4,),
-        "router": (4,),
+    assert _allocate_required_gpus(endpoints, (*_gpus(2), large)) == {
+        "generator_b": (0, 1),
+        "router": (2,),
+        "generator_a": (2,),
     }
+    assert not _allocate_required_gpus(endpoints, _gpus(3))["generator_a"]
