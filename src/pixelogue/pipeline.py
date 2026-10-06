@@ -39,7 +39,6 @@ from pixelogue.contracts import (
     TurnRating,
     build_history_snapshot,
 )
-from pixelogue.decision import DecisionClient
 from pixelogue.drafting import (
     QuestionDraft,
     QuestionDraftBatch,
@@ -74,20 +73,6 @@ from pixelogue.gates import (
     QuestionGateVote,
     holistic_decision,
     question_gate_decision,
-)
-from pixelogue.jev_routing import (
-    SUPPORTED_BINDING_TASKS,
-    BindingProposals,
-    EvidenceProposals,
-    StoredDecisionRouter,
-    assemble_bindings,
-    assemble_evidence,
-    binding_decisions,
-    controller_binding_proposals,
-    evidence_decisions,
-    partition_binding_proposals,
-    validate_evidence_proposals,
-    validate_usable_binding_proposals,
 )
 from pixelogue.ledger import (
     Requirement,
@@ -283,8 +268,6 @@ class SynthesisCoordinator:
         selector: InferenceClient,
         generator_a: InferenceClient,
         generator_b: InferenceClient,
-        *,
-        decision_client: DecisionClient | None = None,
     ) -> None:
         """Bind an immutable run configuration and its explicit model clients."""
         self.config = config
@@ -292,17 +275,6 @@ class SynthesisCoordinator:
         self.store = store
         self.selector = selector
         self.generators = {"generator_a": generator_a, "generator_b": generator_b}
-        routing = config.tasks.decision_routing
-        if (routing.evidence_enabled or routing.binding_enabled) and decision_client is None:
-            raise ExecutionError(
-                "DECISION_CLIENT_REQUIRED",
-                "Enabled decision routing needs its explicit classifier client",
-            )
-        self.decision_router = (
-            StoredDecisionRouter(decision_client, routing, config.runtime, store)
-            if decision_client is not None
-            else None
-        )
         # Judge pairs and paired blind readers overlap; store writes stay serialized.
         self._judge_pool = ThreadPoolExecutor(
             max_workers=2 * config.runtime.max_concurrent_images,
@@ -550,10 +522,7 @@ class SynthesisCoordinator:
 
         Committed turns are appended to ``turns`` in place.
         """
-        if self.config.tasks.decision_routing.evidence_enabled:
-            inventory = self._extract_decision_evidence(generator, image, model_image, image_views)
-        else:
-            inventory = self._extract_generator_evidence(generator, image, model_image, image_views)
+        inventory = self._extract_generator_evidence(generator, image, model_image, image_views)
         inventory = self._maybe_recheck_attribute(inventory, generator, model_image, image_views)
         inventory, evidence_aliases = alias_evidence_ids(inventory)
         if inventory.image_id != image.image_id:
@@ -1217,61 +1186,6 @@ class SynthesisCoordinator:
         )
         return bind_evidence_identity(evidence_report, image.image_id, model_image.view_id)
 
-    def _extract_decision_evidence(
-        self,
-        generator: InferenceClient,
-        image: ImageArtifact,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-    ) -> ScopedEvidenceInventory:
-        """Generate only visual content and independently check each local capability claim."""
-        if self.decision_router is None:
-            raise ExecutionError("DECISION_CLIENT_REQUIRED", "Classifier client is absent")
-        proposals = self._invoke(
-            generator,
-            "evidence_proposal",
-            {
-                "capability_vocabulary": self._capability_vocabulary(),
-                "max_scopes": self.config.tasks.max_scopes,
-                "max_observations_per_scope": min(8, self.config.tasks.max_observations_per_scope),
-                "image_views": image_views,
-            },
-            (model_image,),
-            EvidenceProposals,
-            max_tokens=self.config.tasks.decision_routing.proposal_max_tokens,
-            temperature=0.0,
-            seed=self.config.seed,
-            post_validate=lambda report: validate_evidence_proposals(report, self.config.tasks),
-        )
-        self.store.write_json_artifact(
-            "routing-evidence-proposals",
-            {
-                "image_id": image.image_id,
-                "proposals": proposals.model_dump(mode="json"),
-            },
-        )
-        verdicts = {
-            query.query_id: self.decision_router.decide(
-                query,
-                image_id=image.image_id,
-                image=model_image,
-                trial_id=f"{self.run_id}/{image.image_id}/evidence",
-            )
-            for query in evidence_decisions(proposals, self.config.tasks)
-        }
-        inventory = assemble_evidence(
-            proposals,
-            verdicts,
-            image_id=image.image_id,
-            view_id=model_image.view_id,
-            settings=self.config.tasks,
-        )
-        validate_evidence(inventory, model_image.view_id, self.config.tasks)
-        self.store.write_json_artifact(
-            "routing-evidence-inventory", inventory.model_dump(mode="json")
-        )
-        return inventory
-
     def _bind_candidate_batches(
         self,
         candidates: tuple[InstructionCandidate, ...],
@@ -1327,52 +1241,6 @@ class SynthesisCoordinator:
         used_fingerprints: frozenset[str],
     ) -> tuple[InstructionCandidate, ...]:
         """Bind one fixed set without changing its local validation and retry contract."""
-        if self.config.tasks.decision_routing.binding_enabled:
-            supported = tuple(
-                candidate
-                for candidate in candidates
-                if candidate.task_id in SUPPORTED_BINDING_TASKS and candidate.profile == "normal"
-            )
-            fallback = tuple(candidate for candidate in candidates if candidate not in supported)
-            admitted = (
-                self._bind_decision_candidates(
-                    supported,
-                    inventory,
-                    snapshot,
-                    generator,
-                    target_language,
-                    model_image,
-                    image_views,
-                    used_fingerprints,
-                )
-                if supported
-                else ()
-            )
-            if fallback:
-                self.store.write_json_artifact(
-                    "routing-binding-fallback",
-                    {
-                        "conversation_id": snapshot.conversation_id,
-                        "turn_index": snapshot.turn_index,
-                        "candidate_ids": [candidate.candidate_id for candidate in fallback],
-                        "reason": "unsupported_task_or_profile",
-                        "path": "existing_candidate_binding",
-                    },
-                )
-                try:
-                    admitted += self._bind_generator_candidates(
-                        fallback,
-                        inventory,
-                        snapshot,
-                        generator,
-                        target_language,
-                        model_image,
-                        image_views,
-                        used_fingerprints,
-                    )
-                except ExecutionError as error:
-                    return self._retain_independent_bindings(error, admitted, fallback, snapshot)
-            return admitted
         return self._bind_generator_candidates(
             candidates,
             inventory,
@@ -1383,169 +1251,6 @@ class SynthesisCoordinator:
             image_views,
             used_fingerprints,
         )
-
-    def _bind_decision_candidates(
-        self,
-        candidates: tuple[InstructionCandidate, ...],
-        inventory: ScopedEvidenceInventory,
-        snapshot: HistorySnapshot,
-        generator: InferenceClient,
-        target_language: str,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-        used_fingerprints: frozenset[str],
-    ) -> tuple[InstructionCandidate, ...]:
-        """Assemble known anchors and short open choices, then classify every required condition."""
-        if self.decision_router is None:
-            raise ExecutionError("DECISION_CLIENT_REQUIRED", "Classifier client is absent")
-        proposals, unresolved = controller_binding_proposals(candidates, inventory)
-        admitted = (
-            self._judge_decision_proposals(
-                proposals,
-                candidates,
-                inventory,
-                snapshot,
-                model_image,
-                used_fingerprints,
-            )
-            if proposals.bindings
-            else ()
-        )
-        if not unresolved:
-            return admitted
-        try:
-            generated = self._invoke(
-                generator,
-                "candidate_proposal",
-                {
-                    "target_language": target_language,
-                    "public_history": self._history(snapshot.public_history),
-                    "candidates": [
-                        binding_candidate(candidate, inventory) for candidate in unresolved
-                    ],
-                    "scope_evidence": inventory.model_dump(mode="json", exclude_none=True),
-                    "image_views": image_views,
-                },
-                (model_image,),
-                BindingProposals,
-                max_tokens=self.config.tasks.decision_routing.proposal_max_tokens,
-                temperature=0.0,
-                seed=self.config.seed + snapshot.turn_index,
-                post_validate=lambda report: validate_usable_binding_proposals(
-                    report,
-                    unresolved,
-                    inventory,
-                    snapshot.public_history,
-                ),
-            )
-        except ExecutionError as error:
-            return self._retain_independent_bindings(error, admitted, unresolved, snapshot)
-        return admitted + self._judge_decision_proposals(
-            generated,
-            unresolved,
-            inventory,
-            snapshot,
-            model_image,
-            used_fingerprints,
-        )
-
-    def _retain_independent_bindings(
-        self,
-        error: ExecutionError,
-        admitted: tuple[InstructionCandidate, ...],
-        failed_candidates: tuple[InstructionCandidate, ...],
-        snapshot: HistorySnapshot,
-    ) -> tuple[InstructionCandidate, ...]:
-        """Discard a malformed generator response while keeping separate verified candidates."""
-        if error.reason not in _GENERATED_BINDING_OUTPUT_FAILURES or not admitted:
-            raise error
-        self.store.write_json_artifact(
-            "routing-binding-branch-failures",
-            {
-                "conversation_id": snapshot.conversation_id,
-                "turn_index": snapshot.turn_index,
-                "failed_candidate_ids": [candidate.candidate_id for candidate in failed_candidates],
-                "retained_candidate_ids": [candidate.candidate_id for candidate in admitted],
-                "reason": error.reason,
-                "message": str(error),
-                "entire_generated_response_rejected": True,
-            },
-        )
-        return admitted
-
-    def _judge_decision_proposals(
-        self,
-        proposals: BindingProposals,
-        candidates: tuple[InstructionCandidate, ...],
-        inventory: ScopedEvidenceInventory,
-        snapshot: HistorySnapshot,
-        model_image: ModelImage,
-        used_fingerprints: frozenset[str],
-    ) -> tuple[InstructionCandidate, ...]:
-        """Check and validate one independent controller or generator proposal set."""
-        if self.decision_router is None:
-            raise ExecutionError("DECISION_CLIENT_REQUIRED", "Classifier client is absent")
-        self.store.write_json_artifact(
-            "routing-binding-proposals",
-            {
-                "conversation_id": snapshot.conversation_id,
-                "turn_index": snapshot.turn_index,
-                "proposals": proposals.model_dump(mode="json"),
-            },
-        )
-        proposals, proposal_rejections = partition_binding_proposals(
-            proposals,
-            candidates,
-            inventory,
-            snapshot.public_history,
-        )
-        if proposal_rejections:
-            self.store.write_json_artifact(
-                "routing-proposal-rejections",
-                {
-                    "conversation_id": snapshot.conversation_id,
-                    "turn_index": snapshot.turn_index,
-                    "rejections": [asdict(rejection) for rejection in proposal_rejections],
-                },
-            )
-        verdicts = {
-            query.query_id: self.decision_router.decide(
-                query,
-                image_id=inventory.image_id,
-                image=model_image,
-                trial_id=f"{self.run_id}/{inventory.image_id}/binding/{snapshot.turn_index}/{snapshot.history_hash}",
-            )
-            for query in binding_decisions(
-                proposals, candidates, inventory, snapshot.public_history
-            )
-        }
-        bindings = assemble_bindings(
-            proposals,
-            verdicts,
-            candidates,
-            inventory,
-            snapshot.public_history,
-            answer_max_tokens=self.config.tasks.answer_max_tokens,
-        )
-        self.store.write_json_artifact("candidate-bindings", bindings.model_dump(mode="json"))
-        result = bind_candidates_individually(
-            candidates,
-            bindings,
-            inventory,
-            snapshot.public_history,
-            self.config.tasks,
-            used_fingerprints,
-        )
-        if result.rejected:
-            self.store.write_json_artifact(
-                "candidate-binding-rejections",
-                {
-                    "conversation_id": snapshot.conversation_id,
-                    "turn_index": snapshot.turn_index,
-                    "rejections": [asdict(rejection) for rejection in result.rejected],
-                },
-            )
-        return result.admitted
 
     def _bind_generator_candidates(
         self,
@@ -3885,17 +3590,6 @@ class SynthesisCoordinator:
                     if error.reason == "MODEL_SCHEMA_MISMATCH":
                         required = model.model_json_schema().get("required", [])
                         retry_feedback += " Required top-level fields: " + ", ".join(required) + "."
-                        if stage == "evidence_proposal":
-                            retry_feedback = (
-                                "The previous evidence proposal violated its contract. Return only "
-                                "the required top-level scopes field, without verdicts, IDs or reason. "
-                                "Each capability name appears at most once per scope: combine its "
-                                "visible facts into one short detail. Set object_label=null unless "
-                                "the same scope has a visible_entity claim naming that subject. "
-                                "Use positive normalized boxes. Every observation box must be inside "
-                                "its parent scope; reuse the scope box only when the claim really "
-                                "covers that scope. Omit unsupported claims, without inventing geometry."
-                            )
                         if stage == "evidence_extraction":
                             retry_feedback += (
                                 (

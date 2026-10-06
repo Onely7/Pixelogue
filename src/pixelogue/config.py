@@ -318,30 +318,6 @@ class RuntimeConfig(StrictModel):
     allow_external_inference: Literal[False] = False
 
 
-class DecisionRoutingConfig(StrictModel):
-    """Explicit experimental classifier identity, separate from generator roles."""
-
-    evidence_enabled: bool = False
-    binding_enabled: bool = False
-    model_repository: Literal["autotrust/JEV-27B-VL", "akhilaaa3/Jev-Omni"] | None = None
-    model_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")] | None = None
-    proposal_max_tokens: Annotated[int, Field(ge=256, le=4096)] = 1536
-    base_url: HttpUrl | None = None
-    runtime_python: Path | None = None
-    snapshot_path: Path | None = None
-    startup_timeout_seconds: Annotated[int, Field(ge=1, le=1800)] = 600
-
-    @model_validator(mode="after")
-    def validate_explicit_identity(self) -> DecisionRoutingConfig:
-        """Require a pinned classifier before enabling either experimental path."""
-        if self.evidence_enabled or self.binding_enabled:
-            if self.model_repository is None or self.model_revision is None:
-                raise ValueError("Decision routing requires an explicit repository and revision")
-        if (self.model_repository is None) != (self.model_revision is None):
-            raise ValueError("Decision repository and revision must be specified together")
-        return self
-
-
 # Whole-structure reconstructions are kept reachable but drafted less often: their
 # verifiers need complete grids or series and abstain far more than targeted lookups.
 DEFAULT_TASK_WEIGHTS = {
@@ -370,7 +346,6 @@ class TaskRuntimeConfig(StrictModel):
     profiles: tuple[Literal["normal", "limitation", "false_premise"], ...] = ("normal",)
     enabled_extensions: tuple[str, ...] = ()
     calibration_manifest: Path | None = None
-    decision_routing: DecisionRoutingConfig = DecisionRoutingConfig()
     planner: Literal["scoped", "direct"] = "scoped"
     draft_count: Annotated[int, Field(ge=1, le=4)] = 2
     draft_max_tokens: Annotated[int, Field(ge=256, le=4096)] = 1024
@@ -402,8 +377,6 @@ class TaskRuntimeConfig(StrictModel):
                 "question_operation_guidance": self.question_operation_guidance != "baseline",
                 "fact_novelty_enabled": self.fact_novelty_enabled,
                 "initial_binding_batch_size": self.initial_binding_batch_size != 8,
-                "decision_routing": self.decision_routing.evidence_enabled
-                or self.decision_routing.binding_enabled,
             }
             if changed := sorted(name for name, used in scoped_only.items() if used):
                 raise ValueError(
@@ -411,10 +384,6 @@ class TaskRuntimeConfig(StrictModel):
                 )
             if self.profiles != ("normal",):
                 raise ValueError("Direct drafting supports only the normal profile")
-        if self.decision_routing.evidence_enabled and self.attribute_recheck_enabled:
-            raise ValueError(
-                "Decision evidence routing cannot mix with generator-only attribute rechecks"
-            )
         if not self.profiles or len(self.profiles) != len(set(self.profiles)):
             raise ValueError("At least one unique task profile is required")
         if len(self.enabled_extensions) != len(set(self.enabled_extensions)):
