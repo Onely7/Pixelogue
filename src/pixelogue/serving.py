@@ -17,7 +17,7 @@ from pydantic import BaseModel, ValidationError
 
 from pixelogue.call_usage import measure_usage
 from pixelogue.config import ModelEndpoint, RuntimeConfig
-from pixelogue.contracts import ClaimExtraction, TextPayload
+from pixelogue.contracts import TextPayload
 from pixelogue.drafting import QuestionDraftBatch
 from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.gates import QuestionGateVote
@@ -642,21 +642,6 @@ class VllmClient:
         _bind_direct_schema(schema, response_model, payload)
         if stage in SPECIALIST_SOURCE_STAGES:
             _bind_specialist_source_schema(schema, stage, payload)
-        if response_model is ClaimExtraction:
-            tokens = payload.get("answer_tokens")
-            if not isinstance(tokens, list) or any(
-                not isinstance(token, dict) or token.get("index") != index
-                for index, token in enumerate(tokens)
-            ):
-                raise ExecutionError(
-                    "MODEL_PAYLOAD_FIELD", "Claim extraction requires indexed answer_tokens"
-                )
-            count = len(tokens)
-            properties = schema["$defs"]["ClaimSpan"]["properties"]
-            properties["start_token"]["maximum"] = max(0, count - 1)
-            properties["end_token"]["maximum"] = max(1, count)
-            if count == 0:
-                schema["properties"]["claims"]["maxItems"] = 0
         if stage in STRUCTURAL_OUTPUT_STAGES:
             if stage in {
                 "chart_source",

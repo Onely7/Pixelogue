@@ -365,7 +365,6 @@ def _run_one(
                 image_views,
                 image,
                 depth,
-                (),
             )
             status: Literal["COMMITTED", "REJECTED", "ABSTAINED", "ERROR"]
             if gate == "NOT_MET" or review.aggregate == "FAIL":
@@ -422,8 +421,8 @@ def run_ablation_plan(
     retry_failed: bool = False,
 ) -> dict[str, int]:
     """Run cells in frozen order, resume complete trials and isolate outputs from export."""
-    if config.config_hash != plan.config_hash or config.evaluation.mode != "holistic":
-        raise ExternalInputError("ABLATION_CONFIG_CHANGED", "Plan needs exact holistic config")
+    if config.config_hash != plan.config_hash:
+        raise ExternalInputError("ABLATION_CONFIG_CHANGED", "Plan needs its frozen configuration")
     path = output_dir / "plan.json"
     if path.exists() and read_json(path, AblationPlan) != plan:
         raise ExternalInputError("ABLATION_PLAN_CHANGED", "Frozen ablation plan differs")

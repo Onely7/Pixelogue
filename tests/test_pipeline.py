@@ -12,13 +12,9 @@ from pydantic import BaseModel, ValidationError
 from pixelogue.chart_verifiers import ChartAnswer, ChartQuery, ChartSource
 from pixelogue.config import EvaluationConfig, ModelEndpoint, load_config
 from pixelogue.contracts import (
-    AtomicClaim,
-    ClaimExtraction,
-    ClaimSpan,
     GateVerdict,
     InstructionCandidate,
     PublicMessage,
-    RubricContext,
     RubricVerdict,
     TextPayload,
     TurnRating,
@@ -29,8 +25,6 @@ from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import (
     action_affordance_question,
     action_answer_already_public,
-    applicable_rubric_items,
-    has_natural_language_content,
     identification_answer_in_history,
     identification_answer_in_question,
     reciprocal_identification_disclosure,
@@ -257,18 +251,6 @@ class ScriptedClient:
             else:
                 text = "Blue."
             value = TextPayload(text=text)
-        elif response_model is ClaimExtraction:
-            answer = payload["candidate_answer"]
-            value = ClaimExtraction(
-                claims=(
-                    ClaimSpan(
-                        start_token=0,
-                        end_token=len(SynthesisCoordinator._answer_tokens(answer)),
-                    ),
-                ),
-                coverage=GateVerdict.MET,
-                reason="The one factual claim is covered.",
-            )
         elif response_model is RubricVerdict:
             if self.fail_first_rating and not self.rating_failed:
                 self.rating_failed = True
@@ -736,12 +718,8 @@ def _coordinator(
     echo_question_prompt: bool = False,
     internal_reference_question: Literal["none", "first", "always", "selected_region"] = "none",
     echo_answer_prompt: bool = False,
-    evaluation_mode: str = "holistic",
 ):
     config = load_config(Path("configs/pilot.yaml"))
-    config = config.model_copy(
-        update={"evaluation": EvaluationConfig.model_validate({"mode": evaluation_mode})}
-    )
     store = RunStore(tmp_path / "runs", "test", require_local_wal=False)
     store.initialize_run("test", config.config_hash, config.profile)
     selector = ScriptedClient(
@@ -1394,42 +1372,10 @@ def test_private_prompt_echo_is_rejected_before_answer_rating(
         for stage, _ in client.calls
     )
     assert all(
-        stage != "claim_inventory"
+        stage != "holistic_review"
         for client in (generator_a, generator_b)
         for stage, _ in client.calls
     )
-
-
-def test_later_turn_does_not_imply_binding_or_strong_dependency() -> None:
-    context = RubricContext(
-        turn_index=2,
-        profile="normal",
-        has_natural_language_answer=True,
-    )
-    templates = {item["template_id"] for item in applicable_rubric_items(context)}
-    assert {"H_CONSISTENCY", "H_TURN_PROGRESS"} <= templates
-    assert "H_BINDING" not in templates
-    assert "H_WITNESS" not in templates
-
-    dependent = context.model_copy(
-        update={"history_binding_ids": ("binding-1",), "requires_witness_check": True}
-    )
-    dependent_templates = {item["template_id"] for item in applicable_rubric_items(dependent)}
-    assert {"H_BINDING", "H_WITNESS"} <= dependent_templates
-
-
-def test_numeric_only_answer_skips_natural_language_criteria() -> None:
-    assert not has_natural_language_content("42")
-    assert has_natural_language_content("42 kg")
-    context = RubricContext(
-        turn_index=1,
-        profile="normal",
-        has_natural_language_answer=False,
-    )
-    templates = {item["template_id"] for item in applicable_rubric_items(context)}
-    assert "F_A_CLEAR" not in templates
-    assert "F_REDUNDANCY" not in templates
-    assert "L_A_TARGET" not in templates
 
 
 def test_successful_generation_uses_full_history_and_dual_blind_judges(
@@ -1480,97 +1426,6 @@ def test_completed_conversation_resumes_without_model_calls(tmp_path: Path, imag
 
     assert resumed == first
     assert not selector.calls and not generator_a.calls and not generator_b.calls
-
-
-def test_claim_offsets_are_corrected_only_for_a_unique_quoted_span() -> None:
-    answer = PublicMessage(
-        message_id="a1",
-        turn_index=1,
-        role="assistant",
-        content="There are five squares.",
-    )
-    claim = AtomicClaim(
-        text="five squares",
-        source_message_id="a1",
-        start=0,
-        end=99,
-    )
-    normalized = SynthesisCoordinator._normalize_claim(claim, answer)
-    assert normalized is not None
-    assert (normalized.start, normalized.end) == (10, 22)
-
-    repeated = answer.model_copy(update={"content": "five squares and five squares"})
-    assert SynthesisCoordinator._normalize_claim(claim, repeated) is None
-
-
-@pytest.mark.parametrize("always_invalid", [False, True])
-def test_invalid_claim_boundaries_are_retried_without_guessing(
-    tmp_path: Path, always_invalid: bool
-) -> None:
-    class InvalidQuoteClient(ScriptedClient):
-        attempts = 0
-
-        def invoke(self, *args: Any, **kwargs: Any) -> ModelResponse:
-            response = super().invoke(*args, **kwargs)
-            self.attempts += 1
-            if always_invalid or self.attempts == 1:
-                value = ClaimExtraction(
-                    claims=(ClaimSpan(start_token=0, end_token=9999),),
-                    coverage=GateVerdict.MET,
-                    reason="Complete",
-                )
-                return ModelResponse(
-                    value=value,
-                    request_hash="1" * 64,
-                    response_hash="2" * 64,
-                    prompt_tokens=1,
-                    completion_tokens=1,
-                )
-            return response
-
-    config = load_config(Path("configs/pilot.yaml"))
-    with RunStore(tmp_path / "runs", "quote", require_local_wal=False) as store:
-        client = InvalidQuoteClient(config.models.generator_a)
-        co = SynthesisCoordinator(config, "quote", store, client, client, client)
-
-        def invoke():
-            return co._invoke(
-                client,
-                "claim_inventory",
-                {"candidate_answer": "Blue."},
-                (),
-                ClaimExtraction,
-                max_tokens=1024,
-                temperature=0.0,
-                seed=1,
-            )
-
-        if always_invalid:
-            with pytest.raises(ExecutionError, match="token boundaries"):
-                invoke()
-        else:
-            assert (
-                co._bind_claim_span(
-                    invoke().claims[0],
-                    PublicMessage(message_id="a", turn_index=1, role="assistant", content="Blue."),
-                ).text
-                == "Blue."
-            )
-        assert client.attempts == 2
-
-
-@pytest.mark.parametrize(
-    "text", ['The cap says "TITANS SWIMWEAR".', "看板には「停止」と書いてあります。", "2"]
-)
-def test_token_boundaries_reconstruct_original_quotes_and_unicode(text: str) -> None:
-    answer = PublicMessage(message_id="actual-answer", turn_index=1, role="assistant", content=text)
-    tokens = SynthesisCoordinator._answer_tokens(text)
-    claim = SynthesisCoordinator._bind_claim_span(
-        ClaimSpan(start_token=0, end_token=len(tokens)), answer
-    )
-    assert claim.text == text
-    assert claim.source_message_id == answer.message_id
-    claim.validate_span(answer)
 
 
 @pytest.mark.parametrize(
@@ -1721,7 +1576,7 @@ def test_holistic_prefix_retention_can_be_disabled(tmp_path, image_artifact, mon
     image, root = image_artifact
     co, store, _, _, _ = _coordinator(tmp_path)
     co.config = co.config.model_copy(
-        update={"evaluation": EvaluationConfig(mode="holistic", retain_accepted_prefix=False)}
+        update={"evaluation": EvaluationConfig(retain_accepted_prefix=False)}
     )
     monkeypatch.setattr("pixelogue.pipeline.planned_turn_count", lambda *args: 3)
     original = co._draft_questions
@@ -1742,7 +1597,7 @@ def test_holistic_prefix_retention_can_be_disabled(tmp_path, image_artifact, mon
 
 def test_holistic_rerating_rejects_empty_conversation(tmp_path, image_artifact):
     image, root = image_artifact
-    co, store, _, _, _ = _coordinator(tmp_path, reject_selection=True, evaluation_mode="holistic")
+    co, store, _, _, _ = _coordinator(tmp_path, reject_selection=True)
     try:
         conversation = co.synthesize_image(image, root)
         assert not conversation.turns
@@ -1963,7 +1818,7 @@ def test_empty_local_pixels_abstain_even_after_a_base_review_pass(
         )
         monkeypatch.setattr(
             coordinator,
-            "_rate_base_turn",
+            "_rate_holistic",
             lambda *args, **kwargs: TurnRating(items=(), aggregate="PASS"),
         )
         monkeypatch.setattr(
@@ -1982,7 +1837,6 @@ def test_empty_local_pixels_abstain_even_after_a_base_review_pass(
             [coordinator._view_metadata(image)],
             coordinator._model_image(image, root),
             1,
-            (),
         )
         assert rating.aggregate == "ABSTAIN"
         assert rating.items[-1].verdict is GateVerdict.UNKNOWN
@@ -2013,7 +1867,7 @@ def test_blind_transcription_sees_full_context_and_rejects_an_incomplete_bound(
         )
         monkeypatch.setattr(
             coordinator,
-            "_rate_base_turn",
+            "_rate_holistic",
             lambda *args, **kwargs: TurnRating(items=(), aggregate="PASS"),
         )
         calls = []
@@ -2049,7 +1903,6 @@ def test_blind_transcription_sees_full_context_and_rejects_an_incomplete_bound(
             [coordinator._view_metadata(image)],
             original,
             1,
-            (),
         )
         assert calls == ["transcript_source", "transcript_source"]
         assert rating.aggregate == "ABSTAIN"
@@ -2089,7 +1942,7 @@ def test_chart_inventory_uses_the_configured_evidence_budget_without_accepting_u
         )
         monkeypatch.setattr(
             coordinator,
-            "_rate_base_turn",
+            "_rate_holistic",
             lambda *args, **kwargs: TurnRating(items=(), aggregate="PASS"),
         )
         calls = []
@@ -2135,7 +1988,6 @@ def test_chart_inventory_uses_the_configured_evidence_budget_without_accepting_u
             [coordinator._view_metadata(image)],
             original,
             1,
-            (),
         )
         assert calls == ["chart_source", "chart_source", "chart_answer", "chart_answer"]
         assert rating.aggregate == "ABSTAIN"

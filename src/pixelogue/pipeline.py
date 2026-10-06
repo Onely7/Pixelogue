@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,17 +17,12 @@ from pydantic import BaseModel, ValidationError
 from pixelogue.catalog import task_catalog
 from pixelogue.config import ModelEndpoint, PixelogueConfig
 from pixelogue.contracts import (
-    AtomicClaim,
-    ClaimExtraction,
-    ClaimInventory,
-    ClaimSpan,
     ConversationArtifact,
     GateVerdict,
     HistorySnapshot,
     ImageArtifact,
     InstructionCandidate,
     PublicMessage,
-    RubricContext,
     RubricItem,
     RubricVerdict,
     TextPayload,
@@ -46,9 +41,7 @@ from pixelogue.evaluation import (
     action_affordance_question,
     action_answer_already_public,
     aggregate_rating,
-    applicable_rubric_items,
     consensus,
-    has_natural_language_content,
     identification_answer_in_history,
     identification_answer_in_question,
     item_id,
@@ -67,22 +60,9 @@ from pixelogue.gates import (
     holistic_decision,
     question_gate_decision,
 )
-from pixelogue.ledger import (
-    Requirement,
-    RequirementInventory,
-    _normalize_spec,
-)
 from pixelogue.planner import allocated_role, planned_turn_count
 from pixelogue.prompts import is_private_prompt_echo
 from pixelogue.routing import FamilyLedger, ImageProfile, Route, choose_route, family_definitions
-from pixelogue.rules import (
-    ComputationCheck,
-    ComputationInventory,
-    SetCheck,
-    SetInventory,
-    verify_computation_inventories,
-    verify_set_inventories,
-)
 from pixelogue.serialization import canonical_hash, canonical_json
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
@@ -140,7 +120,6 @@ MODEL_OUTPUT_ABSTENTIONS = frozenset(
         "MODEL_OUTPUT_REPETITION",
         "MODEL_SCHEMA_MISMATCH",
         "EVIDENCE_VIEW_MISMATCH",
-        "EXTRACTION_SOURCE_INVALID",
     }
 )
 
@@ -360,25 +339,19 @@ class SynthesisCoordinator:
         generator = self.generators[assigned_role]
         model_image = self._model_image(image, artifact_root)
         image_views = [self._view_metadata(image)]
-        if self.config.evaluation.mode == "holistic":
-            with self.store.transaction() as connection:
-                saved = connection.execute(
-                    "SELECT artifact_hash FROM conversation_commit WHERE conversation_id = ?",
-                    (conversation_id,),
-                ).fetchone()
-            if saved is not None:
-                completed = ConversationArtifact.model_validate_json(
-                    self.store.read_artifact(saved[0])
+        with self.store.transaction() as connection:
+            saved = connection.execute(
+                "SELECT artifact_hash FROM conversation_commit WHERE conversation_id = ?",
+                (conversation_id,),
+            ).fetchone()
+        if saved is not None:
+            completed = ConversationArtifact.model_validate_json(self.store.read_artifact(saved[0]))
+            if completed.image != image or completed.generation_model != generator.endpoint.repo_id:
+                raise ExecutionError(
+                    "RESUME_TURN_MISMATCH",
+                    "Saved conversation conflicts with the current input",
                 )
-                if (
-                    completed.image != image
-                    or completed.generation_model != generator.endpoint.repo_id
-                ):
-                    raise ExecutionError(
-                        "RESUME_TURN_MISMATCH",
-                        "Saved conversation conflicts with the current input",
-                    )
-                return completed
+            return completed
         count = planned_turn_count(image.image_id, self.config.seed)
         turns = [
             TurnArtifact.model_validate_json(self.store.read_artifact(artifact_hash))
@@ -649,7 +622,6 @@ class SynthesisCoordinator:
                     snapshot,
                     generator,
                     question,
-                    (),
                     target_language,
                     model_image,
                     image_views,
@@ -663,7 +635,6 @@ class SynthesisCoordinator:
                     generator,
                     question,
                     answered,
-                    (),
                     target_language,
                     model_image,
                     image_views,
@@ -954,7 +925,6 @@ class SynthesisCoordinator:
         snapshot: HistorySnapshot,
         generator: InferenceClient,
         question: PublicMessage,
-        requirements: tuple[Requirement, ...],
         target_language: str,
         model_image: ModelImage,
         image_views: list[dict[str, str]],
@@ -972,9 +942,9 @@ class SynthesisCoordinator:
                 "public_history": self._history(snapshot.public_history),
                 "question": question.content,
                 "expected_operation": operation_contract(selected),
-                "active_requirements": [
-                    requirement.model_dump(mode="json") for requirement in requirements
-                ],
+                # Always empty since the requirement ledger was retired; kept so that answer
+                # requests stay byte-identical to the measured configuration.
+                "active_requirements": [],
                 "image_views": image_views,
             },
             (model_image,),
@@ -1043,7 +1013,6 @@ class SynthesisCoordinator:
         generator: InferenceClient,
         question: PublicMessage,
         answer: PublicMessage,
-        requirements: tuple[Requirement, ...],
         target_language: str,
         model_image: ModelImage,
         image_views: list[dict[str, str]],
@@ -1052,8 +1021,7 @@ class SynthesisCoordinator:
         """Rate one answered turn, repairing once when configured, and build its artifact."""
         conversation_id = snapshot.conversation_id
         turn_index = snapshot.turn_index
-        repair = self.config.evaluation.mode == "holistic" and self.config.evaluation.repair_once
-        objections: list[str] | None = [] if repair else None
+        objections: list[str] | None = [] if self.config.evaluation.repair_once else None
         rating = self._rate_turn(
             conversation_id,
             snapshot.history_hash,
@@ -1065,7 +1033,6 @@ class SynthesisCoordinator:
             image_views,
             model_image,
             turn_index,
-            requirements,
             objections=objections,
         )
         if objections and rating.aggregate == "ABSTAIN":
@@ -1095,45 +1062,6 @@ class SynthesisCoordinator:
                     image_views,
                     model_image,
                     turn_index,
-                    requirements,
-                )
-        if rating.aggregate == "FAIL" and self.config.evaluation.mode == "detailed":
-            self.store.write_json_artifact(
-                "answer-attempts",
-                {
-                    "conversation_id": conversation_id,
-                    "turn_index": turn_index,
-                    "attempt": 0,
-                    "answer": answer.model_dump(mode="json"),
-                    "rating": rating.model_dump(mode="json"),
-                },
-            )
-            repaired = self._repair_answer(
-                generator,
-                snapshot.public_history,
-                question,
-                answer,
-                rating,
-                target_language,
-                image_views,
-                model_image,
-                turn_index,
-                requirements,
-            )
-            if repaired is not None:
-                answer = repaired
-                rating = self._rate_turn(
-                    conversation_id,
-                    snapshot.history_hash,
-                    snapshot.public_history,
-                    question,
-                    answer,
-                    selected,
-                    target_language,
-                    image_views,
-                    model_image,
-                    turn_index,
-                    requirements,
                 )
         turn_status: Literal["COMMITTED", "REJECTED", "ABSTAINED", "ERROR"]
         if rating.aggregate == "PASS":
@@ -1152,7 +1080,6 @@ class SynthesisCoordinator:
             history_hash=snapshot.history_hash,
             generation_model=generator.endpoint.repo_id,
             selector_model=self.selector.endpoint.repo_id,
-            requirements=requirements,
             rating=rating,
             status=turn_status,
         )
@@ -1342,12 +1269,6 @@ class SynthesisCoordinator:
                 break
         if terminal == "QUALITY_CANDIDATE" and len(rated_turns) < self.config.data.min_turns:
             terminal = "REJECTED"
-        if (
-            terminal == "QUALITY_CANDIDATE"
-            and self.config.evaluation.mode == "detailed"
-            and len(rated_turns) != len(conversation.turns)
-        ):
-            terminal = "REJECTED"
         rated = conversation.model_copy(update={"turns": tuple(rated_turns), "status": terminal})
         return self._finish_conversation(rated, persist=False)
 
@@ -1361,10 +1282,7 @@ class SynthesisCoordinator:
         model_image: ModelImage,
     ) -> TurnRating:
         """Apply question and answer gates to one stored turn without changing its text."""
-        if fit is GateVerdict.MET and (
-            self.config.evaluation.mode == "detailed"
-            or turn.instruction.catalog_version is not None
-        ):
+        if fit is GateVerdict.MET and turn.instruction.catalog_version is not None:
             decision, _ = self._question_gate(
                 turn.instruction,
                 None,
@@ -1390,49 +1308,8 @@ class SynthesisCoordinator:
                 image_views,
                 model_image,
                 turn.turn_index,
-                turn.requirements,
             )
         return TurnRating(items=(), aggregate="ABSTAIN" if fit is GateVerdict.UNKNOWN else "FAIL")
-
-    def _repair_answer(
-        self,
-        generator: InferenceClient,
-        history: Sequence[PublicMessage],
-        question: PublicMessage,
-        answer: PublicMessage,
-        rating: TurnRating,
-        language: str,
-        image_views: list[dict[str, str]],
-        model_image: ModelImage,
-        turn_index: int,
-        requirements: Sequence[Requirement],
-    ) -> PublicMessage | None:
-        failed = tuple(
-            item.template_id for item in rating.items if item.verdict is GateVerdict.NOT_MET
-        )
-        result = self._invoke(
-            generator,
-            "answer_repair",
-            {
-                "target_language": language,
-                "public_history": self._history(history),
-                "question": question.content,
-                "candidate_answer": answer.content,
-                "failed_criteria": failed,
-                "active_requirements": [
-                    requirement.model_dump(mode="json") for requirement in requirements
-                ],
-                "image_views": image_views,
-            },
-            (model_image,),
-            TextPayload,
-            max_tokens=self.config.tasks.answer_max_tokens,
-            temperature=0.0,
-            seed=self.config.seed + turn_index + 10_000,
-        )
-        if result.status != "OK" or result.text is None:
-            return None
-        return answer.model_copy(update={"content": result.text})
 
     def _repair_holistic_answer(
         self,
@@ -1614,27 +1491,25 @@ class SynthesisCoordinator:
         image_views: list[dict[str, str]],
         model_image: ModelImage,
         turn_index: int,
-        requirements: Sequence[Requirement],
         *,
         objections: list[str] | None = None,
     ) -> TurnRating:
-        """Require the configured base review and every applicable operation check."""
+        """Require the holistic review and every applicable operation check."""
         if instruction.catalog_version is not None and instruction.view_id != model_image.view_id:
             raise ExecutionError(
                 "EVIDENCE_VIEW_MISMATCH", "Operation refers to a different image view"
             )
-        rating = self._rate_base_turn(
+        rating = self._rate_holistic(
             conversation_id,
             history_hash,
             history,
             question,
             answer,
-            instruction,
             language,
             image_views,
             model_image,
             turn_index,
-            requirements,
+            instruction,
             objections=objections,
         )
         if instruction.catalog_version is None or rating.aggregate != "PASS":
@@ -1755,217 +1630,6 @@ class SynthesisCoordinator:
                 )
             )
         return aggregate_rating(items)
-
-    def _rate_base_turn(
-        self,
-        conversation_id: str,
-        history_hash: str,
-        history: Sequence[PublicMessage],
-        question: PublicMessage,
-        answer: PublicMessage,
-        instruction: InstructionCandidate,
-        language: str,
-        image_views: list[dict[str, str]],
-        model_image: ModelImage,
-        turn_index: int,
-        requirements: Sequence[Requirement],
-        *,
-        objections: list[str] | None = None,
-    ) -> TurnRating:
-        if self.config.evaluation.mode == "holistic":
-            return self._rate_holistic(
-                conversation_id,
-                history_hash,
-                history,
-                question,
-                answer,
-                language,
-                image_views,
-                model_image,
-                turn_index,
-                instruction,
-                objections=objections,
-            )
-        inventories = self._invoke_judges(
-            "claim_inventory",
-            {
-                "target_language": language,
-                "public_history": self._history(history),
-                "question": question.content,
-                "candidate_answer": answer.content,
-                "answer_tokens": self._answer_tokens(answer.content),
-            },
-            (),
-            ClaimExtraction,
-            max_tokens=2048,
-            seed=self.config.seed + turn_index,
-        )
-        inventories = [
-            ClaimInventory(
-                claims=tuple(self._bind_claim_span(claim, answer) for claim in inventory.claims),
-                coverage=inventory.coverage,
-                reason=inventory.reason,
-            )
-            for inventory in inventories
-        ]
-        coverage = consensus([inventory.coverage for inventory in inventories])
-        claims = self._claim_union(inventories, answer)
-        if claims is None:
-            coverage = GateVerdict.UNKNOWN
-            claims = ()
-        computation = (
-            self._check_computation(
-                history,
-                question,
-                answer,
-                language,
-                image_views,
-                model_image,
-                turn_index,
-            )
-            if instruction.catalog_version is None and instruction.family == "grounded_calculation"
-            else None
-        )
-        set_check = (
-            self._check_complete_set(
-                history,
-                question,
-                answer,
-                language,
-                image_views,
-                model_image,
-                turn_index,
-            )
-            if instruction.catalog_version is None and instruction.family == "visible_count"
-            else None
-        )
-        context = RubricContext(
-            turn_index=turn_index,
-            profile=instruction.profile,
-            has_natural_language_answer=has_natural_language_content(answer.content),
-            requirements=tuple(requirements),
-            claims=claims,
-            computation_ids=(instruction.candidate_id,) if computation is not None else (),
-            history_binding_ids=tuple(
-                requirement.requirement_id
-                for requirement in requirements
-                if requirement.source_message_id != question.message_id
-            ),
-            exhaustive_scope_ids=(instruction.candidate_id,)
-            if instruction.catalog_version is None and instruction.family == "visible_count"
-            else (),
-        )
-        rubric_items: list[RubricItem] = []
-        for template in applicable_rubric_items(context):
-            predicate = template["applies_when"]
-            subjects: Sequence[AtomicClaim | Requirement | None]
-            if predicate == "each_factual_claim":
-                subjects = claims
-            elif predicate == "each_public_requirement":
-                subjects = requirements
-            elif predicate == "public_format_constraint":
-                subjects = context.format_requirements
-            elif predicate == "has_history_binding":
-                subjects = tuple(
-                    requirement
-                    for requirement in requirements
-                    if requirement.requirement_id in context.history_binding_ids
-                )
-            else:
-                subjects = (None,)
-            for subject in subjects:
-                votes: list[RubricVerdict] = []
-                for judge_index, client in enumerate(self.generators.values()):
-                    payload, images = self._rubric_payload(
-                        template,
-                        history,
-                        question,
-                        answer,
-                        language,
-                        image_views,
-                        model_image,
-                        subject,
-                        computation.typed_rule_inputs if computation is not None else {},
-                    )
-                    if template["template_id"] == "C_COVERAGE":
-                        payload["candidate_claim_inventory"] = [
-                            claim.model_dump(mode="json") for claim in claims
-                        ]
-                    votes.append(
-                        self._invoke(
-                            client,
-                            "rubric_item",
-                            payload,
-                            images,
-                            RubricVerdict,
-                            max_tokens=256,
-                            temperature=0.0,
-                            seed=self.config.seed + turn_index,
-                            trial_id=f"blind-judge:{judge_index}",
-                        )
-                    )
-                verdict = consensus([GateVerdict(vote.verdict) for vote in votes])
-                if template["template_id"] == "C_COVERAGE":
-                    verdict = consensus([verdict, coverage])
-                elif template["template_id"] == "C_COMPUTATION" and computation is not None:
-                    if computation.verdict != "MET":
-                        verdict = GateVerdict(computation.verdict)
-                elif template["template_id"] == "C_SET_COMPLETE":
-                    if set_check is None:
-                        # Missing corroboration blocks a pass, not an agreed failure.
-                        if verdict == GateVerdict.MET:
-                            verdict = GateVerdict.UNKNOWN
-                    elif set_check.verdict == "NOT_MET":
-                        verdict = GateVerdict.NOT_MET
-                self.store.write_json_artifact(
-                    "rating-decisions",
-                    {
-                        "conversation_id": conversation_id,
-                        "turn_index": turn_index,
-                        "template_id": template["template_id"],
-                        "subject": subject.model_dump(mode="json") if subject is not None else None,
-                        "votes": [vote.model_dump(mode="json") for vote in votes],
-                        "claim_coverage": coverage.value
-                        if template["template_id"] == "C_COVERAGE"
-                        else None,
-                        "set_check": set_check.model_dump(mode="json")
-                        if template["template_id"] == "C_SET_COMPLETE" and set_check is not None
-                        else None,
-                        "controller_reason": "SET_INVENTORY_UNRESOLVED"
-                        if template["template_id"] == "C_SET_COMPLETE" and set_check is None
-                        else None,
-                        "verdict": verdict.value,
-                    },
-                )
-                if isinstance(subject, AtomicClaim):
-                    subject_id = subject.claim_id
-                elif isinstance(subject, Requirement):
-                    subject_id = subject.requirement_id
-                else:
-                    subject_id = "singleton"
-                context_hash = canonical_hash(payload)
-                rubric_items.append(
-                    RubricItem(
-                        item_id=item_id(
-                            conversation_id,
-                            turn_index,
-                            0,
-                            template["template_id"],
-                            subject_id,
-                            context_hash,
-                        ),
-                        template_id=template["template_id"],
-                        axis=template["axis"],
-                        verdict=verdict,
-                        reason=" | ".join(
-                            f"{name}:{vote.reason}"
-                            for name, vote in zip(self.generators, votes, strict=True)
-                        )[:240],
-                        actor="dual-consensus",
-                        history_hash=history_hash,
-                    )
-                )
-        return aggregate_rating(rubric_items)
 
     def _rate_holistic(
         self,
@@ -2103,32 +1767,31 @@ class SynthesisCoordinator:
         persist: bool,
     ) -> ConversationArtifact:
         """Preserve stopped attempts privately and certify only the accepted public prefix."""
-        if self.config.evaluation.mode == "holistic":
-            prefix = tuple(turn for turn in conversation.turns if turn.status == "COMMITTED")
-            if (
-                self.config.evaluation.retain_accepted_prefix
-                and conversation.status in {"REJECTED", "ABSTAINED"}
-                and len(prefix) >= self.config.data.min_turns
-            ):
-                self.store.write_json_artifact(
-                    "conversation-stops",
-                    {
-                        "conversation": conversation.model_dump(mode="json"),
-                        "retained_turns": len(prefix),
-                    },
-                )
-                conversation = ConversationArtifact(
-                    conversation_id=conversation.conversation_id,
-                    image=conversation.image,
-                    target_language=conversation.target_language,
-                    generation_model=conversation.generation_model,
-                    turns=prefix,
-                    status="QUALITY_CANDIDATE",
-                )
+        prefix = tuple(turn for turn in conversation.turns if turn.status == "COMMITTED")
+        if (
+            self.config.evaluation.retain_accepted_prefix
+            and conversation.status in {"REJECTED", "ABSTAINED"}
+            and len(prefix) >= self.config.data.min_turns
+        ):
+            self.store.write_json_artifact(
+                "conversation-stops",
+                {
+                    "conversation": conversation.model_dump(mode="json"),
+                    "retained_turns": len(prefix),
+                },
+            )
+            conversation = ConversationArtifact(
+                conversation_id=conversation.conversation_id,
+                image=conversation.image,
+                target_language=conversation.target_language,
+                generation_model=conversation.generation_model,
+                turns=prefix,
+                status="QUALITY_CANDIDATE",
+            )
         artifact_hash = self.store.write_json_artifact(
             "conversations", conversation.model_dump(mode="json")
         )
-        if persist and self.config.evaluation.mode == "holistic":
+        if persist:
             with self.store.transaction() as connection:
                 connection.execute(
                     "INSERT INTO conversation_commit(conversation_id, artifact_hash) VALUES (?, ?)",
@@ -2196,169 +1859,6 @@ class SynthesisCoordinator:
             },
         )
 
-    def _check_complete_set(
-        self,
-        history: Sequence[PublicMessage],
-        question: PublicMessage,
-        answer: PublicMessage,
-        language: str,
-        image_views: list[dict[str, str]],
-        model_image: ModelImage,
-        turn_index: int,
-    ) -> SetCheck | None:
-        inventories = [
-            self._invoke(
-                client,
-                "set_inventory",
-                {
-                    "target_language": language,
-                    "public_history": self._history(history),
-                    "question": question.content,
-                    "candidate_answer": answer.content,
-                    "image_views": image_views,
-                },
-                (model_image,),
-                SetInventory,
-                max_tokens=2048,
-                temperature=0.0,
-                seed=self.config.seed + turn_index,
-                trial_id=f"blind-judge:{judge_index}",
-            )
-            for judge_index, client in enumerate(self.generators.values())
-        ]
-        return verify_set_inventories(inventories)
-
-    def _check_computation(
-        self,
-        history: Sequence[PublicMessage],
-        question: PublicMessage,
-        answer: PublicMessage,
-        language: str,
-        image_views: list[dict[str, str]],
-        model_image: ModelImage,
-        turn_index: int,
-    ) -> ComputationCheck:
-        inventories = [
-            self._invoke(
-                client,
-                "computation_inventory",
-                {
-                    "target_language": language,
-                    "public_history": self._history(history),
-                    "question": question.content,
-                    "candidate_answer": answer.content,
-                    "image_views": image_views,
-                },
-                (model_image,),
-                ComputationInventory,
-                max_tokens=1024,
-                temperature=0.0,
-                seed=self.config.seed + turn_index,
-                trial_id=f"blind-judge:{judge_index}",
-            )
-            for judge_index, client in enumerate(self.generators.values())
-        ]
-        return verify_computation_inventories(inventories)
-
-    @staticmethod
-    def _answer_tokens(text: str) -> list[dict[str, Any]]:
-        """Expose stable token boundaries without requiring copied text or character counting."""
-        return [
-            {"index": index, "text": match.group(), "start": match.start(), "end": match.end()}
-            for index, match in enumerate(re.finditer(r"\w+|[^\w\s]", text))
-        ]
-
-    @staticmethod
-    def _bind_claim_span(span: ClaimSpan, answer: PublicMessage) -> AtomicClaim:
-        """Bind validated token boundaries to exact source bytes and a controller-owned ID."""
-        tokens = SynthesisCoordinator._answer_tokens(answer.content)
-        if not 0 <= span.start_token < span.end_token <= len(tokens):
-            raise ExecutionError("EXTRACTION_SOURCE_INVALID", "Claim token boundaries are invalid")
-        start = tokens[span.start_token]["start"]
-        end = tokens[span.end_token - 1]["end"]
-        return AtomicClaim(
-            text=answer.content[start:end],
-            start=start,
-            end=end,
-            source_message_id=answer.message_id,
-        )
-
-    @staticmethod
-    def _claim_union(
-        inventories: Sequence[ClaimInventory],
-        answer: PublicMessage,
-    ) -> tuple[AtomicClaim, ...] | None:
-        claims: dict[tuple[int, int, str], AtomicClaim] = {}
-        for inventory in inventories:
-            for claim in inventory.claims:
-                normalized = SynthesisCoordinator._normalize_claim(claim, answer)
-                if normalized is None:
-                    return None
-                claims[(normalized.start, normalized.end, normalized.text)] = normalized
-        return tuple(claims[key] for key in sorted(claims))
-
-    @staticmethod
-    def _normalize_claim(claim: AtomicClaim, answer: PublicMessage) -> AtomicClaim | None:
-        """Correct an invalid offset only when the quoted answer span is unique."""
-        if claim.source_message_id != answer.message_id:
-            return None
-        if (
-            claim.end <= len(answer.content)
-            and answer.content[claim.start : claim.end] == claim.text
-        ):
-            return claim
-        starts = [
-            index
-            for index in range(len(answer.content))
-            if answer.content.startswith(claim.text, index)
-        ]
-        if len(starts) != 1:
-            return None
-        start = starts[0]
-        return claim.model_copy(update={"start": start, "end": start + len(claim.text)})
-
-    @staticmethod
-    def _rubric_payload(
-        template: Mapping[str, Any],
-        history: Sequence[PublicMessage],
-        question: PublicMessage,
-        answer: PublicMessage,
-        language: str,
-        image_views: list[dict[str, str]],
-        model_image: ModelImage,
-        subject: AtomicClaim | Requirement | None,
-        rule_inputs: Mapping[str, Any],
-    ) -> tuple[dict[str, Any], tuple[ModelImage, ...]]:
-        scope = template["input_scope"]
-        payload: dict[str, Any] = {
-            "target_language": language,
-            "public_history": SynthesisCoordinator._history(history),
-            "question": question.content,
-            "criterion": {
-                "template_id": template["template_id"],
-                "question": template["question"],
-                "met_anchor": template["met_anchor"],
-                "not_met_anchor": template["not_met_anchor"],
-            },
-        }
-        if scope not in {"TEXT_HQ", "VISION_IHQ"}:
-            payload["candidate_answer"] = answer.content
-        images: tuple[ModelImage, ...] = ()
-        if scope.startswith("VISION") or scope.startswith("CLAIM"):
-            payload["image_views"] = image_views
-            images = (model_image,)
-        if scope == "CLAIM_IHQA" and isinstance(subject, AtomicClaim):
-            payload["target_claim"] = subject.model_dump(mode="json")
-        if isinstance(subject, Requirement):
-            payload["target_requirement"] = subject.model_dump(mode="json")
-        if scope == "RULE":
-            payload["typed_rule_inputs"] = (
-                {"requirement": subject.model_dump(mode="json")}
-                if isinstance(subject, Requirement)
-                else dict(rule_inputs)
-            )
-        return payload, images
-
     def _invoke_judges(
         self,
         stage: str,
@@ -2410,7 +1910,6 @@ class SynthesisCoordinator:
             "MODEL_FINISH_REASON",
             "MODEL_WHITESPACE_RUNAWAY",
             "MODEL_SCHEMA_MISMATCH",
-            "EXTRACTION_SOURCE_INVALID",
             "DRAFT_CONTRACT_INVALID",
         }
         retry_feedback: str | None = None
@@ -2432,34 +1931,6 @@ class SynthesisCoordinator:
             response: ModelResponse | None = None
             try:
                 response = client.invoke(stage, payload, images, model, **call_kwargs)
-                if isinstance(response.value, ClaimExtraction):
-                    answer = PublicMessage(
-                        message_id="answer",
-                        turn_index=1,
-                        role="assistant",
-                        content=payload["candidate_answer"],
-                    )
-                    for claim in response.value.claims:
-                        self._bind_claim_span(claim, answer)
-                if isinstance(response.value, RequirementInventory):
-                    messages = [
-                        PublicMessage.model_validate(value) for value in payload["public_history"]
-                    ]
-                    messages.append(
-                        PublicMessage(
-                            message_id=payload["question_message_id"],
-                            turn_index=1,
-                            role="user",
-                            content=payload["question"],
-                        )
-                    )
-                    if any(
-                        _normalize_spec(spec, messages) is None
-                        for spec in response.value.requirements
-                    ):
-                        raise ExecutionError(
-                            "EXTRACTION_SOURCE_INVALID", "Requirement quote or reference is invalid"
-                        )
                 if not isinstance(response.value, model):
                     raise ExecutionError(
                         "MODEL_TYPE_MISMATCH", f"{stage} returned another contract"
@@ -2588,14 +2059,6 @@ class SynthesisCoordinator:
     @staticmethod
     def _structured_retry_feedback(reason: str) -> str:
         """Return bounded correction guidance without copying an invalid model response."""
-        if reason == "EXTRACTION_SOURCE_INVALID":
-            return (
-                "An extracted quote or source reference was invalid. Copy exact substrings "
-                "from the supplied source without changing quotes, punctuation or characters. "
-                "Use only the supplied local message references. Never paraphrase a quoted span. "
-                "For claims select existing answer_tokens indices, with exclusive end_token. "
-                "For counts use categories grounded in the requested grouping and visible evidence."
-            )
         if reason == "MODEL_SCHEMA_MISMATCH":
             return (
                 "The previous response failed schema validation. Return one complete JSON object "

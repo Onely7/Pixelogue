@@ -364,7 +364,7 @@ def make_coordinator(
     config = config.model_copy(
         update={
             "evaluation": EvaluationConfig.model_validate(
-                {"mode": "holistic", "question_gate_label_policy": "same_contract", **evaluation}
+                {"question_gate_label_policy": "same_contract", **evaluation}
             ),
         }
     )

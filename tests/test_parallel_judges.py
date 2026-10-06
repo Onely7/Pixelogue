@@ -32,9 +32,7 @@ class Overlap:
 
 def test_blind_judge_pairs_overlap_and_keep_judge_order(tmp_path: Path, image_artifact) -> None:
     image, root = image_artifact
-    coordinator, store, _, generator_a, generator_b = _coordinator(
-        tmp_path, evaluation_mode="holistic"
-    )
+    coordinator, store, _, generator_a, generator_b = _coordinator(tmp_path)
     overlap = Overlap()
     generator_a.invoke = overlap.wrap(generator_a.invoke)
     generator_b.invoke = overlap.wrap(generator_b.invoke)

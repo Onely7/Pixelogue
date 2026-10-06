@@ -1,4 +1,4 @@
-"""Load and validate bundled task and rating catalogs."""
+"""Load and validate the bundled task catalog and legacy task migration."""
 
 from __future__ import annotations
 
@@ -13,17 +13,6 @@ from pixelogue.serialization import canonical_json, load_yaml, strict_json_objec
 from pixelogue.task_catalog import TaskCatalog
 
 TASK_CONTRACT_VERSION = "scope-operations-v2"
-EXPECTED_RUBRIC_COUNT = 28
-EXPECTED_AXES = {
-    "format",
-    "relevance",
-    "visual_dependency",
-    "image_correspondence",
-    "factual_correctness",
-    "history",
-    "uncertainty",
-    "safety",
-}
 
 
 @lru_cache(maxsize=1)
@@ -67,17 +56,3 @@ def load_legacy_migration() -> list[dict[str, Any]]:
             raise ConfigurationError("TASK_MIGRATION_MISMATCH", "Invalid legacy mapping")
         seen.add(row["old_id"])
     return rows
-
-
-def load_rubric_catalog() -> dict[str, Any]:
-    """Return the bundled 28-item rubric after structural checks."""
-    path = files("pixelogue.resources").joinpath("rubric_catalog.yaml")
-    with as_file(path) as resource:
-        catalog = load_yaml(resource)
-    items = catalog.get("items")
-    if not isinstance(items, list) or len(items) != EXPECTED_RUBRIC_COUNT:
-        raise ConfigurationError("RUBRIC_CATALOG_MISMATCH", "Rubric catalog must define 28 items")
-    axes = set(catalog.get("axes", []))
-    if axes != EXPECTED_AXES:
-        raise ConfigurationError("RUBRIC_CATALOG_MISMATCH", "Rubric axes do not match contract")
-    return catalog

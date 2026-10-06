@@ -8,7 +8,6 @@ tasks:
   answer_max_tokens: 1024
   enabled_extensions: []
 evaluation:
-  mode: holistic
   retain_accepted_prefix: true
 data:
   target_dialogues: 20

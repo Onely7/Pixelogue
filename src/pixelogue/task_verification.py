@@ -1,4 +1,4 @@
-"""Applicable operation validators shared by holistic and detailed evaluation."""
+"""Applicable operation validators that follow a passing holistic review."""
 
 from __future__ import annotations
 

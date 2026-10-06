@@ -369,27 +369,13 @@ class StudentViewConfig(StrictModel):
 
 
 class EvaluationConfig(StrictModel):
-    """Choose joint review or the legacy decomposed rubric."""
+    """Configure the blind question gate and holistic answer review."""
 
-    mode: Literal["holistic", "detailed"] = "holistic"
     retain_accepted_prefix: bool = True
     question_gate_label_policy: Literal["strict", "same_contract"] = "strict"
     judge_views: Literal["crop", "full_and_crop"] = "crop"
     holistic_tiebreak: Literal["none", "full_view"] = "none"
     repair_once: bool = False
-
-    @model_validator(mode="after")
-    def validate_holistic_options(self) -> EvaluationConfig:
-        """Keep v8 judge rules out of the legacy decomposed evaluator."""
-        changed = (
-            self.question_gate_label_policy != "strict"
-            or self.judge_views != "crop"
-            or self.holistic_tiebreak != "none"
-            or self.repair_once
-        )
-        if self.mode == "detailed" and changed:
-            raise ValueError("v8 judge options require evaluation.mode=holistic")
-        return self
 
 
 class PixelogueConfig(StrictModel):
@@ -414,8 +400,6 @@ class PixelogueConfig(StrictModel):
         if self.profile == "standard" and self.data.pilot:
             raise ValueError("standard profile cannot enable pilot mode")
         generator_repos = (self.models.generator_a.repo_id, self.models.generator_b.repo_id)
-        if self.evaluation.mode != "holistic":
-            raise ValueError("Direct drafting requires evaluation.mode=holistic")
         if self.profile == "standard" and generator_repos != PRIMARY_GENERATOR_REPOS:
             raise ValueError("standard profile requires the primary Qwen3.8/Gemma model pair")
         return self

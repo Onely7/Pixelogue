@@ -205,7 +205,6 @@ def test_a_holistic_pass_cannot_bypass_required_count_verification(
                 media_type=image.full_view.media_type,
             ),
             1,
-            (),
         )
         client.client.close()
         assert result.aggregate == "FAIL"

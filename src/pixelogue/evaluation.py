@@ -6,13 +6,11 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from difflib import SequenceMatcher
-from typing import Any
 
-from pixelogue.catalog import load_rubric_catalog, task_catalog
+from pixelogue.catalog import task_catalog
 from pixelogue.contracts import (
     GateVerdict,
     PublicMessage,
-    RubricContext,
     RubricItem,
     TurnRating,
 )
@@ -299,57 +297,17 @@ def question_fingerprint(question: str) -> str:
     return canonical_hash(_normalize_public_question(question))
 
 
-def has_natural_language_content(text: str) -> bool:
-    """Return whether text contains a Unicode letter that needs language evaluation."""
-    return any(character.isalpha() for character in text)
-
-
-def applicable_rubric_items(context: RubricContext) -> list[dict[str, Any]]:
-    """Instantiate catalog predicates using controller-owned context fields."""
-    catalog = load_rubric_catalog()
-    applicable: list[dict[str, Any]] = []
-    for item in catalog["items"]:
-        predicate = item["applies_when"]
-        if predicate == "always":
-            applicable.append(item)
-        elif predicate == "natural_language_answer" and context.has_natural_language_answer:
-            applicable.append(item)
-        elif predicate == "answer_has_non_exempt_natural_language" and (
-            context.has_natural_language_answer
-        ):
-            applicable.append(item)
-        elif predicate == "has_history" and context.turn_index > 1:
-            applicable.append(item)
-        elif predicate == "has_history_binding" and context.history_binding_ids:
-            applicable.append(item)
-        elif predicate == "has_computation" and context.computation_ids:
-            applicable.append(item)
-        elif predicate == "limitation_profile" and context.profile == "limitation":
-            applicable.append(item)
-        elif predicate == "false_premise_profile" and context.profile == "false_premise":
-            applicable.append(item)
-        elif predicate == "designated_strong_dependency_turn" and (context.requires_witness_check):
-            applicable.append(item)
-        elif predicate == "exhaustive_request" and context.exhaustive_scope_ids:
-            applicable.append(item)
-        elif predicate == "later_turn" and context.turn_index > 1:
-            applicable.append(item)
-        elif predicate == "public_format_constraint" and context.format_requirements:
-            applicable.append(item)
-        elif predicate == "each_public_requirement" and context.requirements:
-            applicable.append(item)
-        elif predicate == "each_factual_claim" and context.claims:
-            applicable.append(item)
-    return applicable
-
-
 def aggregate_rating(items: Sequence[RubricItem]) -> TurnRating:
-    """Aggregate gate criteria while retaining annotations and every axis."""
-    catalog = load_rubric_catalog()
-    uses = {item["template_id"]: item["default_use"] for item in catalog["items"]}
-    uses["Q_HOLISTIC"] = "gate"
-    uses.update({name: "gate" for name in task_catalog().verification_contracts})
-    gates = [item.verdict for item in items if uses[item.template_id] == "gate"]
+    """Aggregate the holistic review and operation checks, each of which is a gate.
+
+    Raises:
+        KeyError: If an item names neither the holistic review nor a verification contract.
+    """
+    gate_ids = {"Q_HOLISTIC", *task_catalog().verification_contracts}
+    unknown = sorted({item.template_id for item in items} - gate_ids)
+    if unknown:
+        raise KeyError(f"Unknown rating criteria: {unknown}")
+    gates = [item.verdict for item in items]
     if GateVerdict.ERROR in gates:
         aggregate = "ERROR"
     elif GateVerdict.NOT_MET in gates:

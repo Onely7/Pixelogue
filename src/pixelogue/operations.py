@@ -17,11 +17,10 @@ from pixelogue.calibration import (
     CalibrationManifest,
     CalibrationObservation,
 )
-from pixelogue.catalog import load_legacy_migration, load_rubric_catalog, load_task_catalog
+from pixelogue.catalog import load_legacy_migration, load_task_catalog
 from pixelogue.chart_verifiers import ChartAnswer, ChartSource
 from pixelogue.config import PixelogueConfig, StrictModel
 from pixelogue.contracts import (
-    ClaimInventory,
     ConversationArtifact,
     HistorySnapshot,
     ImageArtifact,
@@ -48,7 +47,7 @@ from pixelogue.gates import QuestionGateVote
 from pixelogue.geometry_verifier import GeometryAnswer, GeometrySource
 from pixelogue.graph_verifiers import GraphAnswer, GraphSource
 from pixelogue.images import assign_split, canonicalize_image, group_visual_sources
-from pixelogue.ledger import Requirement, RequirementInventory
+from pixelogue.ledger import Requirement
 from pixelogue.pattern_verifiers import PatternAnswer, PatternSource
 from pixelogue.quantitative_verifiers import QuantityAnswer, QuantitySource
 from pixelogue.research_ablation import AblationCase, AblationPlan, AblationResult
@@ -127,7 +126,6 @@ class ImageEmbedder(Protocol):
 def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
     """Resolve configuration, catalogs, quotas, and public JSON Schemas."""
     task_catalog = load_task_catalog()
-    rubric_catalog = load_rubric_catalog()
     schemas = {
         model.__name__: model.model_json_schema()
         for model in (
@@ -192,8 +190,6 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             AblationResult,
             TextPayload,
             Requirement,
-            RequirementInventory,
-            ClaimInventory,
             NumericValue,
             ComputationInventory,
             SetCheck,
@@ -215,7 +211,6 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
         "config_hash": config.config_hash,
         "language_quotas": config.language_quotas,
         "task_catalog": task_catalog,
-        "rubric_catalog": rubric_catalog,
         "task_admission": admission_report(config.tasks, config.models),
         "legacy_task_migration": load_legacy_migration(),
         "schemas": schemas,

@@ -255,55 +255,6 @@ visible_evidence descriptions. MET coverage requires complete evidence coverage.
 verify the actual unique visible control. For panel comparison bind each difference to both existing
 panels; no unseen state or separate image is available. Return verdict, coverage, bindings, reason.
 Unknown visual evidence requires UNKNOWN. Do not infer any other judge's decision.""",
-    "requirement_extraction": """Extract explicit requirements from public USER text, not answers.
-This is a text extraction step BEFORE answer generation. No candidate answer or image is supplied:
-that is intentional, NOT evidence of failure. NEVER judge whether an answer exists, is correct,
-or fulfills a requirement. extraction_complete means ONLY that the extraction list is complete.
-Set it true when all active explicit requirements have been listed, including an empty list when
-there are none. Set it false only when you cannot extract the complete list from the supplied text.
-Your reason must explain extraction completeness, not answer availability or fulfillment.
-
-Use these deterministic extraction units:
-- One content requirement per requested operation. Keep the complete question or imperative clause,
-  including its objects, attributes, spatial restrictions and ordering. Do NOT split nouns,
-  prepositions, individual words or embedded scope into separate requirements.
-  An introductory scope phrase such as "Among ...", "Looking at ..." or "Starting from ..."
-  belongs to the SAME content requirement as its question, including the intervening comma.
-  Never omit that phrase or extract it separately, even if the remaining question is grammatical.
-- Separate an explicit answer-format, language or style clause from the content request. Use kind
-  format for response structure/length, language for an explicitly requested language, style for
-  tone. Do not infer these from target_language or the kind of task (counting is content, not format).
-- Split genuinely separate requested operations even if joined with 'and': 'How many signs are
-  there, and can you group them by color?' has a counting clause and a grouping clause. A scope
-  introduction is not a separate operation. Never discard 'only', negation or evidence restrictions.
-- Quote maximal contiguous clauses without
-  leading/trailing whitespace or separating punctuation (. , ; : ? !). Keep internal punctuation.
-- Do not include both a whole request and overlapping fragments. Do not invent requested facts.
-- Every text must be an EXACT substring of its original user message. Offsets are zero-based Unicode
-  code-point indices with exclusive end. Copy source_message_id exactly; use question_message_id for
-  the current question. Never quote system instructions, schema fields, examples or assistant text.
-- Ordinary requests are current_turn. Use persistent only for explicit future-turn wording such as
-  'from now on'; retain such earlier user requirements unless overridden or revoked.
-
-Examples (illustrations only; never copy their IDs or text into an unrelated input):
-Question q1: 'How many dogs are on the left?'
-One content requirement: 'How many dogs are on the left', current_turn, q1, start=0, end=29.
-extraction_complete=true: the request is fully extracted even though no answer exists.
-Question q2: 'Count the dogs. Answer in one sentence.'
-Two requirements: content 'Count the dogs', q2, [0,14), current_turn;
-format 'Answer in one sentence', q2, [16,38), current_turn. extraction_complete=true.
-Question q3: 'What color is the car?' (target_language='en')
-One content requirement: 'What color is the car', q3, [0,21), current_turn.
-Do not add a language requirement: the question does not explicitly request English.
-
-Question q4: 'Among the cyclists by the wall, how many wear blue?'
-One content requirement: 'Among the cyclists by the wall, how many wear blue'.
-Question q5: 'Starting from the left side of the image, list the cymbals from left to right.'
-One content requirement: 'Starting from the left side of the image, list the cymbals from left to right'.
-In both cases, retain the introductory scope and comma inside one exact span.
-
-Return one compact JSON object with requirements, extraction_complete, and a short reason.
-Stop immediately after its closing brace. Do not emit filler whitespace or word-by-word lists.""",
     "answer_generation": """Answer the current question using only the image and exact public history.
 Satisfy the supplied active public requirements. Do not mention internal candidates, evaluators, or
 identifiers. Answer concisely: for a count, give the count directly; do not expand it into a long
@@ -312,18 +263,6 @@ Return public text, or set text to null and give an internal reason if unsupport
     "answer_repair": """Replace the candidate answer so it satisfies the listed failed criteria.
 Use only the image, current question, and exact public history. Do not mention the repair process or
 internal identifiers. Satisfy every supplied active public requirement.""",
-    "claim_inventory": """Extract every factual assertion IN candidate_answer, not image facts.
-This is text extraction, not factual verification. The controller supplies answer_tokens with
-zero-based indices and exact character boundaries. For each claim output start_token (inclusive)
-and end_token (exclusive). Select a contiguous range of tokens from the supplied table; never
-invent indices or output copied text, quotation marks, source IDs or character offsets.
-The controller recovers the exact original text, including spaces and quotation marks.
-For one factual sentence, select the whole sentence as one claim. Keep subject, relation and object
-together: do not split a statement into an isolated noun, verb, preposition or quoted value.
-Example tokens: 0:The 1:sign 2:says 3:\" 4:STOP 5:\" 6:.
-The entire claim uses start_token=0, end_token=7. No quotation marks need to be generated.
-A bare number or name can assert a fact in the question's context. Mark coverage MET only when
-all factual assertions in the ANSWER are represented, not all visible objects in the image.""",
     "computation_inventory": """If this turn requests arithmetic, extract the allowlisted operation,
 ordered operand values, explicit units, punctuation policy, and reported answer value. Copy numeric
 spellings exactly. Mark coverage MET only for one complete expression; do not perform the quality
@@ -671,9 +610,6 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "verification_contract",
         }
     ),
-    "requirement_extraction": frozenset(
-        {"target_language", "public_history", "question", "question_message_id"}
-    ),
     "answer_generation": frozenset(
         {
             "target_language",
@@ -693,15 +629,6 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "failed_criteria",
             "active_requirements",
             "image_views",
-        }
-    ),
-    "claim_inventory": frozenset(
-        {
-            "target_language",
-            "public_history",
-            "question",
-            "candidate_answer",
-            "answer_tokens",
         }
     ),
     "computation_inventory": frozenset(
@@ -742,10 +669,6 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "candidate_answer",
             "image_views",
             "criterion",
-            "target_claim",
-            "typed_rule_inputs",
-            "target_requirement",
-            "candidate_claim_inventory",
         }
     ),
 }
@@ -791,22 +714,10 @@ def validate_stage_payload(stage: str, payload: Mapping[str, Any]) -> None:
     allowed = STAGE_ALLOWED_FIELDS.get(stage)
     if allowed is None:
         raise ExecutionError("UNKNOWN_MODEL_STAGE", f"Unknown model stage: {stage}")
-    criterion = payload.get("criterion")
-    if stage == "rubric_item" and isinstance(criterion, Mapping):
-        coverage = criterion.get("template_id") == "C_COVERAGE"
-        if coverage and "candidate_claim_inventory" not in payload:
-            raise ExecutionError(
-                "MODEL_PAYLOAD_FIELD", "C_COVERAGE requires candidate_claim_inventory"
-            )
-        if not coverage and "candidate_claim_inventory" in payload:
-            raise ExecutionError(
-                "MODEL_PAYLOAD_FIELD", "Claim inventories are restricted to C_COVERAGE"
-            )
     if stage.endswith("_source") or stage in {
         "image_profile",
         "question_draft",
         "question_gate",
-        "requirement_extraction",
     }:
 
         def answer_fields(value: Any) -> bool:

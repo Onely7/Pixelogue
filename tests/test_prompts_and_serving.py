@@ -11,7 +11,7 @@ from pydantic import HttpUrl
 
 from pixelogue.chart_verifiers import ChartAnswer, ChartSource
 from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
-from pixelogue.contracts import ClaimExtraction, RubricVerdict, TextPayload
+from pixelogue.contracts import RubricVerdict, TextPayload
 from pixelogue.document_verifiers import DocumentSource
 from pixelogue.errors import ExecutionError
 from pixelogue.graph_verifiers import GraphAnswer, GraphSource
@@ -962,17 +962,6 @@ def test_persistent_disconnect_is_confined_to_images(tmp_path, monkeypatch, imag
         assert calls == 6
 
 
-def test_coverage_requires_its_inventory_and_restricts_it_to_coverage() -> None:
-    payload = {"criterion": {"template_id": "C_COVERAGE"}}
-    with pytest.raises(ExecutionError, match="requires candidate_claim_inventory"):
-        validate_stage_payload("rubric_item", payload)
-    validate_stage_payload("rubric_item", {**payload, "candidate_claim_inventory": []})
-    with pytest.raises(ExecutionError, match="restricted to C_COVERAGE"):
-        validate_stage_payload(
-            "rubric_item", {"criterion": {"template_id": "R_CORE"}, "candidate_claim_inventory": []}
-        )
-
-
 def test_http_500_records_bounded_response_body_without_headers(tmp_path, monkeypatch):
     monkeypatch.setattr("pixelogue.serving.time.sleep", lambda delay: None)
     with RunStore(tmp_path, "http500", require_local_wal=False) as store:
@@ -1009,47 +998,6 @@ def test_http_500_records_bounded_response_body_without_headers(tmp_path, monkey
             assert value["response_body"].startswith("backend error:")
             assert len(value["response_body"]) == 4096
             assert "headers" not in value
-
-
-def test_claim_schema_bounds_follow_each_answer_without_mutating_contract():
-    with httpx.Client(base_url="http://127.0.0.1:8000/v1/") as http:
-        client = VllmClient(
-            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="bounds", client=http
-        )
-        for text in ("The cap says TITANS.", "2", ""):
-            tokens = SynthesisCoordinator._answer_tokens(text)
-            body = client._build_body(
-                "claim_inventory",
-                {"candidate_answer": text, "answer_tokens": tokens},
-                (),
-                ClaimExtraction,
-                max_tokens=2048,
-                temperature=0.0,
-                seed=1,
-            )
-            schema = body["response_format"]["json_schema"]["schema"]
-            bounds = schema["$defs"]["ClaimSpan"]["properties"]
-            assert bounds["start_token"]["minimum"] == 0
-            assert bounds["start_token"]["maximum"] == max(0, len(tokens) - 1)
-            assert bounds["end_token"]["maximum"] == max(1, len(tokens))
-            if not tokens:
-                assert schema["properties"]["claims"]["maxItems"] == 0
-        assert (
-            "maximum"
-            not in ClaimExtraction.model_json_schema()["$defs"]["ClaimSpan"]["properties"][
-                "end_token"
-            ]
-        )
-        with pytest.raises(ExecutionError, match="indexed answer_tokens"):
-            client._build_body(
-                "claim_inventory",
-                {"answer_tokens": [{"index": 10}]},
-                (),
-                ClaimExtraction,
-                max_tokens=2048,
-                temperature=0.0,
-                seed=1,
-            )
 
 
 def test_request_images_are_deduplicated_and_restore_exact_envelope(tmp_path):
