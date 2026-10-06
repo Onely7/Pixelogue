@@ -16,29 +16,6 @@ from pixelogue.contracts import (
 )
 from pixelogue.serialization import canonical_hash
 
-GENERIC_IDENTIFICATION_REFERENTS = frozenset(
-    {
-        "animal",
-        "bird",
-        "car",
-        "creature",
-        "dog",
-        "equipment",
-        "flower",
-        "food",
-        "fruit",
-        "insect",
-        "item",
-        "object",
-        "person",
-        "plant",
-        "structure",
-        "subject",
-        "thing",
-        "vehicle",
-    }
-)
-
 
 def consensus(verdicts: Sequence[GateVerdict]) -> GateVerdict:
     """Require two matching semantic votes without majority fallback."""

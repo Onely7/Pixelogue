@@ -1,4 +1,4 @@
-"""Immutable public-requirement contracts and ledger transitions."""
+"""Public-requirement records that keep turns saved by the retired ledger readable."""
 
 from __future__ import annotations
 
