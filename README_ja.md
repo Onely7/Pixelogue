@@ -49,8 +49,9 @@ uv run --locked pytest
 9. [品質・速度改善の実測と運用](docs/validation/quality-and-performance_ja.md)
 10. [実装対応表](docs/implementation-map_ja.md)
 11. [Open Images合成の確認とタスク別実例](docs/validation/synthesis-campaign_ja.md)
+12. [多様な 100 評価画像での完全版パイプライン](docs/validation/br-diverse-100_ja.md)
 
-[採用率と合成速度の比較手順](docs/validation/yield-and-speed_ja.md)に、比較条件・計測・監査・実例HTMLの解釈をまとめています。`docs/validation/` の報告は以前のパイプラインで測定した記録であり、現在の直接起草の経路を説明するものではありません。
+[採用率と合成速度の比較手順](docs/validation/yield-and-speed_ja.md)に、比較条件・計測・監査・実例HTMLの解釈をまとめています。`docs/validation/` の報告は以前のパイプラインで測定した記録であり、現在の直接起草の経路を説明するものではありません。ただし多様な 100 画像の報告は、現在の BF16 のパイプラインを測定したものです。
 
 公開出力仕様、独立した根拠抽出、質問条件の固定と少数画像での比較は、
 [検証契約の改訂2](docs/tasks/verification-contract-v2_ja.md)を参照してください。
