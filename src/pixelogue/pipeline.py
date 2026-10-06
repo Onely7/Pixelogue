@@ -1052,7 +1052,7 @@ class SynthesisCoordinator:
     def _direct_question_gate(
         self,
         candidate: InstructionCandidate,
-        draft: QuestionDraft,
+        draft: QuestionDraft | None,
         image: ImageArtifact,
         snapshot: HistorySnapshot,
         question: PublicMessage,
@@ -1060,7 +1060,10 @@ class SynthesisCoordinator:
         model_image: ModelImage,
         image_views: list[dict[str, str]],
     ) -> tuple[GateDecision, InstructionCandidate]:
-        """Run both blind question judges once and apply the configured label policy."""
+        """Run both blind question judges once and apply the configured label policy.
+
+        Without a draft, as when re-rating a saved turn, a neighboring label is never adopted.
+        """
         judged = self._judge_inputs(candidate, image_views, model_image)
         if judged is None:
             decision = GateDecision(
@@ -1090,6 +1093,8 @@ class SynthesisCoordinator:
             )
 
             def relabel_allowed(task_id: str) -> bool:
+                if draft is None:
+                    return False
                 try:
                     draft_to_candidate(
                         draft,
@@ -1112,6 +1117,7 @@ class SynthesisCoordinator:
                 relabel_allowed=relabel_allowed,
             )
         if decision.verdict is GateVerdict.MET and decision.task_id != candidate.task_id:
+            assert draft is not None
             relabeled = draft_to_candidate(
                 draft,
                 image_id=image.image_id,
@@ -1127,7 +1133,7 @@ class SynthesisCoordinator:
             {
                 "question_message_id": question.message_id,
                 "candidate_id": candidate.candidate_id,
-                "drafted_task_id": draft.task_id,
+                "drafted_task_id": draft.task_id if draft is not None else None,
                 "votes": [vote.model_dump(mode="json") for vote in votes],
                 "label_rule": decision.label_rule,
                 "fit": decision.fit.value,
@@ -2142,25 +2148,19 @@ class SynthesisCoordinator:
             self.config.evaluation.mode == "detailed"
             or turn.instruction.catalog_version is not None
         ):
-            fit = self._question_intent(
-                snapshot.public_history,
-                turn.question,
+            decision, _ = self._direct_question_gate(
                 turn.instruction,
+                None,
+                conversation.image,
+                snapshot,
+                turn.question,
                 conversation.target_language,
-                image_views,
                 model_image,
-                turn.turn_index,
+                image_views,
             )
-            if fit is GateVerdict.MET:
-                fit = self._question_fit(
-                    snapshot.public_history,
-                    turn.question,
-                    turn.instruction,
-                    conversation.target_language,
-                    image_views,
-                    model_image,
-                    turn.turn_index,
-                )
+            if decision.verdict is GateVerdict.ERROR:
+                raise ExecutionError("QUESTION_GATE_ERROR", "Question gate execution failed")
+            fit = decision.verdict
         if fit is GateVerdict.MET:
             return self._rate_turn(
                 conversation.conversation_id,

@@ -45,6 +45,7 @@ from pixelogue.evaluation import (
 )
 from pixelogue.export import training_record
 from pixelogue.formula_verifier import FormulaSource
+from pixelogue.gates import GateDecision, QuestionGateVote
 from pixelogue.graph_verifiers import GraphSource
 from pixelogue.ledger import RequirementInventory, RequirementSpec
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
@@ -343,6 +344,14 @@ class ScriptedClient:
                 ),
                 coverage=GateVerdict.MET,
                 reason="The one factual claim is covered.",
+            )
+        elif response_model is QuestionGateVote:
+            value = QuestionGateVote(
+                local_anchor="MET",
+                operation_coherent="MET",
+                useful_request="MET",
+                reason="The question is visibly grounded.",
+                realized_task_id=payload["selected_instruction"]["task_id"],
             )
         elif response_model is RubricVerdict:
             if self.fail_first_rating and not self.rating_failed:
@@ -1096,7 +1105,7 @@ def test_repeated_invalid_model_json_abstains_but_transport_failure_remains_erro
 
 
 @pytest.mark.parametrize("mode", ["holistic", "detailed"])
-@pytest.mark.parametrize("stage", ["_question_intent", "_rate_turn"])
+@pytest.mark.parametrize("stage", ["_direct_question_gate", "_rate_turn"])
 @pytest.mark.parametrize(
     ("reason", "expected", "artifact_kind"),
     [
@@ -1113,8 +1122,7 @@ def test_rerating_keeps_failures_with_their_turn_and_continues_other_conversatio
     try:
         original = coordinator.synthesize_image(image, root)
         assert len(original.turns) == 2
-        monkeypatch.setattr(coordinator, "_question_intent", lambda *args: GateVerdict.MET)
-        monkeypatch.setattr(coordinator, "_question_fit", lambda *args: GateVerdict.MET)
+        monkeypatch.setattr(coordinator, "_direct_question_gate", _gate_met)
         monkeypatch.setattr(
             coordinator, "_rate_turn", lambda *args: TurnRating(items=(), aggregate="PASS")
         )
@@ -1153,6 +1161,10 @@ def test_rerating_keeps_failures_with_their_turn_and_continues_other_conversatio
     assert failure["turn_index"] == 1
     assert failure["reason"] == reason
     assert failure["operation"] == "rate-existing"
+
+
+def _gate_met(candidate, *args):
+    return GateDecision(GateVerdict.MET, candidate.task_id, "exact", GateVerdict.MET), candidate
 
 
 class ConcurrencyProbe:
@@ -1866,8 +1878,7 @@ def test_rerating_rejects_reciprocal_identification_without_second_judge_call(
             }
         )
         saved = original.model_copy(update={"turns": (first, second), "status": "REJECTED"})
-        monkeypatch.setattr(coordinator, "_question_intent", lambda *args: GateVerdict.MET)
-        monkeypatch.setattr(coordinator, "_question_fit", lambda *args: GateVerdict.MET)
+        monkeypatch.setattr(coordinator, "_direct_question_gate", _gate_met)
         rated_calls = []
 
         def rate(*args):

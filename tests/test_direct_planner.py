@@ -628,3 +628,33 @@ def test_screen_operations_need_a_screen_image() -> None:
     )
     assert route is not None
     assert "screen_ui" not in {route.primary_family, route.secondary_family}
+
+
+def test_rerating_uses_the_merged_question_gate_without_relabeling(
+    tmp_path, image_artifact
+) -> None:
+    image, root = image_artifact
+    coordinator, store, _, a, b = make_coordinator(tmp_path, judge_script(), judge_script())
+    neighbor = {"object_identification": "referring_object_resolution"}
+
+    def neighbor_label(payload: dict[str, Any], _trial: str | None) -> QuestionGateVote:
+        task = payload["selected_instruction"]["task_id"]
+        return vote(neighbor.get(task, task))
+
+    try:
+        conversation = coordinator.synthesize_image(image, root, generator_role="generator_a")
+        marks = len(a.calls), len(b.calls)
+        rated = coordinator.rate_existing(conversation, root)
+        rerating = {stage for stage, _, _ in a.calls[marks[0] :] + b.calls[marks[1] :]}
+        for client in (a, b):
+            client.script["question_gate"] = neighbor_label
+        relabeled = coordinator.rate_existing(conversation, root)
+    finally:
+        store.close()
+    assert conversation.turns[0].instruction.task_id == "object_identification"
+    assert rated.status == "QUALITY_CANDIDATE" and len(rated.turns) == len(conversation.turns)
+    assert "question_gate" in rerating
+    assert not rerating & {"question_intent", "question_fit"}
+    # A saved turn has no draft, so a same-contract neighbor label cannot replace its operation.
+    assert relabeled.turns[0].status == "REJECTED"
+    assert relabeled.turns[0].instruction == conversation.turns[0].instruction

@@ -17,7 +17,7 @@ uv run --locked pixelogue rate-existing \
   --output artifacts/open-images-pilot-001/rated-conversations.jsonl
 ```
 
-Use a new run ID. Re-rating is useful after an evaluator change, but it is not permission to rewrite an accepted answer in place. The result and source-separated summary are new sidecar files.
+Use a new run ID. Re-rating is useful after an evaluator change, but it is not permission to rewrite an accepted answer in place. The result and source-separated summary are new sidecar files. Saved catalog operations pass the same two-judge question gate as new drafts before the answer is reviewed. A saved turn has no draft, so a judge's neighboring operation label never replaces its stored operation.
 
 ## 2. Freeze the eligible pool
 
