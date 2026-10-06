@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Collection
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from pydantic import Field, model_validator
 
@@ -31,7 +31,6 @@ from pixelogue.task_runtime import (
 )
 
 DraftValue = Annotated[str, Field(min_length=1, max_length=512)]
-OutputForm = Literal["short_label", "sentence", "list", "yes_no", "number", "structured"]
 # The whole requested text unit must fit the bound region, so the drafted scope is used.
 TEXT_UNIT_TASKS = frozenset({"text_transcription", "text_reading_order", "code_transcription"})
 _ARTICLES = frozenset({"a", "an", "the"})
@@ -52,16 +51,19 @@ class FactKey(StrictModel):
 
 
 class QuestionDraft(StrictModel):
-    """One candidate question and the public operation it realizes."""
+    """One candidate question and the public operation it realizes.
+
+    ``target`` is the public locator of the subject or region the question is about; it is
+    also the operation's public scope description and never contains the answer.
+    """
 
     task_id: Annotated[str, Field(min_length=1, max_length=64)]
     question: Annotated[str, Field(min_length=1, max_length=600)]
+    target: Annotated[str, Field(min_length=1, max_length=160)]
     public_parameters: Annotated[tuple[DraftParameter, ...], Field(max_length=12)]
-    scope_description: Annotated[str, Field(min_length=1, max_length=160)]
     scope_region: ImageRegion
     target_region: ImageRegion | None
     fact_key: FactKey
-    output_form: OutputForm
 
     @model_validator(mode="after")
     def validate_draft(self) -> QuestionDraft:
@@ -74,8 +76,8 @@ class QuestionDraft(StrictModel):
             ):
                 raise ValueError("Draft target region must stay inside its scope region")
         names = [parameter.name for parameter in self.public_parameters]
-        if len(names) != len(set(names)):
-            raise ValueError("Draft parameter names must be unique")
+        if len(names) != len(set(names)) or "target" in names:
+            raise ValueError("Draft parameter names must be unique and exclude target")
         return self
 
 
@@ -140,8 +142,7 @@ def validate_draft_parameters(task: TaskDefinition, draft: QuestionDraft) -> Non
         ExecutionError: If a name, required choice or enumerated value is invalid.
     """
     parameters = {parameter.name: parameter.value for parameter in draft.public_parameters}
-    if "target" not in parameters:
-        raise _reject("DRAFT_PARAMETER_MISSING", "Every draft needs a public target locator")
+    parameters["target"] = draft.target
     allowed = set(bindable_parameter_names(task))
     if unknown := sorted(parameters.keys() - allowed):
         raise _reject("DRAFT_PARAMETER_UNKNOWN", f"Unknown parameters {unknown}")
@@ -202,7 +203,7 @@ def draft_to_candidate(
         task_id=task.id,
         family=task.family,
         profile="normal",
-        visible_scope=draft.scope_description,
+        visible_scope=draft.target,
         instruction_summary=task.definition_en,
         required_capabilities=task.required_capabilities,
         catalog_version=catalog.version,
@@ -210,14 +211,16 @@ def draft_to_candidate(
         view_id=view_id,
         scope_region=draft.scope_region,
         target_region=target_region,
-        public_parameters=tuple(
-            PublicParameter(name=parameter.name, value=parameter.value, origin="instruction")
-            for parameter in draft.public_parameters
+        public_parameters=(
+            PublicParameter(name="target", value=draft.target, origin="instruction"),
+            *(
+                PublicParameter(name=parameter.name, value=parameter.value, origin="instruction")
+                for parameter in draft.public_parameters
+            ),
         ),
         evidence_refs=(),
         verification_contracts=task.verification_contracts,
         origin="direct",
         request_key=request_key(draft.fact_key),
-        output_form=draft.output_form,
     )
     return candidate.model_copy(update={"candidate_id": fingerprint(candidate, image_id)})

@@ -20,7 +20,6 @@ from pydantic import Field, model_validator
 from pixelogue.catalog import task_catalog
 from pixelogue.config import StrictModel
 from pixelogue.task_catalog import TaskDefinition
-from pixelogue.task_evidence import ImageRegion
 
 # Used when the profile is unusable: broadly applicable families, most general first.
 FALLBACK_FAMILIES = (
@@ -32,20 +31,6 @@ FALLBACK_FAMILIES = (
 )
 PRIMARY_TASKS = 4
 SECONDARY_TASKS = 2
-
-
-class ProfileSubject(StrictModel):
-    """A salient visible subject named by the router."""
-
-    label: Annotated[str, Field(min_length=1, max_length=60)]
-    region: ImageRegion
-
-
-class FamilyFeasibility(StrictModel):
-    """Whether one task family can plausibly yield a grounded question for this image."""
-
-    family: Annotated[str, Field(min_length=1, max_length=64)]
-    verdict: Literal["MET", "NOT_MET", "UNKNOWN"]
 
 
 class ImageProfile(StrictModel):
@@ -65,16 +50,16 @@ class ImageProfile(StrictModel):
         "other",
     ]
     readable_text: Literal["none", "some", "dense"]
-    subjects: Annotated[tuple[ProfileSubject, ...], Field(max_length=5)]
-    feasible_families: Annotated[tuple[FamilyFeasibility, ...], Field(max_length=16)]
-    reason: Annotated[str, Field(min_length=1, max_length=240)]
+    supported_families: Annotated[
+        tuple[Annotated[str, Field(min_length=1, max_length=64)], ...], Field(max_length=16)
+    ]
+    reason: Annotated[str, Field(min_length=1, max_length=160)]
 
     @model_validator(mode="after")
     def validate_families(self) -> ImageProfile:
-        """Reject repeated family judgments."""
-        names = [item.family for item in self.feasible_families]
-        if len(names) != len(set(names)):
-            raise ValueError("Each family may be judged once")
+        """Reject repeated family names."""
+        if len(self.supported_families) != len(set(self.supported_families)):
+            raise ValueError("Each family may be listed once")
         return self
 
 
@@ -176,11 +161,7 @@ def choose_route(
     Returns ``None`` only when no available family exists at all.
     """
     available = {task.family for task in tasks.values()}
-    feasible = (
-        {item.family for item in profile.feasible_families if item.verdict == "MET"} & available
-        if profile is not None
-        else set()
-    )
+    feasible = set(profile.supported_families) & available if profile is not None else set()
     basis: Literal["profile", "fallback"] = "profile"
     if not feasible:
         feasible = set(FALLBACK_FAMILIES) & available

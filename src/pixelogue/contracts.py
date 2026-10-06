@@ -146,7 +146,6 @@ class InstructionCandidate(StrictModel):
     calibrated_domain: str | None = None
     origin: Literal["scoped", "direct"] = "scoped"
     request_key: str | None = None
-    output_form: str | None = None
 
     @model_validator(mode="after")
     def validate_operation(self) -> InstructionCandidate:

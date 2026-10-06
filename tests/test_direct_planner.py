@@ -21,7 +21,7 @@ from pixelogue.drafting import (
 from pixelogue.errors import ExecutionError
 from pixelogue.gates import QuestionGateVote, holistic_decision, question_gate_decision
 from pixelogue.pipeline import SynthesisCoordinator
-from pixelogue.routing import FamilyFeasibility, FamilyLedger, ImageProfile, choose_route
+from pixelogue.routing import FamilyLedger, ImageProfile, choose_route
 from pixelogue.serving import ModelResponse
 from pixelogue.store import RunStore
 from pixelogue.task_catalog import TaskDefinition
@@ -35,12 +35,11 @@ def draft(task_id: str = "object_identification", **changes: Any) -> QuestionDra
     values: dict[str, Any] = {
         "task_id": task_id,
         "question": "What is the blue object on the left side of the image?",
-        "public_parameters": (DraftParameter(name="target", value="blue object on the left"),),
-        "scope_description": "left side of the image",
+        "target": "blue object on the left",
+        "public_parameters": (),
         "scope_region": FULL,
         "target_region": LEFT,
         "fact_key": FactKey(subject="blue object on the left", dimension="category"),
-        "output_form": "short_label",
     }
     values.update(changes)
     return QuestionDraft(**values)
@@ -75,20 +74,13 @@ def test_draft_rejects_unoffered_task_and_invalid_choices() -> None:
     assert missing.value.reason == "DRAFT_PARAMETER_MISSING"
     bad = draft(
         "scene_categorization",
-        public_parameters=(
-            DraftParameter(name="target", value="whole image"),
-            DraftParameter(name="category_set", value=("indoor",)),
-        ),
+        target="whole image",
+        public_parameters=(DraftParameter(name="category_set", value=("indoor",)),),
     )
     with pytest.raises(ExecutionError) as scene:
         convert(bad, allowed=("scene_categorization",))
     assert scene.value.reason == "DRAFT_PARAMETER_VALUE"
-    unknown = draft(
-        public_parameters=(
-            DraftParameter(name="target", value="x"),
-            DraftParameter(name="answer", value="cat"),
-        )
-    )
+    unknown = draft(public_parameters=(DraftParameter(name="answer", value="cat"),))
     with pytest.raises(ExecutionError) as extra:
         convert(unknown)
     assert extra.value.reason == "DRAFT_PARAMETER_UNKNOWN"
@@ -126,11 +118,7 @@ def _tasks(*families: str) -> dict[str, TaskDefinition]:
 
 def _profile(*families: str) -> ImageProfile:
     return ImageProfile(
-        image_kind="photo",
-        readable_text="none",
-        subjects=(),
-        feasible_families=tuple(FamilyFeasibility(family=f, verdict="MET") for f in families),
-        reason="test",
+        image_kind="photo", readable_text="none", supported_families=families, reason="test"
     )
 
 
@@ -337,15 +325,11 @@ class DirectClient:
 
 
 def profile_value(payload: dict[str, Any], _trial: str | None) -> ImageProfile:
-    families = [row["family"] for row in payload["family_definitions"]]
+    assert any(row["family"] == "visual_description" for row in payload["family_definitions"])
     return ImageProfile(
         image_kind="photo",
         readable_text="none",
-        subjects=(),
-        feasible_families=tuple(
-            FamilyFeasibility(family=f, verdict="MET" if f == "visual_description" else "NOT_MET")
-            for f in families
-        ),
+        supported_families=("visual_description",),
         reason="photo",
     )
 
@@ -356,7 +340,7 @@ def drafts_value(payload: dict[str, Any], _trial: str | None) -> QuestionDraftBa
     task = "object_identification" if "object_identification" in offered else offered[0]
     rows = []
     for index in range(payload["draft_count"]):
-        parameters = [DraftParameter(name="target", value=f"object {turn}-{index}")]
+        parameters = []
         if task == "attribute_lookup":
             parameters.append(DraftParameter(name="attribute", value="color"))
         if task == "scene_categorization":
@@ -365,6 +349,7 @@ def drafts_value(payload: dict[str, Any], _trial: str | None) -> QuestionDraftBa
             draft(
                 task,
                 question=f"Question {turn}-{index}: indoor or outdoor about object {turn}-{index}?",
+                target=f"object {turn}-{index}",
                 public_parameters=tuple(parameters),
                 fact_key=FactKey(subject=f"object {turn}-{index}", dimension="category"),
             )

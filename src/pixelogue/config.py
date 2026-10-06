@@ -372,10 +372,10 @@ class TaskRuntimeConfig(StrictModel):
     calibration_manifest: Path | None = None
     decision_routing: DecisionRoutingConfig = DecisionRoutingConfig()
     planner: Literal["scoped", "direct"] = "scoped"
-    draft_count: Annotated[int, Field(ge=1, le=4)] = 3
+    draft_count: Annotated[int, Field(ge=1, le=4)] = 2
     draft_max_tokens: Annotated[int, Field(ge=256, le=4096)] = 1024
     extra_draft_calls_per_turn: Literal[0, 1] = 1
-    profile_max_tokens: Annotated[int, Field(ge=128, le=1024)] = 256
+    profile_max_tokens: Annotated[int, Field(ge=128, le=1024)] = 384
     family_targets: Literal["uniform"] | dict[str, Annotated[float, Field(gt=0)]] = "uniform"
     task_weights: dict[str, Annotated[float, Field(gt=0, le=1)]] = Field(
         default_factory=lambda: dict(DEFAULT_TASK_WEIGHTS)

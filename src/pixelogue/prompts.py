@@ -654,18 +654,15 @@ instruction choices have no refs. Omit a candidate when its target or required c
 The controller and a separate visual classifier will check references and every admission condition."""
 
 STAGE_INSTRUCTIONS["image_profile"] = """Profile this single image for task routing before any
-question exists. Return image_kind, readable_text (none, some or dense legible text), up to five
-salient visible subjects with short names and normalized boxes, and one feasibility judgment for
-EVERY family in family_definitions. A family is MET only when at least one of its listed
-operations could be asked and answered from clearly visible content; NOT_MET when the image lacks
-that kind of content (for example no chart, no table, no readable text); UNKNOWN when unsure.
-Judge only visible pixels. Do not write questions, answers or fine-grained category guesses.
-Boxes use normalized coordinates: 0 <= left < right <= 1 and 0 <= top < bottom <= 1.
-Use only family IDs from family_definitions."""
+question exists. Return image_kind, readable_text (none, some or dense legible text) and
+supported_families: the family IDs from family_definitions for which at least one listed operation
+could be asked and answered from clearly visible content. Omit a family when the image lacks that
+kind of content (for example no chart, no table, no readable text) or when you are unsure. Judge
+only visible pixels. Keep reason under 25 words. Do not write questions, answers or labels."""
 
 STAGE_INSTRUCTIONS["question_draft"] = """Write up to draft_count distinct candidate user questions
 for the next turn of an image-grounded conversation. Each draft realizes exactly one operation
-from allowed_tasks. Follow preferred_task_ids in order: write the first drafts from the primary
+from allowed_tasks. Follow preferred_task_ids in order: write the first draft from the primary
 family in family_plan and the last draft from the secondary family when the image supports it.
 Skip any operation the image does not clearly support. Drafts must differ in operation or target.
 Each question must be natural, in target_language, answerable from the visible image and the
@@ -673,19 +670,20 @@ exact public_history alone, and request a substantive new fact. Never repeat or 
 earlier request, reverse an earlier identification, reformat an earlier answer, or ask about a
 fact listed in excluded_fact_keys.
 task_id is the allowed operation whose definition matches what the question actually asks; do not
-label an easier neighboring request with a harder operation. Ask exactly one operation; compound
-independent requests are unsupported.
-public_parameters contains target, a public locator describing which subject or region is meant
-(never the answer), plus every required_parameter_names entry with a permitted value from
-parameter_contract. Use only bindable_parameter_names; fixed policies and verdict vocabularies are
+label an easier neighboring request with a harder operation. Naming a visible text label is text
+reading, not object identification. Ask exactly one operation; compound independent requests are
+unsupported.
+target is a short public locator of the subject or region the question is about (for example
+'the red car on the left' or 'the bar chart'); it never contains the answer. public_parameters
+holds every required_parameter_names entry except target, each with a permitted value from
+parameter_contract; use only bindable_parameter_names. Fixed policies and verdict vocabularies are
 not parameters. Every public parameter must be realized in the question wording.
-scope_description and scope_region describe the visual scope you actually used; target_region
-bounds the particular subject (null for a whole-scope request). Coordinates are normalized to the
-delivered image, and target_region must lie inside scope_region. For text transcription the scope
-must enclose the entire requested text unit, including punctuation and descenders.
+scope_region is the visual scope you used and target_region bounds the particular subject (null
+for a whole-scope request). Coordinates are normalized to the delivered image, and target_region
+lies inside scope_region. For text transcription the scope must enclose the entire requested text
+unit, including punctuation and descenders.
 fact_key names the subject and the dimension of the requested fact (for example subject 'dog on
-the left', dimension 'fur color'); it never contains the answer. output_form is the natural form of
-the answer.
+the left', dimension 'fur color'); it never contains the answer.
 Operation rules: For object_identification never name the category or a synonym; refer to the
 subject by location or non-category traits. For attribute_lookup ask for the named property
 without stating its value. For visible_action_relation identify the subject without stating the
@@ -718,7 +716,10 @@ spatial ordering cannot realize correspondence matching. Ability or hypothetical
 unsupported motion claims from a still image, are NOT_MET for visible_action_relation. Compound
 independent operations or unsupported machine-readable output requests are NOT_MET.
 useful_request: NOT_MET when public_history already contains the same answered request or a
-paraphrase of it. Explicit regrouping of known facts is useful.
+paraphrase of it, or when the question itself already states the requested answer: the category
+for object_identification, the value for attribute_lookup, the action for visible_action_relation
+or the text for transcription. Explicit regrouping of known facts is useful.
+Naming a visible text label is text reading, not object_identification.
 When two image views are supplied, the first is the complete image and the second is an exact crop
 of the bound region given by source_left/top/right/bottom: the requested local subject must be
 visible inside that crop, and the complete image provides context and positions only.

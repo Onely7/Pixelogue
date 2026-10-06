@@ -189,8 +189,8 @@ def _bind_direct_schema(
         families = [item["family"] for item in payload.get("family_definitions", [])]
         if not families:
             raise ExecutionError("MODEL_PAYLOAD_FIELD", "Image profile needs family definitions")
-        schema["$defs"]["FamilyFeasibility"]["properties"]["family"]["enum"] = families
-        schema["properties"]["feasible_families"]["maxItems"] = len(families)
+        schema["properties"]["supported_families"]["items"]["enum"] = families
+        schema["properties"]["supported_families"]["maxItems"] = len(families)
 
 
 def _bind_specialist_source_schema(
