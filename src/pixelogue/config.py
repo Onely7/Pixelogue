@@ -281,12 +281,14 @@ class RuntimeConfig(StrictModel):
     """Inference request and retry boundaries."""
 
     request_timeout_seconds: Annotated[int, Field(ge=1, le=600)] = 180
-    timeout_seconds_per_1k_output_tokens: Annotated[int, Field(ge=1, le=600)] | None = None
+    timeout_seconds_per_1k_output_tokens: Annotated[int, Field(ge=1, le=600)] | None = 45
     transport_max_attempts: Literal[1, 2, 3] = 3
     structured_output_max_attempts: Literal[1, 2, 3] = 2
     max_concurrent_images: Annotated[int, Field(ge=1, le=64)] = 1
     refill_completed_images: bool = False
-    repetition_detection: RepetitionDetectionConfig | None = None
+    repetition_detection: RepetitionDetectionConfig | None = Field(
+        default_factory=RepetitionDetectionConfig
+    )
     max_total_requests: Annotated[int, Field(ge=1)] = 10_000_000
     max_total_output_tokens: Annotated[int, Field(ge=1)] = 1_000_000_000
     allow_external_inference: Literal[False] = False
@@ -360,10 +362,10 @@ class EvaluationConfig(StrictModel):
     """Configure the blind question gate and holistic answer review."""
 
     retain_accepted_prefix: bool = True
-    question_gate_label_policy: Literal["strict", "same_contract"] = "strict"
-    judge_views: Literal["crop", "full_and_crop"] = "crop"
-    holistic_tiebreak: Literal["none", "full_view"] = "none"
-    repair_once: bool = False
+    question_gate_label_policy: Literal["strict", "same_contract"] = "same_contract"
+    judge_views: Literal["crop", "full_and_crop"] = "full_and_crop"
+    holistic_tiebreak: Literal["none", "full_view"] = "full_view"
+    repair_once: bool = True
 
 
 class PixelogueConfig(StrictModel):

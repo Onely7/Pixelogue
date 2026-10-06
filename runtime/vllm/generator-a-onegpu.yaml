@@ -12,4 +12,4 @@ generation-config: vllm
 default-chat-template-kwargs:
   enable_thinking: false
 limit-mm-per-prompt:
-  image: 1
+  image: 2

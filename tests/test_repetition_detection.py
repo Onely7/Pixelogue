@@ -66,24 +66,26 @@ def test_engine_guard_is_only_sent_to_private_structured_stages(stage, expected)
         }
 
 
-def test_guard_is_off_by_default_and_changes_configuration_identity():
+def test_guard_is_on_by_default_and_disabling_changes_configuration_identity():
     original = load_config(Path("configs/pilot.yaml"))
-    changed = original.model_copy(
-        update={
-            "runtime": original.runtime.model_copy(
-                update={"repetition_detection": RepetitionDetectionConfig()}
-            )
-        }
+    assert original.runtime.repetition_detection == RepetitionDetectionConfig()
+    disabled = original.model_copy(
+        update={"runtime": original.runtime.model_copy(update={"repetition_detection": None})}
     )
-    assert changed.config_hash != original.config_hash
-    client = VllmClient(original.models.generator_a, original.runtime, run_id="default")
-    try:
-        body = client._build_body(
-            "question_draft", {}, (), RubricVerdict, max_tokens=512, temperature=0.0, seed=1
-        )
-    finally:
-        client.client.close()
-    assert "repetition_detection" not in body
+    assert disabled.config_hash != original.config_hash
+    bodies = []
+    for runtime in (original.runtime, disabled.runtime):
+        client = VllmClient(original.models.generator_a, runtime, run_id="default")
+        try:
+            bodies.append(
+                client._build_body(
+                    "question_draft", {}, (), RubricVerdict, max_tokens=512, temperature=0.0, seed=1
+                )
+            )
+        finally:
+            client.client.close()
+    assert "repetition_detection" in bodies[0]
+    assert "repetition_detection" not in bodies[1]
 
 
 @pytest.mark.parametrize("content", ['{"verdict":"MET","reason":"Valid JSON"}', "{"])

@@ -876,6 +876,11 @@ def test_local_question_judges_receive_only_a_hashed_focus_view(
 ):
     image, root = image_artifact
     coordinator, store, _, _, _ = _coordinator(tmp_path)
+    coordinator.config = coordinator.config.model_copy(
+        update={
+            "evaluation": coordinator.config.evaluation.model_copy(update={"judge_views": "crop"})
+        }
+    )
     try:
         instruction = InstructionCandidate(
             candidate_id="local",
@@ -1531,6 +1536,10 @@ def test_holistic_stop_retains_only_two_or_more_accepted_turns(
 ):
     image, root = image_artifact
     co, store, _, a, b = _coordinator(tmp_path)
+    # Retention is independent of the single repair, which a split vote would otherwise trigger.
+    co.config = co.config.model_copy(
+        update={"evaluation": co.config.evaluation.model_copy(update={"repair_once": False})}
+    )
     monkeypatch.setattr("pixelogue.pipeline.planned_turn_count", lambda *args: 4)
     for client, vote in zip((a, b), votes, strict=True):
         original = client.invoke

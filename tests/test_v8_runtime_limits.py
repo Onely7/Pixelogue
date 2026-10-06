@@ -11,7 +11,9 @@ def client(runtime: RuntimeConfig) -> VllmClient:
 
 
 def test_request_timeout_scales_with_output_budget() -> None:
-    fixed = client(RuntimeConfig(request_timeout_seconds=180))
+    fixed = client(
+        RuntimeConfig(request_timeout_seconds=180, timeout_seconds_per_1k_output_tokens=None)
+    )
     assert fixed._timeout(8192).read == 180
     scaled = client(
         RuntimeConfig(request_timeout_seconds=180, timeout_seconds_per_1k_output_tokens=45)
