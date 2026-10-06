@@ -82,17 +82,10 @@ class QuestionDraft(StrictModel):
 
 
 class QuestionDraftBatch(StrictModel):
-    """Ordered drafts for one turn, or an explicit reason when none is supported."""
+    """Ordered drafts for one turn; an empty batch is a valid abstention."""
 
     drafts: Annotated[tuple[QuestionDraft, ...], Field(max_length=4)]
     reason: Annotated[str, Field(min_length=1, max_length=240)] | None = None
-
-    @model_validator(mode="after")
-    def validate_batch(self) -> QuestionDraftBatch:
-        """Require a reason for an empty batch."""
-        if not self.drafts and not self.reason:
-            raise ValueError("An empty draft batch needs a reason")
-        return self
 
 
 def _words(text: str) -> list[str]:
