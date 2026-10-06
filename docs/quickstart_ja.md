@@ -21,7 +21,7 @@ uv run --locked pixelogue compile \
   --output artifacts/compiled-plan.json
 ```
 
-標準出力には `output` と `compiled_hash` を持つ JSON が 1 行表示されます。出力ファイルには、有効な設定、言語別件数、タスク・評価カタログ、JSON Schema が入ります。ここで分かるのは設定が矛盾していないことです。GPU やモデルサーバーの準備完了を意味しません。
+標準出力には `output` と `compiled_hash` を持つ JSON が 1 行表示されます。出力ファイルには、有効な設定、言語別件数、タスクカタログとタスクごとの実行可否、JSON Schema が入ります。ここで分かるのは設定が矛盾していないことです。GPU やモデルサーバーの準備完了を意味しません。
 
 ## 3. 小さな正解付き fixture を作る
 

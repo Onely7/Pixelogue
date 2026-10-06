@@ -155,7 +155,7 @@ uv run --locked pixelogue ingest \
 uv run --locked python validation/build_screenspot_ui_cases.py
 ```
 
-The fetcher checks image and annotation hashes against the committed manifest. Selection also excluded screenshots with a 64-bit difference-hash distance at most five; this screen is not a complete near-copy audit. The case builder freezes 20 annotated-center clicks and 59 off-target clicks on separate confirmation screenshots. ScreenSpot images remain evaluation-only and outside Git. Model extraction and verifier outcomes must still satisfy the stated calibration bounds before normal selection.
+The fetcher checks image and annotation hashes against the committed manifest. Selection also excluded screenshots with a 64-bit difference-hash distance at most five; this screen is not a complete near-copy audit. The case builder freezes 20 annotated-center clicks and 59 off-target clicks on separate confirmation screenshots. ScreenSpot images remain evaluation-only and outside Git. Model extraction and verifier outcomes must still satisfy the stated calibration bounds before admission.
 
 The separate [ScreenSpot holdout manifest](../validation/screenspot_ui_holdout_manifest.jsonl) pins 150 additional confirmation screenshots after the first confirmation sample was inspected during development. It excludes matching pixels and difference hashes within distance five across the two sets. Freeze it only once with `--freeze --holdout`; subsequent restores use `--holdout` alone. Its private case builder fixes 50 annotated-center clicks and 100 off-target clicks before evaluation.
 
@@ -186,7 +186,7 @@ uv run --locked pixelogue ingest \
 uv run --locked python validation/build_primus_music_cases.py
 ```
 
-The fetcher checks the source archive, MEI, original PNG, transformed PNG and derived label hashes. The case builder freezes 20 exact transcriptions and 59 adjacent-note errors on separate confirmation works. Its label consistency check does not measure visual reading accuracy; independent model readings and the calibration bounds determine normal selection. The rights record points to the source page under the operator's evaluation-only testing authorization and does not assert a reuse license for the scores.
+The fetcher checks the source archive, MEI, original PNG, transformed PNG and derived label hashes. The case builder freezes 20 exact transcriptions and 59 adjacent-note errors on separate confirmation works. Its label consistency check does not measure visual reading accuracy; independent model readings and the calibration bounds determine admission. The rights record points to the source page under the operator's evaluation-only testing authorization and does not assert a reuse license for the scores.
 
 ## Prepare existing CVDF training images
 

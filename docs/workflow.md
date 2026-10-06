@@ -2,7 +2,7 @@
 
 This guide starts after images have been ingested and all required model endpoints have passed `doctor --check-servers`.
 
-For the reasoning behind every gate and annotated artifact examples, use the [detailed pipeline guide](pipeline/README.md).
+For the reasoning behind every gate and annotated artifact examples, use the [pipeline guide](pipeline/README.md).
 
 ## 1. Generate a pilot
 
@@ -17,19 +17,19 @@ uv run --locked pixelogue synthesize \
 
 `runtime.max_concurrent_images` is the upper bound on independent images in flight. The standard and regular pilot profiles allow four; the one-GPU paired pilot allows two. Use `--workers 1` for a serial diagnostic or `--workers N` up to the configured bound for a measured run. Set the bound explicitly in a separate config when comparing higher concurrency. Pixelogue still processes the turns within one conversation in order and writes final conversation rows in input order.
 
-The coordinator assigns languages and generators with exact batch quotas. A conversation uses one generator throughout. The v7 flow is:
+The coordinator assigns languages and generators with exact batch quotas. A conversation uses one generator throughout. Each image follows this flow:
 
-1. extract scope-bound capability observations;
-2. build eligible templates from the 65 core candidates and any enabled specialist extensions with a working environment and exact model-bound calibration;
-3. bind public parameters and eligibility checks within the answer budget;
-4. select using the image and exact committed public history;
-5. generate a question, reject prompt echoes and repeats, classify its operation without revealing the selected task, then obtain two independent operation/eligibility checks;
-6. generate the answer and obtain two blind holistic reviews including the expected operation;
-7. run every applicable declared validator before committing the turn.
+1. the router (`Qwen/Qwen3.5-2B`) profiles the image once and lists the task families it can support;
+2. for each planned turn, the controller routes a primary and a secondary family from the 65 core operations, offering only lightly verified operations in the first `tasks.anchor_turns` turns;
+3. the conversation's generator drafts up to `tasks.draft_count` questions, each with its operation, public parameters, regions and a private fact key;
+4. deterministic checks reject contract violations, private-prompt echoes, internal references, repeated questions and facts, and operation-specific defects before any judge call;
+5. both judges gate the question in one blind call each, including an independent operation label; one extra drafting call may follow when nothing passes;
+6. the generator answers only the first question that passes, and both judges review the whole turn; a full-view tie-break and a single answer repair are the only follow-ups;
+7. every applicable operation validator runs before the turn is committed.
 
-Holistic review covers language, explicit formats, safety and visual facts together. Detailed mode additionally extracts public requirements before the answer and applies the legacy claim/rubric process with one possible repair. V7 operation validators apply in both modes. See the [catalog guide](tasks/README.md) for availability and parameter restrictions.
+Holistic review covers language, explicit formats, safety and visual facts together; its rating item ID is `Q_HOLISTIC`. See the [generation guide](pipeline/generation-and-evaluation.md) for each step and the [catalog guide](tasks/README.md) for availability and parameter restrictions.
 
-`NO_SUITABLE_CANDIDATE` ends the plan without selector fallback. Holistic runs may retain at least two accepted turns when configured; failed tails remain private. Disagreement and insufficient evidence abstain, while operational errors remain errors. Use a new run ID for v7 or any configuration change.
+A turn that ends without a committed answer stops its conversation. With `evaluation.retain_accepted_prefix: true` (default), a conversation that has already committed at least two turns keeps that prefix as a quality candidate; failed tails remain private. Disagreement and insufficient evidence abstain, while operational errors remain errors. Use a new run ID for any configuration change.
 
 Outputs include `conversations.jsonl`, dataset-specific `conversations.summary.json`, and `conversations.operations.json`, which counts committed operations and the final committed primary operation. Evaluation sources remain ineligible for training.
 
@@ -56,7 +56,7 @@ uv run --locked pixelogue rate-existing \
   --output artifacts/open-images-pilot/rated-conversations.jsonl
 ```
 
-This sends saved questions and answers through fresh dual evaluation. It does not rewrite public text. The result and its source-separated summary are sidecars.
+This sends saved questions and answers through the deterministic public-text checks, the two-judge question gate, holistic review and operation validators again. It does not rewrite or repair public text. The result and its source-separated summary are sidecars.
 
 Exhausted malformed evaluator outputs produce `ABSTAINED`; transport and server failures remain `ERROR`. Re-rating records the stopped turn's unchanged question, answer and private failure reason, then continues with other conversations. The failed turn is never committed or accepted.
 
@@ -100,11 +100,11 @@ The output files have different audiences:
 | File | Contents |
 |---|---|
 | `training.jsonl` | Public user and assistant messages; the image appears once in the first user message |
-| `ratings.jsonl` | Per-turn criteria and aggregate results |
-| `provenance.jsonl` | Source, visual group, generator, and independent student processor lock |
+| `ratings.jsonl` | Per-turn rating items and aggregate results |
+| `provenance.jsonl` | Source, visual group, generator, operation IDs, and independent student processor lock |
 | `selection.json` | Frozen pool identity, selected IDs, solver status, and audit hash |
 
-Candidate IDs, selector reasons, judge reasons, source titles, and operational fields never enter `training.jsonl`. The training-side Qwen3-VL-8B processor lock is independent of the instruction selector and is recorded in provenance.
+Candidate IDs, drafts, fact keys, judge reasons, source titles, and operational fields never enter `training.jsonl`. The training-side Qwen3-VL-8B processor lock is independent of every teacher model, including the router, and is recorded in provenance.
 
 ### Synthesis progress
 

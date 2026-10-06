@@ -2,7 +2,7 @@
 
 画像の取り込みが終わり、必要なモデルのエンドポイントが `doctor --check-servers` を通過した後の手順です。
 
-各判定点の理由と生成物の実例は、[詳しいパイプラインガイド](pipeline/README_ja.md)で説明しています。
+各判定点の理由と生成物の実例は、[パイプラインガイド](pipeline/README_ja.md)で説明しています。
 
 ## 1. pilot 対話を生成する
 
@@ -17,20 +17,19 @@ uv run --locked pixelogue synthesize \
 
 同時に処理する独立画像の上限は `runtime.max_concurrent_images` で指定します。standardと通常pilotは4件、1 GPUのモデル対pilotは2件を上限とします。直列実行には `--workers 1`、測定時には設定上限以下の `--workers N` を指定します。より高い並列数を比較するときは、別の設定で上限を明示します。1つの対話内の往復は順番どおりに処理し、最終的な対話レコードも入力順で保存します。
 
-言語と2つの生成モデルは、小さなbatchでも設定比率どおりに割り当てます。1対話の質問と回答は同じ生成モデルが担当します。既定の `evaluation.mode: holistic` は次の順序です。
+言語と2つの生成モデルは、小さなbatchでも設定比率どおりに割り当てます。1対話の質問と回答は同じ生成モデルが担当します。各画像は次の順序で処理します。
 
-1. 画像の領域ごとに、capabilityと根拠を観察する
-2. 65の標準候補と、有効化・環境・対象モデルでの校正が揃った専門拡張から、画像ごとの根拠に合う操作を絞る
-3. 公開パラメータと実行条件を具体化し、回答予算内に収まる候補を選択器へ渡す
-4. 質問を生成し、重複・内部プロンプト転載を除外した後、選択タスクを見せずに操作を分類し、両評価器が操作と領域への適合性を確認する
-5. 回答を生成し、操作条件を含めて2モデルが独立して総合評価する
-6. 操作ごとの追加検証もすべて通過したターンだけを確定する
+1. ルーター（`Qwen/Qwen3.5-2B`）が画像を1回だけ分析し、対応できるタスク系統を列挙する
+2. 予定した各ターンで、controllerが標準65操作から主系統と副系統を割り当てる。最初の `tasks.anchor_turns` ターンは軽い操作だけを提示する
+3. 会話を担当する生成器が、操作・公開パラメーター・領域・非公開のfact keyを持つ質問案を最大 `tasks.draft_count` 件書く
+4. 評価器を呼ぶ前に、契約違反、内部プロンプトの転載、内部参照、質問や事実の繰り返し、操作ごとの不備を決定的に棄却する
+5. 両評価器がそれぞれ1回の盲検呼び出しで、独立した操作ラベルを含めて質問を審査する。どの案も通らない場合は、追加の起草を1回だけ行える
+6. 最初に審査を通った質問だけに生成器が回答し、両評価器がターン全体を総合評価する。追加の処理は、画像全体での再評価と1回だけの回答修復に限る
+7. 該当するすべての操作検証器を通過したターンだけを確定する
 
-言語・形式・安全性も総合評価に含めます。実行可能な操作と未実装検証器は[タスクカタログv7](tasks/README_ja.md)で確認できます。detailed用の要求・主張抽出、項目別採点、回答修復はholisticでは行いません。総合評価の項目IDは `Q_HOLISTIC` です。
+言語・形式・安全性も総合評価に含めます。総合評価の項目IDは `Q_HOLISTIC` です。各手順は[生成ガイド](pipeline/generation-and-evaluation_ja.md)、実行可能な操作とパラメーターの制約は[タスクカタログv7](tasks/README_ja.md)で確認できます。
 
-`NO_SUITABLE_CANDIDATE` や不合格・保留で計画を終了した場合も、`evaluation.retain_accepted_prefix: true` なら2ターン以上の合格済み部分を採用候補に残します。失敗したターンは非公開の `conversation-stops` に保存し、学習出力には含めません。通信・schema障害は実行エラーとして扱います。
-
-従来の分解評価は `evaluation.mode: detailed` で使用できます。この方式では回答前の質問適合性・要求抽出、回答後の主張抽出・項目別採点・集合照合を行い、明確な不合格には1回の修復を試み、予定ターン数の完走を要求します。方式を変更する場合は新しいrun IDを使ってください。
+回答を確定できなかったターンで、その対話は終了します。`evaluation.retain_accepted_prefix: true`（既定）では、すでに2ターン以上を確定した対話は、その部分を品質候補として残します。失敗した後半は非公開の `conversation-stops` に保存し、学習出力には含めません。根拠不足と評価器間の不一致は保留、実行障害はエラーとして扱います。設定を変更した場合は新しいrun IDを使ってください。
 
 `conversations.jsonl`、`conversations.summary.json`、確定操作と最後の確定操作を数える `conversations.operations.json` が作られます。summary はデータセット別なので、Open Images の結果を他の画像との平均だけで隠しません。検証用対話は全経路を通りますが、学習用には昇格できません。
 
@@ -57,7 +56,7 @@ uv run --locked pixelogue rate-existing \
   --output artifacts/open-images-pilot/rated-conversations.jsonl
 ```
 
-保存した質問と回答を fresh な二重評価にかけます。公開文は書き換えません。結果と出典別 summary はsidecar として保存します。
+保存した質問と回答を、公開文の決定的検査、2評価器の質問ゲート、総合評価、操作検証にもう一度かけます。公開文の書き換えや修復は行いません。結果と出典別 summary はsidecar として保存します。
 
 評価者の不正出力が再試行後も続く会話は `ABSTAINED`、通信・サーバー障害は `ERROR` と記録し、残りの会話を処理します。停止したターンの質問・回答と非公開の失敗理由を保存し、そのターンは確定・採用しません。
 
@@ -98,10 +97,10 @@ uv run --locked pixelogue export \
 |---|---|
 | `training.jsonl` | 公開 user/assistant 文。画像参照は最初の user message に 1 回だけ |
 | `ratings.jsonl` | turn ごとの評価項目と集約結果 |
-| `provenance.jsonl` | 出典、visual group、生成モデル、独立した student processor lock |
+| `provenance.jsonl` | 出典、visual group、生成モデル、操作ID、独立した student processor lock |
 | `selection.json` | 固定 pool、選抜 ID、solver status、監査 hash |
 
-候補 ID、選択理由、評価理由、画像タイトル、運用情報は `training.jsonl` に入りません。学習側のQwen3-VL-8B processor lock は指示選択器と独立しており、provenance に記録します。
+候補 ID、質問案、fact key、評価理由、画像タイトル、運用情報は `training.jsonl` に入りません。学習側のQwen3-VL-8B processor lock は、ルーターを含むどの教師モデルとも独立しており、provenance に記録します。
 
 ### 生成中の進捗表示
 

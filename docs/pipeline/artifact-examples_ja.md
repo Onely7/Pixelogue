@@ -1,20 +1,18 @@
 # 中間生成物と最終出力の実例
 
-このページの分解評価・全予定ターン必須という説明と過去の実行例は、旧 `evaluation.mode: detailed` に対応します。現在の既定は `holistic`（2モデルの総合評価）で、2ターン以上の合格済み部分を保持できます。[現在の手順](../workflow_ja.md)を参照してください。
+両評価器に合格した往復でも、その対話が途中で止まることがあります。`QUALITY_CANDIDATE` に到達した対話でも、学習用出力には入れられない場合があります。これらは別々の境界であり、保存された記録を見ると違いを確認できます。
 
-1つの回答がすべての評価を通っても、その回答を含む対話全体が棄却されることがあります。別の対話は`QUALITY_CANDIDATE` になっても、学習用には出力できません。この違いは、保存されたレコードを見るとはっきりします。
+[前へ：選抜して出力する](selection-and-export_ja.md) · [目次へ戻る](README_ja.md) · [英語版](artifact-examples.md)
 
-[前へ：選抜して出力する](selection-and-export_ja.md) · [目次へ戻る](README_ja.md) · [English version](artifact-examples.md)
+## 実例の読み方
 
-## 実例を取得した条件
+各JSONブロックの項目構成は、現在のコードが書き出すものと同じです。1節の画像識別情報を除き、値は説明用に作成したもので、実測runから写したものではありません。`conv-example-001` や `<sha256>` は長い識別子の代わりです。以下の各記録は、run store内の `artifacts/<kind>/<16進数の先頭2文字>/<sha256>` に正規化JSONとして保存されます。見出しのコード表記は、その `<kind>` を示します。
 
-以下の値は、2026年9月15日にBF16のQwen3.5-9BとQwen3.5-2Bで実行した、一時的な1 GPU用pilotから得たものです。この実行では、本来の生成・評価モデル2つの代わりにQwen3.5-9Bを使っているため、Qwen3.8-27B-FP8とGemma 4 31Bによる結果ではありません。長いハッシュを残しているのは、生成物同士のつながりを確認できるようにするためです。各JSONには説明に必要な項目だけを載せ、内容ハッシュで保存した完全なレコードには残りの項目も保持しています。
-
-使用した画像はプログラムで作った検証用fixtureです。パイプラインの確認には使えますが、学習用には出力できません。
+ここでは、検証専用の街頭写真について3往復を予定した1つの対話を追います。1往復目は画像全体での再評価を経て合格し、2往復目は1回の回答修復を経て合格します。3往復目は操作検証で不合格になるため、対話は2往復分の確定部分を保持します。
 
 ## 1. 準備済み画像
 
-最初の画像には、赤い四角が5個描かれています。`ingest` は次の識別情報を作りました。
+次の識別情報は、赤い四角が5つ並ぶ生成済みの評価用fixtureについて記録されたものです。
 
 ```json
 {
@@ -33,137 +31,277 @@
 }
 ```
 
-image ID、正規化後の画素ハッシュ、visual group IDは、それぞれ異なる対象を識別します。順に、画像台帳と正規化画素の組み合わせ、正規化後の見た目、類似画像の混入を防ぐためのグループです。
+image ID、正規化後の画素hash、visual groupは、それぞれ別のことを表します。順に、この画像台帳の行、正規化した見た目の内容、複製の漏れを防ぐためのグループを識別します。
 
-## 2. 画像から抽出したcapability
+## 2. 画像の分析結果と割り当て
 
-Qwen3.5-9Bは、画像全体を数え上げられる範囲として次のように報告しました。
+ルーターの応答は、そのモデル呼び出しの記録として保存されます。
 
 ```json
 {
-  "image_id": "a96e0109e4d1f21e661ddbd4ef28d8ba6aaf0d149d77006a791f5b349f3b0caa",
-  "capabilities": [
-    "bounded_complete_scope",
-    "countable_entities",
-    "multiple_entities",
-    "visible_attribute",
-    "visible_entity"
-  ],
-  "visible_scopes": [
-    "The entire image is visible and contains exactly five red squares arranged horizontally in a single row."
-  ],
-  "scope_limited": false
+  "image_kind": "photo",
+  "readable_text": "some",
+  "supported_families": ["visual_description", "reference_spatial", "text_reading", "set_logic"],
+  "reason": "Street scene with people at a bus stop and a readable shop sign."
 }
 ```
 
-この説明は内部の判断材料です。指示候補を作るために使いますが、学習用対話へコピーしません。
-
-## 3. 指示候補と選択結果
-
-コントローラーは6つの操作候補を作りました。その中の1つが、次の個数確認タスクです。
+1往復目は先頭ターンなので、controllerは軽い操作だけを提示します。割り当ては `turn_route` テーブルに保存され、`question-drafts` にも同じものが入ります。
 
 ```json
 {
-  "candidate_id": "88225d6b078ceef51d30756f4b22d97f315a6b2fc3ad80ff9c94ea92c111b50d",
-  "task_id": "visible_count",
-  "family": "visible_count",
-  "instruction_summary": "Count all qualifying visible instances within a complete bounded scope.",
-  "required_capabilities": ["bounded_complete_scope", "countable_entities"]
+  "primary_family": "text_reading",
+  "primary_task_ids": ["text_transcription", "label_value_linking", "text_reading_order", "text_visual_binding"],
+  "secondary_family": "visual_description",
+  "secondary_task_ids": ["attribute_lookup", "object_identification"],
+  "basis": "profile"
 }
 ```
 
-Qwen3.5-2Bは、そのIDを選びました。
+分析結果がない場合や、実行可能な系統を1つも挙げていない場合、`basis` は `fallback` になります。分析結果が不正なままの場合は、`image_id`・`reason`・`message` を持つ `image-profile-abstentions` が残ります。
+
+## 3. `question-drafts`
+
+会話を担当する生成器は、この割り当てに対して2つの案を返しました。
 
 ```json
 {
-  "candidate_id": "88225d6b078ceef51d30756f4b22d97f315a6b2fc3ad80ff9c94ea92c111b50d",
-  "reason": "The image contains exactly five red squares arranged horizontally. The candidate 'visible_count' with task_id 'visible_count' is the most appropriate as it specifically counts all qualifying visible instances within a complete bounded scope"
-}
-```
-
-これはモデルが返した選択結果の原文です。内容ハッシュで保存した応答アーティファクトには、vLLMの応答全体とトークン使用量も残っています。
-
-## 4. 生成した質問、公開要求、回答
-
-質問生成と回答前の検査を経て、次の内容が得られました。
-
-```json
-{
-  "question": "How many red squares are there in the image?",
-  "requirement": {
-    "kind": "content",
-    "description": "How many red squares are there in the image?",
-    "start": 0,
-    "end": 44,
-    "lifetime": "current_turn"
+  "conversation_id": "conv-example-001",
+  "turn_index": 1,
+  "call_index": 0,
+  "route": {
+    "primary_family": "text_reading",
+    "primary_task_ids": ["text_transcription", "label_value_linking", "text_reading_order", "text_visual_binding"],
+    "secondary_family": "visual_description",
+    "secondary_task_ids": ["attribute_lookup", "object_identification"],
+    "basis": "profile"
   },
-  "answer": "There are 5 red squares in the image."
+  "batch": {
+    "drafts": [
+      {
+        "task_id": "text_transcription",
+        "question": "What does the sign above the shop entrance say?",
+        "target": "the sign above the shop entrance",
+        "public_parameters": [],
+        "scope_region": {"left": 0.08, "top": 0.05, "right": 0.46, "bottom": 0.21},
+        "target_region": null,
+        "fact_key": {"subject": "shop sign", "dimension": "text"}
+      },
+      {
+        "task_id": "attribute_lookup",
+        "question": "What color is the jacket worn by the person standing next to the bus?",
+        "target": "the person standing next to the bus",
+        "public_parameters": [{"name": "attribute", "value": "jacket color"}],
+        "scope_region": {"left": 0.40, "top": 0.15, "right": 0.75, "bottom": 0.98},
+        "target_region": {"left": 0.46, "top": 0.20, "right": 0.64, "bottom": 0.95},
+        "fact_key": {"subject": "person next to the bus", "dimension": "jacket colour"}
+      }
+    ],
+    "reason": null
+  }
 }
 ```
 
-2つの評価呼び出しは、回答全体を1つの事実主張として抽出しました。画像側と回答側の要素もそれぞれ5個へ結び付け、往復全体の評価は `PASS` になりました。
+2つ目の案の非公開 `request_key` は `person next to bus|jacket color` になります。冠詞を除き、`colour` を正規化するため、後の案が表記を変えて同じ事実を尋ねることはできません。
 
-## 5. 合格した往復を含む棄却対話
+## 4. `public-text-rejections` と `draft-rejections`
 
-最初の往復は合格しましたが、次の計画では新しい適切な往復を確定できませんでした。品質候補には最低2往復が必要なため、保存された対話全体は `REJECTED` です。
+1つ目の案は相対位置で文字を指定しており、転写の根拠では検証できないため、評価器には渡りません。
 
 ```json
 {
-  "conversation_id": "5769049f502ce1c43f87a09ef2d82c088663ee552238c7c18201b8413385d0c5",
-  "generation_model": "Qwen/Qwen3.5-9B",
-  "target_language": "en",
-  "status": "REJECTED",
-  "turns": [
+  "conversation_id": "conv-example-001",
+  "turn_index": 1,
+  "field": "question",
+  "reason": "TEXT_RELATION_UNVERIFIED",
+  "content": "What does the sign above the shop entrance say?"
+}
+```
+
+操作契約に反する案は別に記録します。3往復目では、`attribute_grouping` の案が必須の `return` を指定していませんでした。
+
+```json
+{
+  "conversation_id": "conv-example-001",
+  "turn_index": 3,
+  "call_index": 0,
+  "draft_index": 0,
+  "reason": "DRAFT_PARAMETER_MISSING",
+  "message": "Missing parameters ['return']"
+}
+```
+
+## 5. `question-gate-decisions`
+
+1往復目の2つ目の案を両評価器が審査しました。切り出し画像には対象の人物が写っており、両者のラベルは案の操作と一致しました。
+
+```json
+{
+  "question_message_id": "conv-example-001:q:1",
+  "candidate_id": "cand-example-1",
+  "drafted_task_id": "attribute_lookup",
+  "votes": [
     {
-      "turn_index": 1,
-      "question": {"role": "user", "content": "How many red squares are there in the image?"},
-      "answer": {"role": "assistant", "content": "There are 5 red squares in the image."},
-      "rating": {"aggregate": "PASS"},
-      "status": "COMMITTED"
+      "local_anchor": "MET",
+      "operation_coherent": "MET",
+      "useful_request": "MET",
+      "reason": "Asks for the jacket color of the bound person without stating it.",
+      "realized_task_id": "attribute_lookup"
+    },
+    {
+      "local_anchor": "MET",
+      "operation_coherent": "MET",
+      "useful_request": "MET",
+      "reason": "The person is visible in the crop and the color is not given.",
+      "realized_task_id": "attribute_lookup"
+    }
+  ],
+  "label_rule": "exact",
+  "fit": "MET",
+  "decided_task_id": "attribute_lookup",
+  "verdict": "MET"
+}
+```
+
+`decided_task_id` が `drafted_task_id` と異なるのは、`same_contract` 方式で `relabel` が起きた場合だけです。
+
+## 6. `rating-decisions`
+
+回答は “The jacket is yellow.” でした。一方の評価器は切り出し画像にバスが写っていないため `UNKNOWN` を返し、画像全体でもう1回評価しました。
+
+```json
+{
+  "conversation_id": "conv-example-001",
+  "turn_index": 1,
+  "template_id": "Q_HOLISTIC",
+  "subject": null,
+  "votes": [
+    {"verdict": "MET", "reason": "The person beside the bus wears a yellow jacket."},
+    {"verdict": "UNKNOWN", "reason": "The crop does not show whether this person stands next to the bus."}
+  ],
+  "tiebreak_vote": {"verdict": "MET", "reason": "The full image shows the person next to the bus in a yellow jacket."},
+  "repair_objection": null,
+  "controller_reason": null,
+  "verdict": "MET"
+}
+```
+
+`votes` には1回目の票を評価器の順に残します。評価器を呼ばずにcontrollerが判定した場合、`controller_reason` は `INVALID_PUBLIC_TEXT` または `EMPTY_FOCUS_VIEW` になります。`attribute_lookup` には2回の評価以外の検証契約がないため、1往復目は確定しました。
+
+## 7. `answer-attempts`
+
+2往復目の “What is the person on the left doing?” には、最初に “The person on the left is reading a newspaper.” と回答しました。一方の評価器は `MET`、もう一方は `NOT_MET` でした。この評価の `rating-decisions` では `repair_objection` に異議が入り、置き換えられた回答はここに残ります。
+
+```json
+{
+  "conversation_id": "conv-example-001",
+  "turn_index": 2,
+  "attempt": 0,
+  "answer": {
+    "message_id": "conv-example-001:a:2",
+    "turn_index": 2,
+    "role": "assistant",
+    "content": "The person on the left is reading a newspaper."
+  },
+  "rating": {
+    "items": [
+      {
+        "item_id": "<sha256>",
+        "template_id": "Q_HOLISTIC",
+        "axis": "factual_correctness",
+        "verdict": "UNKNOWN",
+        "reason": "generator_a:The person on the left is reading. | generator_b:The person on the left holds a phone, not a newspaper.",
+        "actor": "dual-consensus",
+        "history_hash": "<sha256>"
+      }
+    ],
+    "aggregate": "ABSTAIN"
+  },
+  "objection": "The person on the left holds a phone, not a newspaper."
+}
+```
+
+生成器が受け取ったのは、画像・履歴・質問のほかには元の回答と異議だけです。置き換えた “The person on the left is looking at a phone.” は両評価器による新しい評価に合格し、2往復目は確定しました。
+
+## 8. `operation-checks`
+
+3往復目は “How many people are waiting at the bus stop?” という質問に “There are three people waiting at the bus stop.” と回答しました。総合評価は両方とも `MET` でしたが、`entity_count` には `closed_set_check` も必要です。2つの読み手は、それぞれ独立に4人と数えました。
+
+```json
+{
+  "conversation_id": "conv-example-001",
+  "turn_index": 3,
+  "contract": "closed_set_check",
+  "candidate_id": "cand-example-3",
+  "question_hash": "<sha256>",
+  "answer_hash": "<sha256>",
+  "verdict": "NOT_MET",
+  "independent_evidence": [
+    {
+      "coverage": "MET",
+      "mode": "count",
+      "counts": [{"scope": "all", "expected": 4, "reported": 3}],
+      "expected_members": [],
+      "reported_members": [],
+      "empty_scope_is_explicit": false,
+      "reason": "Four people wait at the stop; the answer reports three."
+    },
+    {
+      "coverage": "MET",
+      "mode": "count",
+      "counts": [{"scope": "all", "expected": 4, "reported": 3}],
+      "expected_members": [],
+      "reported_members": [],
+      "empty_scope_is_explicit": false,
+      "reason": "One person behind the shelter pole is also waiting."
     }
   ]
 }
 ```
 
-完全なJSONL行には、message ID、指示の詳細、公開要求、履歴ハッシュ、個々の評価結果も入っています。最初の回答は保存しつつ、複数往復の学習候補であるかのようには扱いません。
+2つの読み取りが一致したため、controllerが画像側と回答側の個数を照合しました。このターンの集約結果は `FAIL` になります。
 
-## 6. 実際に得られた品質候補
+## 9. 停止記録と保持した確定部分
 
-同じpilotでは、次の3往復の対話も得られました。ここに示す往復は、すべて `PASS` で確定しています。
+不合格のターンでループは終わります。
 
 ```json
 {
-  "conversation_id": "0400eaad5f5e73ff5be1fca146e5bea27ddd0dea7a8233a94e1e573ee4ead54f",
-  "generation_model": "Qwen/Qwen3.5-9B",
+  "conversation_id": "conv-example-001",
+  "turn_index": 3,
+  "status": "REJECTED",
+  "stage": "answer_verification",
+  "reason": "RATING_FAIL"
+}
+```
+
+これは `conversation-stop-reasons` の記録です。すでに2往復が確定しており、`evaluation.retain_accepted_prefix` がtrueなので、3往復分の対話全体を `"retained_turns": 2` とともに非公開の `conversation-stops` へ残し、最終的な `conversations` の行には確定部分だけを入れます。次の行は省略・平坦化したもので、message ID、操作契約、履歴hash、評価項目を省いています。
+
+```json
+{
+  "conversation_id": "conv-example-001",
+  "generation_model": "Qwen/Qwen3.8-27B-FP8",
   "target_language": "en",
   "status": "QUALITY_CANDIDATE",
   "image": {
-    "image_id": "80287bd0bc2a5882ee5c3ebdea624ddbc816fcda95710b1055bd8a858ac22b85",
+    "image_id": "image-example-001",
     "purpose": "evaluation",
-    "dataset": "Pixelogue procedural fixtures"
+    "dataset": "Example evaluation images"
   },
   "turns": [
     {
       "turn_index": 1,
-      "task_id": "visible_count",
-      "question": "How many objects are visible?",
-      "answer": "There are 4 objects visible.",
+      "task_id": "attribute_lookup",
+      "question": "What color is the jacket worn by the person standing next to the bus?",
+      "answer": "The jacket is yellow.",
       "rating": "PASS",
       "status": "COMMITTED"
     },
     {
       "turn_index": 2,
-      "task_id": "object_identification",
-      "question": "What are the values shown for A and B?",
-      "answer": "The values shown are A = 3 and B = 1.",
-      "rating": "PASS",
-      "status": "COMMITTED"
-    },
-    {
-      "turn_index": 3,
-      "task_id": "visible_count",
-      "question": "How many green squares are visible?",
-      "answer": "There are 4 green squares visible.",
+      "task_id": "visible_action_relation",
+      "question": "What is the person on the left doing?",
+      "answer": "The person on the left is looking at a phone.",
       "rating": "PASS",
       "status": "COMMITTED"
     }
@@ -171,11 +309,11 @@ Qwen3.5-2Bは、そのIDを選びました。
 }
 ```
 
-`QUALITY_CANDIDATE` が表すのは、対話の品質と往復数です。この画像は `purpose: evaluation` のため、画像の利用区分によって学習用の選抜とexportから除外されます。
+`QUALITY_CANDIDATE` は、対話の品質と往復数に関する状態です。この画像は `purpose: evaluation` のままなので、出典の条件によって学習用の選抜とexportから除外されます。
 
-## 7. 学習利用できる最終レコードの形
+## 10. 学習利用可能なレコードの構造
 
-検証専用pilotの出力を、公開可能な学習データとして示すべきではありません。次のJSONは、学習利用できる2往復の入力に対する `TrainingRecord` の正確な項目構造です。値は説明用です。
+検証専用の行を、公開済みの学習データとして示してはいけません。次の例は、学習利用可能な画像による2往復の対話について、`TrainingRecord` と同じ項目構造を持つ有効なJSONです。値は説明用です。
 
 ```json
 {
@@ -185,19 +323,7 @@ Qwen3.5-2Bは、そのIDを選びました。
       "role": "user",
       "content": [
         {"type": "image", "text": null, "image": "images/ab/abcdef.png"},
-        {"type": "text", "text": "How many red squares are there in the image?", "image": null}
-      ]
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {"type": "text", "text": "There are five red squares.", "image": null}
-      ]
-    },
-    {
-      "role": "user",
-      "content": [
-        {"type": "text", "text": "What color are they?", "image": null}
+        {"type": "text", "text": "What color are the squares in this image?", "image": null}
       ]
     },
     {
@@ -205,14 +331,26 @@ Qwen3.5-2Bは、そのIDを選びました。
       "content": [
         {"type": "text", "text": "They are red.", "image": null}
       ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "How are the squares arranged?", "image": null}
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {"type": "text", "text": "They form a single horizontal row.", "image": null}
+      ]
     }
   ]
 }
 ```
 
-画像参照は最初の1回だけです。2つ目の質問では、それまでの公開履歴を使います。指示候補、公開要求の内部表現、主張、評価結果は含まれません。
+画像は1回だけ現れ、後の質問は保存された公開履歴に依存します。操作契約、質問案、評価器の票、評価記録は含まれません。
 
-対応する来歴情報は、別の `provenance.jsonl` に残ります。
+対応する来歴は、別の行として保存します。
 
 ```json
 {
@@ -226,8 +364,37 @@ Qwen3.5-2Bは、そのIDを選びました。
     "revision": "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",
     "min_pixels": 16384,
     "max_pixels": 4194304
-  }
+  },
+  "operation_ids": ["attribute_lookup", "grounded_description"],
+  "catalog_versions": ["7.0", "7.0"],
+  "primary_operation_id": "grounded_description"
 }
 ```
 
-上の2対話は、どちらも動作確認用のデータです。standardプロファイル、学習可能な利用条件、合格した選抜監査、同じ公開用構造が揃った対話だけが `training.jsonl` に入ります。
+`training.jsonl` に入るのは、standardプロファイルで学習利用が許可され、選抜監査に合格し、同じ公開情報だけの構造を持つ対話だけです。
+
+## 11. 非公開記録の種類
+
+| 種類 | 書き込む時点 | 主な項目 |
+|---|---|---|
+| `question-drafts` | 起草呼び出しが正常な案の一覧を返した | `conversation_id`、`turn_index`、`call_index`、`route`、`batch` |
+| `draft-rejections` | 案が操作契約に違反した | `call_index`、`draft_index`、`reason`、`message` |
+| `draft-abstentions` | 起草呼び出しが再試行後も不正だった | `call_index`、`reason`、`message` |
+| `public-text-rejections` | 決定的検査が質問または回答の文を棄却した | `field`、`reason`、`content` |
+| `question-gate-decisions` | 両評価器が質問を審査した | `votes`、`label_rule`、`fit`、`drafted_task_id`、`decided_task_id`、`verdict` |
+| `image-profile-abstentions` | ルーターの分析結果が再試行後も不正だった | `image_id`、`reason`、`message` |
+| `focus-views`、`focus-images` | 評価器用の切り出し画像を作った | 切り出しの大きさ、`source_view_id`、`source_left`〜`source_bottom`、PNGの本体 |
+| `focus-view-abstentions` | 結び付けた領域に完全な画素がない | `candidate_id`、`region` |
+| `rating-decisions` | 総合評価の判定が決まった | `votes`、`tiebreak_vote`、`repair_objection`、`controller_reason`、`verdict` |
+| `answer-attempts` | 修復で回答を置き換えた | `answer`、`rating`、`objection` |
+| `operation-checks` | 検証器が終了した | `contract`、`verdict`、`independent_evidence` |
+| `structured-output-failures` | モデル出力が契約に違反した | `stage`、`attempt`、`reason`、`next_retry_feedback` |
+| `turns` | 往復を確定した | ターンのartifact全体 |
+| `conversation-stop-reasons` | 予定ターン数に達する前に対話が止まった | `turn_index`、`status`、`stage`、`reason` |
+| `conversation-stops` | 止まった対話が確定部分を保持した | `conversation`、`retained_turns` |
+| `conversations` | 対話が最終状態になった | 対話のartifact全体 |
+| `model-output-abstentions`、`errors` | 画像、または再評価中のターンが、モデル出力の不正や実行障害で終わった | `conversation_id`、`image_id`、`reason`、`message` |
+| `requests`、`responses`、`request-images` | すべてのモデル呼び出し | 要求の全体、生の応答、重複を除いた画像データ |
+| `transport-errors`、`cache-accesses` | HTTPの失敗と保存済み応答の再利用 | 状態コードまたはエラーの種類、試行番号、要求hash |
+
+廃止したscopedプランナーが書いたstoreには、根拠抽出、binding、意図判定、公開要求の記録も含まれる場合があります。現在のコードはこれらを書き込みませんが、そのプランナーが保存したターンは引き続き読み込めます。

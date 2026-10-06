@@ -14,7 +14,7 @@ uv run --locked pixelogue compile \
   --output artifacts/compiled-plan.json
 ```
 
-The command resolves the configuration, exact language quotas, task and rubric catalogs, and JSON Schemas. It writes `compiled_hash`, a digest of that resolved plan. A schema error here is cheaper to fix than an error halfway through GPU inference.
+The command resolves the configuration, exact language quotas, the task catalog with per-task admission, and JSON Schemas. It writes `compiled_hash`, a digest of that resolved plan. A schema error here is cheaper to fix than an error halfway through GPU inference.
 
 The pilot profile is a diagnostic profile. It has a small target, a four GPU-hour limit, and cannot be exported as training data. The standard profile is reserved for a reviewed production run.
 

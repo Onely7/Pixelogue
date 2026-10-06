@@ -25,12 +25,12 @@ Blind judges use distinct stable trial IDs, including when a pilot maps both jud
 endpoint. Their requests remain separate, and resuming reuses each judge's own saved response.
 The trial ID is private operational metadata and is not included in the model-visible payload.
 
-Routing discovery already runs once before the turn loop and retains its inventory for the
-conversation, with bounded malformed-output recovery. Task-specific blind source extraction
-still includes its public question, operation and history conditions. Do not remove these from
-cache identities without a contract proving they are irrelevant. Exact reuse distinguishes
-image bytes and view, model and processor revisions, Schema, prompts, operation, public history
-and judge trial ID. Each judge reuses only its own response.
+The router profile is requested before the turn loop each time an unfinished conversation
+starts or resumes; on resume, the identical request reuses its saved response. Task-specific
+blind source extraction still includes its public question, operation and history conditions.
+Do not remove these from cache identities without a contract proving they are irrelevant. Exact
+reuse distinguishes image bytes and view, model and processor revisions, Schema, prompts,
+operation, public history and judge trial ID. Each judge reuses only its own response.
 The canonical `model_call` table remains available to older readers.
 
 `profile` includes actual attempts, statuses, cache accesses and known token subtotals. A token
@@ -81,20 +81,28 @@ uv run --locked pre-commit run --all-files
 `.github/workflows/codeql.yml` is a separate CPU-only advanced CodeQL job. In GitHub repository settings, open **Code security → Code scanning**, disable CodeQL default setup, and keep the workflow setup. Enabling both creates duplicate analysis configurations and confusing results. The workflow uses CodeQL Action v4 as recommended by the [current CodeQL Action documentation](https://github.com/github/codeql-action).
 
 
-## Completed holistic conversations
+## Resuming conversations
 
-Holistic synthesis records terminal outputs in `conversation_commit`, pointing to immutable
-`conversations` artifacts. Restarting the same run returns that recorded output, including a
-retained prefix, without trying to extend it again. A crash before the terminal record resumes
-from the ordered `turn_commit` prefix. Existing databases acquire the new table on opening;
-configuration hashes still prevent mixing detailed and holistic results in one run.
+Synthesis records each committed turn in `turn_commit` and each final conversation in
+`conversation_commit`, both pointing to immutable artifacts. Restarting the same run returns a
+recorded conversation, including a retained prefix, without trying to extend it again. A
+conversation without a final record resumes from its ordered `turn_commit` prefix. An image
+stopped by an execution failure, such as exhausted transport retries, gets no final record, so a
+restart retries it from that prefix.
+
+Every route is recorded in `turn_route` under the conversation, turn index, public-history hash
+and drafting-call index before its drafting call. A resumed turn therefore receives the same
+offer, and its identical drafting request reuses the saved response. The run-wide family ledger
+is rebuilt from every turn in `turn_commit` when synthesis starts, so later routes continue from
+the committed counts. Existing databases acquire the `turn_route` table on opening;
+configuration hashes still prevent mixing settings in one run.
 
 A quality stop after at least two accepted turns may produce `QUALITY_CANDIDATE` for the prefix.
 The original stopped conversation is preserved in a private `conversation-stops` artifact.
 No rejected turn is exported. Runtime errors remain errors. Set
 `evaluation.retain_accepted_prefix: false` to require the planned length. Use a new run ID after
-changing settings, including when migrating configurations created before evaluation settings
-were introduced. `rate-existing` rejudges stored Q/A without generating missing turns; an empty
+changing settings; configurations that still name retired settings fail validation and must be
+migrated first. `rate-existing` rejudges stored Q/A without generating missing turns; an empty
 or one-turn input cannot become a quality candidate.
 
 Re-rating contains inference failures within the affected conversation and continues with the

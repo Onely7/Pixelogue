@@ -21,7 +21,7 @@ uv run --locked pixelogue compile \
   --output artifacts/compiled-plan.json
 ```
 
-Expected output is one JSON line containing `output` and `compiled_hash`. The output file contains resolved settings, quotas, catalogs, and schemas. Compilation proves that settings are consistent; it does not prove that GPUs or model servers are ready.
+Expected output is one JSON line containing `output` and `compiled_hash`. The output file contains resolved settings, language quotas, the task catalog with per-task runtime admission, and JSON Schemas. Compilation proves that settings are consistent; it does not prove that GPUs or model servers are ready.
 
 ## 3. Make small answer-keyed fixtures
 

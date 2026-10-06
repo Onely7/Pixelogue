@@ -119,7 +119,7 @@ uv run --locked pixelogue ingest \
 uv run --locked python validation/build_pubchem_chemical_cases.py
 ```
 
-取得時にCID、画像SHA-256、寸法、画像群、SMILESハッシュを固定manifestと照合します。`private_labels.jsonl` は `data/` にのみ保存します。case生成では確認用の正例20件と誤答59件を固定し、モデルにはCID・元のSMILES・期待判定を渡しません。通常選択に入れるには、実測結果が校正の信頼区間基準を満たす必要があります。
+取得時にCID、画像SHA-256、寸法、画像群、SMILESハッシュを固定manifestと照合します。`private_labels.jsonl` は `data/` にのみ保存します。case生成では確認用の正例20件と誤答59件を固定し、モデルにはCID・元のSMILES・期待判定を渡しません。有効化するには、実測結果が校正の信頼区間基準を満たす必要があります。
 
 [第2のPubChemコホート](../validation/pubchem_2d_eval_v2_manifest.jsonl)は、以前の89分子構造をすべて除外しています。[選定記録](../validation/pubchem_2d_eval_v2_selection.json)には、検索条件・seed・検索応答のハッシュ・異なる90画像群・正例30件と誤答60件の確認計画を、モデル評価前に固定しました。次の手順で別の検証専用データとして復元します。
 
@@ -151,7 +151,7 @@ uv run --locked pixelogue ingest \
 uv run --locked python validation/build_screenspot_ui_cases.py
 ```
 
-取得時に画像と注釈のハッシュを固定manifestと照合します。抽出時には64ビットのdifference hashで距離5以下の近似画面も除きますが、近似コピーの完全な監査ではありません。確認用の異なる画面について、対象領域の中心を示す正例20件と領域外を示す誤答59件を固定します。画像は検証専用でGit管理外です。通常選択には、実際の抽出と判定が校正基準を満たす必要があります。
+取得時に画像と注釈のハッシュを固定manifestと照合します。抽出時には64ビットのdifference hashで距離5以下の近似画面も除きますが、近似コピーの完全な監査ではありません。確認用の異なる画面について、対象領域の中心を示す正例20件と領域外を示す誤答59件を固定します。画像は検証専用でGit管理外です。有効化には、実際の抽出と判定が校正基準を満たす必要があります。
 
 最初の確認結果を開発時に調べたため、別の[ScreenSpot保留セットmanifest](../validation/screenspot_ui_holdout_manifest.jsonl)に追加の確認用画面150件を固定します。両セットで画素ハッシュが一致するものとdifference hashの距離5以下を除きます。最初の固定時だけ `--freeze --holdout` を指定し、その後の復元は `--holdout` だけを指定します。非公開のケース作成処理は、評価前に正例50件と領域外クリックの誤答100件を固定します。
 
@@ -182,7 +182,7 @@ uv run --locked pixelogue ingest \
 uv run --locked python validation/build_primus_music_cases.py
 ```
 
-取得器は元アーカイブ、MEI、元PNG、変換後PNGと導出したラベルのハッシュを照合します。確認用の異なる楽曲について正しい転写20件と隣接音への誤答59件を固定します。ケース生成時のラベル整合検査は画像読取精度を測りません。通常選択は、モデルの独立抽出と校正基準の実測結果に従います。権利レコードは検証用途に限る利用者の指示に基づき出典ページを示すもので、楽譜の再利用ライセンスを主張しません。
+取得器は元アーカイブ、MEI、元PNG、変換後PNGと導出したラベルのハッシュを照合します。確認用の異なる楽曲について正しい転写20件と隣接音への誤答59件を固定します。ケース生成時のラベル整合検査は画像読取精度を測りません。有効化は、モデルの独立抽出と校正基準の実測結果に従います。権利レコードは検証用途に限る利用者の指示に基づき出典ページを示すもので、楽譜の再利用ライセンスを主張しません。
 
 ## 取得済みのCVDF train画像を使う
 

@@ -14,7 +14,7 @@ uv run --locked pixelogue compile \
   --output artifacts/compiled-plan.json
 ```
 
-設定、言語ごとの正確な件数、タスクと評価基準のカタログ、JSON Schemaが解決され、結果全体の`compiled_hash` が保存されます。GPU推論の途中で見つけるより、この時点でSchemaの誤りを直す方が短時間で済みます。
+設定、言語ごとの正確な件数、タスクカタログとタスク別の利用可否、JSON Schemaが解決され、結果全体の`compiled_hash` が保存されます。GPU推論の途中で見つけるより、この時点でSchemaの誤りを直す方が短時間で済みます。
 
 pilotプロファイルは小規模な動作確認用です。生成件数と4 GPU時間の上限があり、学習用データとしてexportできません。standardプロファイルは、内容を確認した本番実行に使います。
 

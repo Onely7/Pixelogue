@@ -15,7 +15,7 @@ code and catalog. A CPU fixture pass does not establish natural-image accuracy.
   `rank_order` controls complete ranking. All relevant marks must be visible.
   The source decoder prevents ticks on an unmarked axis and requires explicit
   series/category operands for a complete reading. `UNKNOWN` may leave them empty.
-  Chart and graph inventories use `tasks.evidence_max_tokens`, as table inventories do,
+  Chart and graph inventories use `tasks.source_max_tokens`, as table inventories do,
   instead of first truncating a large closed series at a fixed 2,048 tokens.
   Separated intervals can establish an extremum without establishing an exact
   number. Overlapping intervals cannot prove which mark is greater.

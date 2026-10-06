@@ -2,7 +2,7 @@
 
 A conversation can pass every turn-level check and still be the wrong record for the final corpus. It may duplicate another image, over-represent one task, or come from an evaluation-only source. Selection handles those collection-level conditions.
 
-[Previous: generate and evaluate](generation-and-evaluation.md) · [Back to contents](README.md) · [Next: inspect real artifacts](artifact-examples.md)
+[Previous: generate and evaluate](generation-and-evaluation.md) · [Back to contents](README.md) · [Next: inspect artifacts and examples](artifact-examples.md)
 
 ## 1. Re-rate saved public dialogue when needed
 
@@ -17,7 +17,7 @@ uv run --locked pixelogue rate-existing \
   --output artifacts/open-images-pilot-001/rated-conversations.jsonl
 ```
 
-Use a new run ID. Re-rating is useful after an evaluator change, but it is not permission to rewrite an accepted answer in place. The result and source-separated summary are new sidecar files. Saved catalog operations pass the same two-judge question gate as new drafts before the answer is reviewed. A saved turn has no draft, so a judge's neighboring operation label never replaces its stored operation.
+Use a new run ID. Re-rating is useful after an evaluator change, but it is not permission to rewrite an accepted answer in place. The result and source-separated summary are new sidecar files. Each saved turn first passes the deterministic public-text checks. Saved catalog operations then pass the same two-judge question gate as new drafts before the holistic review and operation validators. A saved turn has no draft, so a judge's neighboring operation label never replaces its stored operation. Re-rating never repairs an answer, and each conversation stops at its first turn that does not pass.
 
 ## 2. Freeze the eligible pool
 
@@ -79,11 +79,11 @@ uv run --locked pixelogue export \
 | File | Intended contents |
 |---|---|
 | `training.jsonl` | Public user and assistant messages. The image appears once, in the first user message. |
-| `ratings.jsonl` | Per-turn rubric items and aggregate ratings. |
-| `provenance.jsonl` | Source, image, visual group, generation model, and training-side processor lock. |
+| `ratings.jsonl` | Per-turn rating items (holistic review and operation checks) and aggregate ratings. |
+| `provenance.jsonl` | Source, image, visual group, generation model, operation IDs and catalog versions, and training-side processor lock. |
 | `selection.json` | Frozen-pool identity, selected IDs, solver result, and audit binding. |
 
-Candidate IDs, selector reasons, evaluator reasons, source titles, and operational fields never enter `training.jsonl`. An evaluation image is rejected again at export even if an earlier step was misconfigured.
+Candidate IDs, drafts, fact keys, judge reasons, source titles, and operational fields never enter `training.jsonl`. An evaluation image is rejected again at export even if an earlier step was misconfigured.
 
 ## 6. Verify, back up, and restore
 

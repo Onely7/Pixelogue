@@ -1,7 +1,5 @@
 # Pixelogue pipeline guide
 
-The decomposed evaluator, planned-length requirement, and historical examples on this page describe `evaluation.mode: detailed`. The current default is `holistic`: two whole-turn reviews with optional retention of accepted prefixes of at least two turns. See the [current workflow](../../README.md).
-
 A fluent answer can still name the wrong object, repeat an earlier question, or come from an image that cannot be used for training. Pixelogue treats those as separate problems. It checks the image, builds a conversation one turn at a time, records the evidence behind each decision, and exports only records that pass the later selection and audit steps.
 
 This guide follows one image through that path. Read the pages in order the first time.
@@ -10,11 +8,11 @@ This guide follows one image through that path. Read the pages in order the firs
 
 1. **You are here — map and vocabulary.** Learn what moves through the pipeline and where each file belongs.
 2. **[Prepare images](data-and-ingestion.md).** Acquire or register images, check their usage terms, normalize pixels, group visual copies, and inspect the prepared manifest.
-3. **[Generate and evaluate dialogue](generation-and-evaluation.md).** Follow instruction choice, question generation, pre-answer checks, answer generation, claim checks, repair, and turn commit.
+3. **[Generate and evaluate dialogue](generation-and-evaluation.md).** Follow image profiling, family routing, question drafting, deterministic admission, the two-judge question gate, answer generation, holistic review, operation validators, and turn commit.
 4. **[Select and export](selection-and-export.md).** Freeze the accepted pool, solve diversity constraints, audit the result, and write the four-file bundle.
-5. **[Inspect artifacts and examples](artifact-examples.md).** Connect real intermediate responses from the Qwen3.5 pilot to final conversation and training-record shapes.
+5. **[Inspect artifacts and examples](artifact-examples.md).** Follow the private records of one conversation, from the image profile to the final conversation and training-record shapes.
 
-For a shorter command-focused path, use the [CPU quickstart](../quickstart.md) and the [workflow reference](../workflow.md). The [recovery guide](../recovery-and-ci.md) explains backups and integrity checks. The [measured Qwen3.5-9B pilot report](../validation/qwen35-9b-pilot.md) separates execution validation from production-quality claims, and the [throughput report](../validation/qwen35-9b-throughput.md) documents the one-worker and four-worker comparison.
+For a shorter command-focused path, use the [CPU quickstart](../quickstart.md) and the [workflow reference](../workflow.md). The [recovery guide](../recovery-and-ci.md) explains backups and integrity checks. The [measured Qwen3.5-9B pilot report](../validation/qwen35-9b-pilot.md) separates execution validation from production-quality claims, and the [throughput report](../validation/qwen35-9b-throughput.md) documents the one-worker and four-worker comparison. Reports under `docs/validation/` record measurements of earlier pipeline versions; they do not describe the current direct-drafting path.
 
 Japanese readers can start with the [Japanese contents page](README_ja.md).
 
@@ -52,7 +50,7 @@ The pipeline is easier to understand when its data is separated by purpose.
 |---|---|---|
 | Public dialogue | User questions and assistant answers | A future training consumer |
 | Image provenance | Source ID, rights record, hashes, visual-copy group | The data operator and auditor |
-| Model evidence | Visible capabilities, candidate instructions, extracted claims | Pipeline decisions and diagnosis |
+| Model evidence | Image profiles, routes, question drafts, judge votes, validator readings | Pipeline decisions and diagnosis |
 | Operational state | Request hashes, token counts, retries, SQLite events | Resume, budget control, and audit |
 
 Only the first kind enters `training.jsonl`. Ratings and provenance are written to separate files. Raw model requests and responses stay in the local run store.
@@ -71,7 +69,11 @@ Only the first kind enters `training.jsonl`. Ratings and provenance are written 
 
 **Public history** : Only the committed questions and answers before the current turn. Future turns and rejected attempts are absent.
 
-**Requirement** : An explicit instruction in public user text, such as “answer in one sentence.” Each requirement points back to an exact text span so an evaluator cannot silently rewrite it.
+**Operation** : One task from the versioned catalog, such as `attribute_lookup` or `entity_count`, with its public parameters and verification contracts. Operations are grouped into task families.
+
+**Route** : The families and operations offered to one drafting call: a primary family with up to four operations and a secondary family with up to two.
+
+**Draft** : A candidate question written by the conversation's generator for one offered operation. A draft carries a private fact key, the subject and dimension it asks about, so a later turn cannot ask for the same fact.
 
 **Gate** : A decision point that must pass before the pipeline continues. A gate preserves more information than a Boolean: it can distinguish a clear failure, insufficient evidence, and an execution error.
 
@@ -79,9 +81,9 @@ Only the first kind enters `training.jsonl`. Ratings and provenance are written 
 
 **Profile** : A named operating mode. `pilot` is for bounded validation and cannot export training data; `standard` is for a reviewed training-data run.
 
-**Pool** : The fixed set of quality-candidate conversations from which the selector may choose final records.
+**Pool** : The fixed set of quality-candidate conversations from which selection chooses final records.
 
-**Processor** : The image preprocessor paired with a model. Its revision and pixel limits are recorded separately from the instruction selector.
+**Processor** : The image preprocessor paired with a model. The training-side processor's revision and pixel limits are recorded separately from every teacher model.
 
 **Endpoint** : The local HTTP address where Pixelogue sends model requests, such as `http://127.0.0.1:8002/v1`.
 
@@ -91,17 +93,17 @@ The pipeline does not force every image into a usable conversation.
 
 | Status | Meaning | Can enter the selection pool? |
 |---|---|---|
-| `QUALITY_CANDIDATE` | Two to six turns were committed and all required gates passed | Yes, if the source is training-eligible |
+| `QUALITY_CANDIDATE` | Two to six turns were committed and all required gates passed, either for the planned length or for a retained prefix | Yes, if the source is training-eligible |
 | `REJECTED` | A clear content or quality condition failed | No |
-| `ABSTAINED` | The judges could not establish enough evidence or agreement | No |
-| `ERROR` | Transport, schema, storage, or another execution boundary failed | No |
+| `ABSTAINED` | The judges could not establish enough evidence or agreement, or model output stayed malformed after bounded retries | No |
+| `ERROR` | Transport, storage, or another execution boundary failed | No |
 
 A high rejection rate can reveal a model or prompt problem, but a rejected record is not the same as a crashed run. Keep the distinction when reading summaries.
 
 ## Which model does what?
 
-The standard configuration uses `Qwen/Qwen3.5-2B` to select an instruction, `Qwen/Qwen3.8-27B-FP8` for generator and evaluator role A, and `google/gemma-4-31B-it-qat-w4a16-ct` for role B. Pixelogue sends the evaluation calls separately and hides each verdict from the other model.
+The standard configuration uses `Qwen/Qwen3.5-2B` as the image router, `Qwen/Qwen3.8-27B-FP8` for generator and evaluator role A, and `google/gemma-4-31B-it-qat-w4a16-ct` for role B. The router only profiles each image for task-family routing; it never writes or judges dialogue. A conversation's assigned generator drafts its questions and writes its answers, and both models judge every turn. Pixelogue sends the judge calls separately and hides each verdict from the other model.
 
 The temporary `configs/pilot.yaml` override points roles A and B to one `Qwen/Qwen3.5-9B` endpoint so the current validation run fits on one GPU. It checks the pipeline path without providing two model lineages. Pilot results must state that limitation and must not be presented as results from the standard model pair.
 
-The optional `Qwen/Qwen3.6-35B-A3B` selector is used only when a copied configuration explicitly sets `models.active_selector: alternative`. It is never an automatic fallback. The training-side image processor is separately pinned to `Qwen/Qwen3-VL-8B-Instruct`; changing the selector does not change that lock.
+Configuration accepts only `Qwen/Qwen3.5-2B` as the router, and no other model replaces it after a failure. The training-side image processor is separately pinned to `Qwen/Qwen3-VL-8B-Instruct`; changing a teacher model does not change that lock.

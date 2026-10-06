@@ -1,19 +1,19 @@
 # Generate and evaluate dialogue
 
-The decomposed evaluator, planned-length requirement, and historical examples on this page describe `evaluation.mode: detailed`. The current default is `holistic`: two whole-turn reviews with optional retention of accepted prefixes of at least two turns. See the [current workflow](../../README.md).
-
-The visible output of one turn is only a question and an answer. Reaching that pair takes several checks, and their order prevents later information from changing an earlier decision.
+The visible output of one turn is only a question and an answer. Reaching that pair takes several checks, and their order matters: no answer is written before its question has passed, and no judge ever sees the other judge's vote.
 
 [Previous: prepare images](data-and-ingestion.md) · [Back to contents](README.md) · [Next: select and export](selection-and-export.md)
 
 ## 1. Start from healthy model servers
 
-Long GPU processes must run in `tmux`. Inspect `nvidia-smi`, choose an idle device explicitly, start the larger server first, and wait for `/v1/models` before starting the smaller selector. The following files belong to the temporary one-GPU pilot, which substitutes Qwen3.5-9B for the standard Qwen3.8-27B-FP8 and Gemma 4 31B pair:
+Long GPU processes must run in `tmux`. Inspect `nvidia-smi`, choose an idle device explicitly, start the larger server first, and wait for `/v1/models` before starting the smaller router. The following files belong to the temporary one-GPU pilot, which substitutes Qwen3.5-9B for the standard Qwen3.8-27B-FP8 and Gemma 4 31B pair:
 
 ```text
 runtime/vllm/generator-qwen35-9b.yaml  -> port 8002
-runtime/vllm/router-default.yaml     -> port 8000
+runtime/vllm/router-default.yaml       -> port 8000
 ```
+
+Every generator server file accepts two images per prompt, because a judge can receive the complete image and a crop together. The router server accepts one image.
 
 Check both through Pixelogue:
 
@@ -36,7 +36,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot-001/conversations.jsonl
 ```
 
-The standard and regular pilot profiles allow four images in flight through `runtime.max_concurrent_images`; the one-GPU paired pilot allows two. This gives vLLM independent requests to combine with continuous batching. `--workers` may reduce the value for a measured run but cannot exceed the configured bound. Use a separate configuration with an explicit bound for a higher-concurrency comparison. Pixelogue preserves the scheduled input order in `conversations.jsonl`, while every turn within one conversation remains sequential because it depends on committed public history.
+The standard and regular pilot profiles allow four images in flight through `runtime.max_concurrent_images`; the one-GPU paired pilot allows two. This gives vLLM independent requests to combine with continuous batching. `--workers` may reduce the value for a measured run but cannot exceed the configured bound. Use a separate configuration with an explicit bound for a higher-concurrency comparison. Pixelogue preserves the scheduled input order in `conversations.jsonl`, while every turn within one conversation remains sequential because it depends on committed public history. Within a turn, the two judges' calls run concurrently, and so do the two readers of each validator; database writes stay serialized.
 
 For a balanced 1/2/4-worker study, save the six runs and frozen `experiment-plan.json`/`progress.json` together, then run `python validation/compare_concurrency_runs.py EXPERIMENT_DIR`. The JSON, CSV, and Markdown summaries validate image order, model assignments, config hashes, and turn counts. Automatic quality candidates per synthesis GPU hour are descriptive; human-approved output per allocated GPU hour remains unmeasured until independent ballots are resolved.
 
@@ -52,7 +52,7 @@ uv run --locked pixelogue run-diagnostics \
   --output-stem artifacts/open-images-pilot-001/diagnostics
 ```
 
-This writes JSON, CSV, and Markdown. The report counts attempted turns, committed turns, and completed quality-candidate conversations separately. A turn is attempted when it has a saved turn, model call, or explicit stop record; older runs without those records may undercount attempts. The report also includes reached stages, malformed calls, retries, candidate-local binding rejections, private stop reasons, elapsed model-call time, and recorded tokens. New runs save each structured-output contract failure and its next correction prompt as a private artifact. Failed calls may lack token usage, and cost remains unknown without a recorded price schedule. Older runs may lack explicit stop or per-attempt records.
+This writes JSON, CSV, and Markdown. The report counts attempted turns, committed turns, and completed quality-candidate conversations separately. A turn is attempted when it has a saved turn, model call, or explicit stop record; older runs without those records may undercount attempts. The report also includes reached stages, malformed calls, retries, private stop records, elapsed model-call time, and recorded tokens. Each structured-output contract failure and its next correction prompt is saved as a private `structured-output-failures` artifact. Failed calls may lack token usage, and cost remains unknown without a recorded price schedule. The report's binding-rejection fields are filled only for runs made by the retired scoped planner.
 Completed quality candidates have no stop stage or stop reason; earlier corrected attempts remain visible in the attempt records.
 
 Use a new run ID after changing configuration, code, prompts, catalogs, or schemas. The configuration hash includes package Python and resource files, selected lock files, Schemas, pinned model and processor settings, and the configured input manifest. `synthesize` also binds the prepared rights-checked manifest and selected image records to its run contract; a conflicting resume is rejected.
@@ -62,138 +62,183 @@ Before processing the first image, Pixelogue makes two exact schedules:
 - a target-language schedule from the configured weights;
 - a generator-role schedule from `generation_allocation`.
 
-The configured count is exact over the batch. Random seeds only determine the stable order. Once a generator role is assigned, that role handles question generation, answer generation, and the one allowed repair for the complete conversation.
+The configured count is exact over the batch. Random seeds only determine the stable order. Once a generator role is assigned, that role drafts the questions, writes the answers, and makes the one allowed answer repair for the complete conversation. Both generator models judge every turn, whichever of them wrote it.
 
-After each image, the command atomically rewrites `conversations.jsonl` and its summary. A later image can fail without erasing completed records.
+Each finished conversation is appended to `conversations.jsonl` in input order and flushed. The summary is refreshed after the first row, every 100 rows, and on exit, when `conversations.operations.json` is also written. A later image can fail without erasing completed rows.
 
-## 3. Build one turn
+## 3. Build one conversation
+
+Each image receives a planned length of two to six turns, fixed by its image ID and the seed (reference weights 4/4/1/1/1 for 2, 3, 4, 5 and 6 turns). The router profiles the image once; then every turn follows the same path. The loop ends after the planned number of turns or at the first turn that is not committed.
 
 ```mermaid
 flowchart TD
-    A[Image and committed public history] --> B[Extract visible capabilities]
-    B --> C[Build compatible instruction candidates]
-    C --> D[Selector chooses one candidate]
-    D -->|no suitable candidate| X[End as rejected]
-    D --> E[Generator writes one question]
-    E --> T[Both judges classify the question without the selected task]
-    T -->|task mismatch or uncertainty| Y[Reject or abstain before answer]
-    T --> F[Judge call A: question fit]
-    T --> G[Judge call B: question fit]
-    F --> H{Both pass?}
-    G --> H
-    H -->|no| Y[Reject or abstain before answer]
-    H --> I[Both judges inventory public requirements]
-    I --> J{Inventories agree?}
-    J -->|no| Y
-    J --> K[Generate answer]
-    K --> L[Extract claims and optional typed structures]
-    L --> M[Apply every relevant rubric item twice]
-    M --> N{Aggregate result}
-    N -->|PASS| O[Commit turn]
-    N -->|repairable FAIL| P[Repair once]
-    P --> L
-    N -->|UNKNOWN or ERROR| Q[Abstain or error]
-    O --> R{Maximum turns or natural stop?}
-    R -->|continue| A
-    R -->|stop with 2-6 committed turns| S[QUALITY_CANDIDATE]
+    A[Image] --> B[Router profiles the image once]
+    B --> C[Controller chooses a route from feasible families]
+    C --> D[Generator drafts up to draft_count questions]
+    D --> E{Next draft passes deterministic admission?}
+    E -->|no| F{Drafts left?}
+    E -->|yes| G[Merged question gate by both judges]
+    G -->|NOT_MET or UNKNOWN| F
+    F -->|yes| E
+    F -->|no, extra drafting call left| C
+    F -->|no| X[Turn stops]
+    G -->|MET| H[Generator answers this question only]
+    H --> I{Disclosure checks pass?}
+    I -->|no| X
+    I -->|yes| J[Holistic review by both judges]
+    J -->|MET + UNKNOWN after a crop| K[UNKNOWN judge reviews the full image once more]
+    J -->|MET + NOT_MET| M[Generator repairs the answer once from the objection]
+    M --> J
+    K --> L
+    J --> L{Two MET votes?}
+    L -->|no| X
+    L -->|yes| N[Operation validators with paired readers]
+    N -->|every check MET| O[Commit turn and update the family ledger]
+    N -->|otherwise| X
+    O --> P{Planned turns reached?}
+    P -->|no| C
+    P -->|yes| Q[QUALITY_CANDIDATE]
+    X --> R{Rejected or abstained with two or more committed turns?}
+    R -->|yes, retain_accepted_prefix| Q
+    R -->|no| S[REJECTED / ABSTAINED / ERROR]
 ```
 
-### Step 1: extract visible capabilities
+### Step 1: profile the image once
 
-The generation model receives the image and a fixed capability vocabulary. It may report facts such as `readable_text`, `countable_entities`, or `spatial_relation`, along with a bounded visible scope. These are provisional observations. They do not become public dialogue and do not prove that a specific question is correct.
+The router (`models.router`, fixed to `Qwen/Qwen3.5-2B`) receives the image and a description of every task family that has an available operation: the family ID, its label, and its operation names. It returns `image_kind`, `readable_text`, `supported_families`, and a short reason. The decoder accepts only the listed family IDs. The router never sees a question, an answer, public history, or a dataset label, and it writes no public text.
 
-The model returns observations as an object keyed by capability. The controller rejects unknown and repeated capability keys. Definitions are intentionally strict: for example, aligned repeated objects do not establish an explicit `visible_mapping`.
+Routing uses `supported_families` and whether `image_kind` is `screen`. If the profile is still malformed after the bounded retries, a private `image-profile-abstentions` record is written and routing falls back to fixed broad families; the image continues.
 
-If a scope gives an `object_label` without a MET `visible_entity` in that same scope, the bounded retry identifies the scope by number and asks the model to support the label with visible evidence or clear it. The rejected response remains private; the controller does not supply a missing MET observation.
+### Step 2: route the turn
 
-For controlled comparisons, `tasks.attribute_recheck_enabled: true` permits one extra answer-blind image call when a scope has a visible entity and interaction but no `visible_attribute` observation. The call checks that scope only. Its region and view must match the original evidence; `UNKNOWN` does not make a task eligible. The default is `false`. The added call costs time and must be evaluated against an otherwise identical run before enabling it routinely.
+For each turn, the controller offers one primary family with up to four operations and one secondary family with up to two:
 
-### Step 2: build instruction candidates
+1. **Available operations.** Drafting offers the 65 core operations whose validators are registered. In the first `tasks.anchor_turns` turns (default 2), only lightly verified operations are offered: those verified by the two blind reviews, evidence binding, or transcript alignment alone. These turns decide whether the conversation reaches two committed turns, and structured extraction verifiers abstain more often.
+2. **Feasible families.** These are the profiled families that have an available operation. `screen_ui` stays feasible only for an image profiled as `screen`. When none remain, or the profile is missing, the fallback families `visual_description`, `text_reading`, `reference_spatial`, `set_logic` and `evidence_verification` are used.
+3. **Primary family.** Families not yet used by the conversation's committed turns come first. Among them, the controller picks the largest deficit between the family's target share (`tasks.family_targets`, uniform by default) and its share of all turns committed so far in the run. This run-wide family ledger is shared by images processed concurrently and is updated after every commit. The secondary family is the best remaining feasible family by the same preferences.
+4. **Operations.** Within a family, operations not yet used in the conversation come first, then those with the fewest committed turns in the run after division by `tasks.task_weights`. The default weight is 0.25 for table, chart and document structure reconstruction and 1 for every other operation, so whole-structure reconstructions are offered less often.
 
-The controller matches reported capabilities to the checked-in task catalog. Each candidate has a stable ID, task ID, family, profile, visible scope, summary, and required capabilities.
+Ties use a SHA-256 rank of the seed, image, turn, and candidate value. Each route is stored in the `turn_route` table under the conversation, turn index, public-history hash, and drafting-call index. A resumed turn therefore receives the same offer even though other images may have changed the ledger in the meantime.
 
-A candidate is an operation, not a finished question. Each model binding has a required `target` object. `visible_count` might later become “How many red squares are there?”, while `attribute_lookup` might become “What colour is the left square?”
+### Step 3: draft questions
 
-For image-sourced targets, the controller carries the target evidence region into selection, question writing, and question review. This location cue helps keep a later question on its bound object when several objects share one scope. It does not reveal an answer label or permit a question about a nearby object.
-For object identification, a single-object scope may carry a conservative `object_label` backed by a MET `visible_entity` observation. The controller lists the valid `typed_object_refs` for that candidate in the blind binding input. The binding can cite one as `target.value: "ref:<evidence_id>"`; the controller resolves the private label without asking the model to repeat its wording. An empty list means that no typed object reference is available. A missing label, unknown ID, nonlocal observation, or observation without MET is rejected. Free-text targets still require the cited observation to name the category. A broad region containing other objects is insufficient.
-The controller validates every binding independently after checking all candidate IDs for unknown or duplicate values. A malformed binding is recorded privately and excluded; another fully valid binding in the same response remains selectable. If every proposed binding is malformed, the bounded model retry still applies and exhaustion abstains. Missing or UNKNOWN checks never become MET.
-An instruction-origin target that cites image evidence fails source validation for that candidate alone; valid siblings still pass through the normal admission checks.
-On later turns, one slot can carry a previously used `attribute_lookup` task so a different visible property remains eligible. The controller removes an attribute binding when its scope, target, and public property repeat a committed request (including `color`/`colour` spelling). It also recognizes a generic color fact stated directly in an earlier committed identification question such as “What is this red fruit?” when that turn's answer names the same target. A color on a nearby object and a part-specific property remain eligible. Broader semantic overlap still requires question review and human audit.
+The conversation's generator receives the image, the exact committed public history, the target language, the offered operation contracts in route order, the family plan, the private fact keys of earlier committed turns, and `tasks.draft_count` (default 2). It returns at most that many drafts; the decoder also restricts each `task_id` to the offered operations. Every draft has:
 
-### Step 3: select one instruction
+- `task_id`: one offered operation;
+- `question`: the public user question;
+- `target`: a short public locator of the subject, which never contains the answer;
+- `public_parameters`: every required public choice of the operation;
+- `scope_region` and `target_region`: the normalized region the draft used and the subject inside it;
+- `fact_key`: a private subject and dimension, such as “dog on the left” and “fur color”, never the value.
 
-The active selector receives only:
+An empty draft list is a valid abstention. If every draft in a response breaks its operation contract, the call is retried with correction feedback within `runtime.structured_output_max_attempts`. A response that stays malformed is recorded in `draft-abstentions` and counts as no drafts. Each valid response is saved with its route in `question-drafts`.
 
-- the image;
-- the target language;
-- the exact committed public history;
-- the current candidate set.
+### Step 4: admit drafts deterministically
 
-It does not receive an answer, a future turn, dataset labels, fixture keys, or another model's decision. It returns one candidate ID or `null` with a short internal reason. An unknown ID is rejected. `null` ends the current plan; Pixelogue does not switch to the alternative selector.
+Drafts are examined in order. The controller first converts a draft into an operation contract with `origin: direct` and a private `request_key` built from its fact key; spelling variants such as `colour`/`color` and articles do not create a new fact. For verbatim text, reading-order, and code transcription, the whole drafted scope becomes the bound text region.
 
-### Step 4: write and check the question
+A draft is rejected before any judge call when:
 
-The assigned generation role turns the selected operation into one public question. First, both evaluator roles classify the question against all 72 task definitions without receiving the selected task or an answer. A different agreed task rejects the question; uncertainty or disagreement abstains. Both roles then check three points before any answer exists:
+- its operation was not offered or its public parameters break the catalog contract (unknown or missing names, unsupported values, scene categories without two distinct options); these go to `draft-rejections`;
+- the question gate already rejected the same normalized question in this turn;
+- it reproduces a substantial part of a private model instruction;
+- it contains a controller reference such as `scope_0`, `evidence_…`, or “selected region”;
+- it repeats an earlier user question after normalization;
+- its fact key matches a committed turn of the conversation;
+- a `visible_action_relation` question asks what a subject can or could do;
+- a `text_transcription` question locates its text relatively, for example “above” or “next to”;
+- a `scene_categorization` question does not state every listed option.
 
-1. the question has a visible or public-history anchor;
-2. it performs the selected operation coherently;
-3. it is useful and does not repeat an answered request.
+Every reason after the first is saved with the rejected text in `public-text-rejections`. Rejected drafts stay private and never reach a later drafting call.
 
-Each role returns `MET`, `NOT_MET`, or `UNKNOWN`. A clear negative rejects the turn. Missing evidence or disagreement causes abstention. An answer is never generated for a question that did not pass.
+### Step 5: gate the question with both judges
 
-Before those model calls, the controller checks exact normalized question repeats, substantial echoes of private model instructions, and unresolved internal references such as `scope_0` or “selected region”. Invalid drafts get a bounded correction attempt; unresolved drafts are rejected. The rejected text and reason are stored for diagnosis. Paraphrases still go to both image-aware evaluators. Re-rating stored turns applies the same internal-reference check. After answer generation, the controller rejects a close paraphrase that reproduces the same substantial answer as an earlier turn, before spending answer-review calls.
+Both generator models act as blind judges and make one `question_gate` call each, concurrently. A judge sees the image views, the public history, the drafted operation contract, all 72 task definitions, and the question. No answer exists yet. Each judge returns three verdicts and a reason, and only then its own label for the operation the question actually asks for (`realized_task_id`, or null):
 
-### Step 5: freeze public requirements before the answer
+1. `local_anchor`: the question refers to something that exists in the image or committed history, and to the bound subject when a target region is given;
+2. `operation_coherent`: it realizes the drafted operation exactly, with every public parameter and eligibility check;
+3. `useful_request`: it neither repeats an answered request nor states its own answer.
 
-Both evaluator calls independently list every explicit requirement in public user text. Each item stores its kind, lifetime, source message ID, and exact character offsets. The controller verifies that the cited span exists unchanged.
+A judge's three verdicts reduce to `MET` only when all are `MET`, and to `NOT_MET` when any is `NOT_MET`. The two labels are compared under `evaluation.question_gate_label_policy`:
 
-This matters because a fluent answer can make a forgotten requirement less noticeable. Freezing the list first prevents evaluators from weakening the request after seeing the answer. The two lists must agree before generation continues.
+| Label outcome | `strict` | `same_contract` (default) |
+|---|---|---|
+| Both labels name the drafted operation | `MET` (`exact`) | `MET` (`exact`) |
+| One label names the drafted operation; the other names an operation with identical verification contracts | `UNKNOWN` (`label_unresolved`) | `MET` (`same_contract`) |
+| Both labels name the same neighbor with identical contracts, and the draft already carries that operation's required public choices | `NOT_MET` (`label_mismatch`) | `MET`; the turn is relabeled (`relabel`) |
+| Both labels name the same other operation | `NOT_MET` (`label_mismatch`) | `NOT_MET` (`label_mismatch`) |
+| Any other disagreement, or a null label | `UNKNOWN` (`label_unresolved`) | `UNKNOWN` (`label_unresolved`) |
 
-A normal question applies to the current turn. A requirement persists only when the user explicitly extends it to later turns, as in “From now on, answer in one sentence.”
+The question passes only when the label outcome is `MET` and both judges' reduced verdicts are `MET`. A clear rejection needs `NOT_MET` from both judges or an agreed label mismatch; anything else short of a pass is uncertainty. Either way, the next draft is examined. When no draft of the call passes, one more drafting call (`tasks.extra_draft_calls_per_turn`, default 1) is routed with a preference for families that the first call did not offer. If that call fails too, the turn stops: abstained after an uncertain last gate decision, rejected otherwise. Each decision, with both votes, is saved in `question-gate-decisions`.
 
-### Step 6: generate the answer
+**What the judges see.** For object identification, attribute lookup, text transcription, reading order, and code transcription with a bound region smaller than the image, the controller cuts an exact crop of the target region, or of the scope region when no target region exists. Rounding never enlarges the crop, and it records its source view and coordinates in `focus-views`. With `evaluation.judge_views: full_and_crop` (default), judges receive the complete image first and the crop second; they judge the local subject inside the crop and use the complete image only for context. With `crop`, they receive the crop alone. Other operations always use the complete image. A crop without a whole pixel is recorded in `focus-view-abstentions`; under `full_and_crop` the judges then see the complete image, under `crop` the decision is `UNKNOWN`, and in both modes the turn cannot pass its operation checks. Generators always see the complete image.
 
-The same conversation generator sees the image, exact committed history, current question, target language, and agreed active requirements. It returns public text or an internal unsupported reason. Candidate IDs, evaluator names, and private reasons are forbidden in public text.
+### Step 6: answer the first gated question
 
-### Step 7: decompose and evaluate the answer
+Only the first draft that passes admission and the question gate is answered. The same generator receives the image, exact history, question, target language, and the expected operation contract, and returns public text or an internal reason for not answering (`answer_generation`, budget `tasks.answer_max_tokens`, default 1024). If the generator declines, the turn stops as rejected. A turn answers at most one question, so a failed answer is never replaced by an easier question in the same turn.
 
-Both evaluator roles extract every factual claim as an exact span in the answer. Pixelogue derives claim IDs from validated content rather than asking the model to invent them. If a quoted phrase occurs exactly once but its offsets are wrong, the controller can correct them deterministically; ambiguous spans remain invalid.
+Before review, the controller rejects an answer that reproduces a private instruction, a paraphrased question whose answer repeats an earlier substantial answer, and answers that add nothing to their own question: an identification label or transcription already in the question, an action already stated in the question, or a UI location that only repeats its public target. The text and reason go to `public-text-rejections`, and the turn stops.
 
-The controller then instantiates every applicable rubric item. The checks cover question and answer clarity, relevance, visible grounding, claim correctness and coverage, uncertainty, safety, target language, history use, and public naturalness.
+### Step 7: review the answer as a whole
 
-Being a later turn activates consistency and turn-progress checks. It does not by itself activate `H_BINDING` or `H_WITNESS`. `H_BINDING` requires an actual resolved reference to prior public state; the current ledger supplies it for persistent requirements from an earlier user message and passes that requirement to the evaluator. `H_WITNESS` requires the coordinator to designate and provide a history-dependency witness. The current synthesis path does not yet produce that witness artifact, so this item remains inapplicable instead of being guessed from the turn number. This distinction prevents an unrelated second question about the same image from being judged as though it claimed a strong dependency on the first answer.
+Both judges make one blind `holistic_review` call each, concurrently, with the expected operation contract and the views described in Step 5. Each returns `MET`, `NOT_MET`, or `UNKNOWN` with a short concrete reason covering image facts, fulfillment of the request, consistency with history, target language, explicit formats, and safety. Empty text, private-instruction echoes, internal references, and repeated questions fail in the controller without a judge call.
 
-Natural-language-only criteria are instantiated only when the answer contains a Unicode letter. A numeric answer such as `42` still receives the always-applicable factual, relevance, safety, and public-usability checks, but it is not sent through prose clarity, prose redundancy, or answer-language gates. Units such as `kg` contain letters and therefore keep those language checks enabled.
+Two `MET` votes pass and two `NOT_MET` votes fail. Every other pair is uncertain and allows at most one follow-up:
 
-Two additional paths avoid relying on a prose verdict alone:
+- **Tie-break** (`evaluation.holistic_tiebreak: full_view`, default). When one judge says `MET` and the other `UNKNOWN` after seeing a crop, the `UNKNOWN` judge reviews once more with the complete image alone. The pair is then decided again without averaging.
+- **Repair** (`evaluation.repair_once: true`, default). When one judge says `MET` and the other `NOT_MET`, the generator replaces the answer once (`answer_repair`). It receives the original answer and the objecting judge's reason, never a verdict or the other judge's response. The new answer must pass the same deterministic checks; then both judges review it from scratch. A tie-break is still possible in that review, but a second repair is not. The original answer, its rating, and the objection are saved in `answer-attempts`.
 
-- For grounded arithmetic, both roles extract typed operands and units. The controller recomputes an agreed allowlisted operation without binary floating-point arithmetic.
-- For exhaustive count or set questions, both roles bind expected and reported members. The controller compares the complete sets and preserves duplicates for diagnosis.
+Each holistic decision, including any tie-break vote and repair objection, is saved in `rating-decisions`.
 
-Evaluator calls are blind: neither receives the other verdict or the generator-role name. The standard profile uses Qwen3.8-27B-FP8 for role A and Gemma 4 31B for role B. In the temporary one-GPU pilot, both roles use the same Qwen3.5-9B endpoint. Pixelogue bypasses the result cache for the second logical call so two requests are made, while still reporting the lack of model-lineage diversity.
+### Step 8: run the operation validators
 
-### Step 8: repair once or commit
+After a passing review, every verification contract of the operation runs, except `dual_visual_review`, which the two holistic reviews already satisfy. Each validator asks both judge models for the same independent reading, and neither reader sees the other's output. Source readers (`*_source`) see the image, question, history, and operation but not the answer; answer parsers (`*_answer`) see the answer but not the image; set and arithmetic inventories, transcript alignment, and evidence-binding reviews see both. The second reader's identical request starts immediately, so the two readings overlap. The controller then compares sets, arithmetic, tables, charts, documents, formulas, graphs, scales, geometry, patterns, transcripts, and evidence bindings. Uncertain, incomplete, or disagreeing readings abstain, and no reading is completed from the candidate answer. Each result is saved in `operation-checks`.
 
-If the aggregate is a clear, repairable `FAIL`, the same generation role may replace the answer once. All claim extraction, typed checks, and rubric evaluation then run again. A repaired answer never inherits the old pass results.
+Verbatim transcription readers receive the original image so they can detect text continuing beyond the bound rectangle; the controller requires the whole requested unit to fit inside it. Exhaustive count and set questions use two inventories of expected and reported members or per-category counts; unreadable scope is never a zero count. Table, table-lookup, chart, graph, and specialist source readers use `tasks.source_max_tokens` (default 4096); other validator calls use 2,048 tokens. A chart or graph reading that stops at its limit is retried with up to twice the budget, capped at 8,192 tokens unless the configured budget is already higher. A table reading keeps its budget and must return `UNKNOWN` when the complete table does not fit.
 
-Only a `PASS` turn is committed. Its question and answer become immutable public history for the next turn. If generation stops before two committed turns, the conversation cannot become a `QUALITY_CANDIDATE`.
+### Step 9: commit and continue
+
+A turn is committed only when the holistic review and every operation check pass. The turn artifact (`turns`) keeps the operation contract with `origin: direct` and its private `request_key`, the public question and answer, the history hash, the generator, the router (in the legacy field `selector_model`), and the rating. The commit is written to `turn_commit`, the family ledger counts the operation, and the question and answer become immutable public history for the next turn.
+
+When the loop stops early, the stop stage and reason go to `conversation-stop-reasons`. With `evaluation.retain_accepted_prefix: true` (default), a conversation that stops as `REJECTED` or `ABSTAINED` after at least `data.min_turns` (two) committed turns becomes a `QUALITY_CANDIDATE` containing only that prefix. The complete stopped conversation stays in the private `conversation-stops` artifact, and the failed tail never reaches training output. Execution errors are never converted. The final conversation is recorded in `conversation_commit`.
 
 ## 4. Consensus does not average uncertainty away
 
-At a required gate, two `MET` verdicts pass. Any `NOT_MET` gives a clear failure. `UNKNOWN` remains unknown, and an execution error remains an error. Pixelogue does not turn a weak average into a pass.
+At every two-judge decision, two `MET` verdicts pass and two `NOT_MET` verdicts fail. Disagreement and `UNKNOWN` remain uncertainty, and an execution error remains an error. The only follow-ups are the full-view tie-break and the single answer repair; no vote is averaged or decided by majority.
 
 The final conversation status records where the image ended:
 
-- `QUALITY_CANDIDATE`: two to six committed turns and no terminal failed turn;
-- `REJECTED`: a definite quality failure or unsuitable plan;
-- `ABSTAINED`: insufficient evidence or evaluator disagreement;
-- `ERROR`: model transport, structured output, storage, or another execution failure.
+- `QUALITY_CANDIDATE`: two to six committed turns, either the planned length or a retained prefix;
+- `REJECTED`: a definite quality failure, no admissible or passing draft, or no available family;
+- `ABSTAINED`: insufficient evidence, judge disagreement, or model output that stayed malformed after bounded retries;
+- `ERROR`: model transport, storage, or another execution failure.
 
-## 5. What the run store preserves
+## 5. Settings that shape a turn
 
-For each model call, the local store writes the model lock, stage, request hash, request artifact, response artifact, token counts, and status. Calls that fail schema validation are recorded as `INVALID` with their raw response artifact so the failure can be inspected.
+| Setting | Default | Effect |
+|---|---|---|
+| `tasks.draft_count` | `2` | Drafts requested per drafting call (1–4) |
+| `tasks.draft_max_tokens` | `1024` | Output budget of one drafting call |
+| `tasks.extra_draft_calls_per_turn` | `1` | Additional drafting call when no draft passes (0 or 1) |
+| `tasks.profile_max_tokens` | `384` | Output budget of the router profile |
+| `tasks.anchor_turns` | `2` | Leading turns limited to lightly verified operations (0–6) |
+| `tasks.family_targets` | `uniform` | Target family shares; a mapping of family IDs to positive weights replaces the uniform target |
+| `tasks.task_weights` | `0.25` for the three structure reconstructions | Operation weights in (0, 1]; a smaller weight offers the operation less often |
+| `tasks.answer_max_tokens` | `1024` | Output budget of answers and repairs |
+| `tasks.source_max_tokens` | `4096` | Output budget of table, table-lookup, chart, graph, and specialist source readers |
+| `evaluation.question_gate_label_policy` | `same_contract` | `strict` requires both labels to name the drafted operation |
+| `evaluation.judge_views` | `full_and_crop` | `crop` sends local judges the crop alone |
+| `evaluation.holistic_tiebreak` | `full_view` | `none` disables the tie-break |
+| `evaluation.repair_once` | `true` | `false` lets a `MET`/`NOT_MET` split abstain without a repair |
+| `evaluation.retain_accepted_prefix` | `true` | `false` keeps a stopped conversation out of the pool even after two committed turns |
 
-The SQLite database is the index. Request and response bodies live in content-addressed paths such as:
+Runtime settings for request timeouts, the repetition guard, retries, and concurrency are described in [Models and GPU checks](../models-and-gpu.md). Settings of the retired planner, such as `tasks.planner`, `tasks.evidence_max_tokens`, `tasks.profiles`, `models.selector`, `evaluation.mode`, and `runtime.json_whitespace_max_chars`, are now unknown fields and fail validation. Use a new run ID after any change.
+
+## 6. What the run store preserves
+
+For each model call, the local store writes the model lock, stage, request hash, request artifact, response artifact, token counts, and status. Calls that fail schema validation are recorded as `INVALID` with their raw response artifact so the failure can be inspected. Retryable HTTP 429/5xx responses keep up to 4,096 characters of response text in `transport-errors`, without request headers.
+
+The SQLite database is the index. Besides model calls and budgets, it holds the `turn_route`, `turn_commit`, and `conversation_commit` tables used for resume. Request and response bodies and every private record live in content-addressed paths such as:
 
 ```text
 /var/tmp/pixelogue/<run-id>/
@@ -203,13 +248,15 @@ The SQLite database is the index. Request and response bodies live in content-ad
 └── artifacts/
     ├── requests/08/<sha256>
     ├── responses/24/<sha256>
-    ├── public-text-rejections/6c/<sha256>
+    ├── question-drafts/5d/<sha256>
+    ├── question-gate-decisions/a1/<sha256>
+    ├── rating-decisions/3e/<sha256>
     └── turns/ab/<sha256>
 ```
 
-Do not publish this directory as training data. It contains internal prompts, evaluation reasons, and operational information.
+[Inspect artifacts and examples](artifact-examples.md) lists every private record kind with its fields. Do not publish this directory as training data. It contains internal prompts, evaluation reasons, and operational information.
 
-## 6. Watch a long run without guessing
+## 7. Watch a long run without guessing
 
 Check more than process existence:
 
@@ -230,60 +277,3 @@ uv run --locked pixelogue profile \
   --database /var/tmp/pixelogue/open-images-pilot-001/run.sqlite3 \
   --output artifacts/open-images-pilot-001/inference-profile.json
 ```
-
-
-### Requirement extraction protocol update
-
-Requirement inventories use the strict boolean `extraction_complete`, not the old
-`coverage` verdict. It means every explicit user requirement was extracted; it never
-scores an answer. No answer or image is supplied at this stage. Incomplete extraction
-abstains, even if both models report incomplete; it is not a failed answer.
-One content requirement represents one requested operation including its scope.
-Explicit format, language and style clauses are separate; target_language does not
-create a public language requirement. Quotes exclude outer whitespace and clause-ending
-punctuation. Exact source validation and agreement between independent inventories remain
-mandatory. Unknown fields and legacy coverage responses are rejected, not promoted.
-This changes the prompt and response schema: use a new run ID and output directory.
-An eight-question check on the standard model pair agreed in all eight cases, including
-three historical failures. This does not measure full-dialogue acceptance or resolve all
-structured-output failures in other stages.
-
-Text-only `R_REQUIREMENT` checks whether an answer addresses the requested operation, target,
-scope and explicit response constraints. It must not judge visual truth or abstain merely because
-no image is supplied. Image-aware factual and exhaustive-set criteria remain required independently.
-Requirement extraction retains introductory scope phrases with their content request. Evidence with
-a different image ID is regenerated within the existing structured-output attempt limit; the ID is
-never silently rewritten. Schema retries enumerate required top-level fields without quoting the
-invalid response. Use a new run ID and output directory when validating these prompt changes.
-
-Extraction validation now happens before downstream grading. Claim models select boundaries in a controller-supplied numbered token table instead of copying
-text, character offsets or source IDs. The controller reconstructs the exact original substring
-and attaches the single answer ID. Requirement extraction uses short local
-message references, mapped back to real public IDs only after source validation. Invalid references
-or altered quotes trigger bounded retries, never fuzzy acceptance. Courtesy prefixes (`Please`,
-`Can you`) and outer sentence punctuation are normalized only after validating the original span;
-negation, scope restrictions and different operations still require agreement.
-
-`C_COVERAGE` receives the validated claim union as `candidate_claim_inventory` and compares it with
-the answer text, without image input or other judges' verdicts. Other criteria cannot receive this
-field. Short direct answers need no extra sentence framing unless explicitly requested.
-
-Set extraction requires every field, including empty arrays. Count mode compares independently
-extracted expected and reported counts per question category rather than requiring answer member
-names. Member mode ignores list order while preserving duplicates and exact member agreement;
-arbitrary synonym matching is not allowed. Unreadable scope is not a zero count. Set checks do not
-replace image-aware factual or completeness judgments. `rating-decisions` private artifacts retain
-full votes and the controller's set/coverage result so an overridden verdict can be diagnosed.
-These protocol changes require a new run ID; do not resume an old run with the new contracts.
-
-Retryable HTTP 429/5xx responses retain up to 4096 characters of response text in private
-`transport-errors` artifacts with model, attempt and request hash, without request headers.
-Claim extraction has a 2048-token response budget; answer generation is instructed to avoid
-unrequested long enumerations. Token limits and bounded retries still apply.
-
-Count categories need not be literal question substrings: open-ended color grouping and per-ring
-counts may introduce visible labels such as `white` or `innermost ring`. Explicit category wording
-is reused when available; grouping must still follow the request, and independent inventories and
-image-aware checks must agree. Token-boundary extraction now sends answer-specific JSON Schema
-maximums (`start_token < token_count`, `end_token <= token_count`); an empty token table permits
-only an empty claim list. Post-generation validation still enforces ordered, nonempty spans.
