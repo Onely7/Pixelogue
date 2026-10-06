@@ -700,13 +700,8 @@ the question. Never print controller IDs, coordinates, private parameters or the
 clearly supported."""
 
 STAGE_INSTRUCTIONS["question_gate"] = """Judge one drafted question before any answer exists.
-First classify, independently of selected_instruction (which may be wrong), the single operation
-the question asks the assistant to perform: choose realized_task_id from task_definitions by what
-the question requests. Use null when the request is ambiguous, compound, or matches no definition.
-Distinguish naming an object from reporting its attributes, comparing positions, counting, reading
-text or explaining. A body-posture question is attribute_lookup; what a subject is doing or how it
-interacts with another visible object is visible_action_relation.
-Then judge selected_instruction with MET, NOT_MET or UNKNOWN for each field:
+Read the question, the image and public_history, then judge selected_instruction with MET, NOT_MET
+or UNKNOWN for each field:
 local_anchor: the question refers to a visible object, region, text or complete image scope, or
 to committed public history, that actually exists. When target_region is supplied, the question
 must refer to the bound subject there, not a nearby object; UNKNOWN if this cannot be resolved.
@@ -719,7 +714,13 @@ useful_request: NOT_MET when public_history already contains the same answered r
 paraphrase of it, or when the question itself already states the requested answer: the category
 for object_identification, the value for attribute_lookup, the action for visible_action_relation
 or the text for transcription. Explicit regrouping of known facts is useful.
-Naming a visible text label is text reading, not object_identification.
+Give a short concrete reason. Finally, set realized_task_id to the single operation from
+task_definitions that describes what the question asks the assistant to do; it may be the
+selected operation. Use null when the request is ambiguous, compound or matches no definition.
+Distinguish naming an object from reporting its attributes, comparing positions, counting, reading
+text or explaining. Naming a visible text label is text reading, not object_identification. A
+body-posture question is attribute_lookup; what a subject is doing or how it interacts with another
+visible object is visible_action_relation.
 When two image views are supplied, the first is the complete image and the second is an exact crop
 of the bound region given by source_left/top/right/bottom: the requested local subject must be
 visible inside that crop, and the complete image provides context and positions only.

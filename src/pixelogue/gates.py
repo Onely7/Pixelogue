@@ -21,13 +21,17 @@ Verdict = Literal["MET", "NOT_MET", "UNKNOWN"]
 
 
 class QuestionGateVote(StrictModel):
-    """One judge's independent operation label and pre-answer question assessment."""
+    """One judge's pre-answer question assessment and independent operation label.
 
-    realized_task_id: Annotated[str, Field(min_length=1, max_length=64)] | None
+    The label comes last: emitted first, it was chosen before any reading of the question and
+    then rationalized, which also flipped the coherence verdict.
+    """
+
     local_anchor: Verdict
     operation_coherent: Verdict
     useful_request: Verdict
     reason: Annotated[str, Field(min_length=1, max_length=240)]
+    realized_task_id: Annotated[str, Field(min_length=1, max_length=64)] | None
 
     @property
     def fit(self) -> GateVerdict:
