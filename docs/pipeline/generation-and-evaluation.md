@@ -127,11 +127,11 @@ The conversation's generator receives the image, the exact committed public hist
 - `task_id`: one offered operation;
 - `question`: the public user question;
 - `target`: a short public locator of the subject, which never contains the answer;
-- `public_parameters`: every required public choice of the operation;
-- `scope_region` and `target_region`: the normalized region the draft used and the subject inside it;
+- `public_parameters`: every required public choice of the operation, as an array of name and value objects;
+- `scope_region` and `target_region`: the region the draft used and the subject inside it, as fractions from 0 to 1 of the image width and height with left < right and top < bottom;
 - `fact_key`: a private subject and dimension, such as “dog on the left” and “fur color”, never the value.
 
-An empty draft list is a valid abstention. If every draft in a response breaks its operation contract, the call is retried with correction feedback within `runtime.structured_output_max_attempts`. A response that stays malformed is recorded in `draft-abstentions` and counts as no drafts. Each valid response is saved with its route in `question-drafts`.
+The instruction states both formats explicitly: without them, Gemma 4 wrote regions on its native 0-1000 scale, which constrained decoding clamped into empty or inverted boxes. An empty draft list is a valid abstention. If every draft in a response breaks its operation contract, the call is retried with correction feedback within `runtime.structured_output_max_attempts`; a retry after a schema mismatch or repetition stop restates the region and parameter formats. A response that stays malformed is recorded in `draft-abstentions` and counts as no drafts. Each valid response is saved with its route in `question-drafts`.
 
 ### Step 4: admit drafts deterministically
 
