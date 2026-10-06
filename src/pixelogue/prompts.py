@@ -213,116 +213,6 @@ new hypothetical IDs explicitly stated in the question. Never invent missing vis
 Return exactly one complete result form: members, count, boolean or relation. Preserve list order
 for ordering tasks. Do not consult an image or expected source inventory. Missing, ambiguous or
 compound results are UNKNOWN. Do not infer what the correct image answer should have been.""",
-    "evidence_extraction": """Route the single image into a few publicly identifiable bounded
-scopes. Report only relevant capability observations, never the entire vocabulary. The observations
-field is an object keyed by capability name, not an array. Each value has a unique evidence_id,
-a MET/NOT_MET/UNKNOWN verdict, a visible detail, and a normalized region
-inside its scope. Every region must satisfy 0 <= left < right <= 1 and
-0 <= top < bottom <= 1; a point or an all-1 box is invalid. Observation regions
-must remain inside their parent scope. Do not combine capabilities from unrelated regions.
-Missing evidence is UNKNOWN, not absence.
-For text scopes enclose the entire visible sign, title, box or requested unit, including punctuation
-and descenders; do not use a box around only its tallest glyphs. Keep this enclosing unit inside
-the supplied image view. Chemical bonds and matrix layouts are not readable_formula capability
-under the registered scalar mathematical grammar; report their actual eligible structure instead.
-Copy image_id and each view_id exactly. Respect max_scopes and
-max_observations_per_scope. Within one scope, report each capability at most once: a capability
-describes support for an operation across the scope, not one observation per visible object.
-Summarize multiple instances in that observation's detail. Use the actual supplied resolution.
-For a scope centered on one clearly recognizable object, put one conservative category name in
-object_label and support it with a MET visible_entity observation in that scope. Use null for a
-mixed or ambiguous scope; the label is a visual observation, not a desired answer.
-An axis name, document title, table heading or diagram topic belongs in public_description,
-not object_label. Set object_label=null when no visible_entity observation is supported;
-do not invent visible_entity merely to justify a textual label.
-For EACH scope with a salient visible animal, person or object, explicitly check for a
-visible_attribute such as color, shape or a visible part. Include a MET visible_attribute
-when clearly supported, even if visible_interaction or scene_context is also present.
-Record this observation in the SAME scope as that subject's visible_entity observation;
-do not create a second scope solely for the subject's attributes. If no such property
-can be read reliably, include visible_attribute with UNKNOWN in that subject scope.
-Do not describe only the background's attributes when the main subject is clearly visible.
-Name independent properties separately in the detail (for example fur color and nose color)
-so later turns can ask for different facts. If a property is unclear, mark it UNKNOWN;
-do not infer hidden properties.
-Use only capability names from capability_vocabulary. Do not infer domains from source
-names or annotations. Broad discovery is followed by focused binding of eligible operations.""",
-    "attribute_recheck": """Inspect the attached image before any question or answer exists.
-Recheck only the named scope and image view for a directly visible property of its main
-subject, such as color, shape, texture, or a visible part. Return MET only when the
-property and its location are clear in the image. Name separate supported properties
-in the detail without inventing unseen ones. Return UNKNOWN if the subject or property
-is unclear. Keep the property region strictly inside scope_region and copy image_id,
-scope_id, and view_id exactly. Do not answer a question or infer a hidden property.""",
-    "candidate_binding": """Bind only the controller-provided candidates to locally supported
-public operation choices BEFORE any answer exists. Return at most one binding per candidate ID.
-Use that candidate's local_evidence_ids only. Include every required_evidence_ids entry in
-the binding evidence_refs. Never copy an ID from another candidate unless it also appears in
-this candidate's local_evidence_ids. Every binding MUST include the separate target object
-with value, origin and evidence_refs. Do not put target in public_parameters. target_binding,
-object, or category_set cannot replace target.
-Read public_history before choosing a target, attribute, or condition. A completed question and
-answer already cover that exact request. Prefer a visibly supported new target, attribute, or public
-condition; omit a binding if it can only repeat a completed request. Never infer an old answer from
-the image when deciding whether a new request is available.
-For attribute_lookup, bind the public attribute parameter to the exact property requested
-(for example fur color or nose color), with origin=instruction and no answer value. Select a
-different property when an earlier turn already asked about one on this target.
-Use target_binding only as an additional parameter for referring_expression_generation. Provide a
-count_unit for counting; predicate for selection, group_key for grouping, frame for spatial
-relations, precision for numerical readings, claim for verification/localization, local_question for
-answerability, category_set for scene classification and target_binding for referring expressions.
-Include only parameters relevant to that candidate's parameter_contract and operation; never add
-scope_id or a separate scope parameter unless scope is in bindable_parameter_names for that candidate.
-Parameter names and check IDs must be unique.
-The verdicts field is an allowed output vocabulary, NEVER a desired answer parameter. Fixed policies
-such as execution/source_errors/coordinate_output are not bindable public choices.
-Bind enumerated input operation choices (except optional derived_forms and output/policy vocabularies)
-to one permitted value. Choose concrete public predicates, targets, precision and hypotheses;
-never put the answer or a hidden factual operand into public_parameters. The separate target is a
-controller-private image binding: for object_identification it may be the object category to name;
-choose only a category whose distinguishing visible features are clear. If closely related
-categories remain visually confusable, bind their reliably supported broader category or omit
-the candidate. A plausible familiar label is not sufficient evidence for a fine-grained target.
-For object_identification with origin=image, use an exact value from that candidate's
-typed_object_refs when the list is nonempty. Set target.evidence_refs to the single evidence ID
-after "ref:". The controller resolves the label from the earlier image observation. When
-typed_object_refs is empty, cite a local observation whose detail explicitly names the target
-object's category or omit the binding. Never construct a reference that is absent from the
-candidate's typed_object_refs or cite an ID from another scope.
-Citing a broad observation about other objects in the same scope is insufficient; use UNKNOWN if
-neither a typed reference nor a named observation exists.
-for scene_categorization it MUST be exactly one image-supported category_set choice with origin=image
-and local evidence_refs. Do not replace that target with a generic phrase such as "the scene".
-Each parameter names its origin:
-instruction for a public choice/hypothesis, image for observed facts, history for committed messages.
-For scene_categorization, category_set is an instruction-origin tuple of at least two distinct
-ordinary category choices, including the image-supported target. Choices must be contrastive and
-nonoverlapping at the same level (for example indoor versus outdoor, not street versus neighborhood).
-A wall, floor or single close-up object alone does not establish indoor versus outdoor; without
-an unambiguous visible cue, mark visible_category_supported UNKNOWN rather than guessing.
-A single answer label is not a set.
-Factual origins need references to this scope's evidence IDs or exact public message IDs.
-An instruction choice has no evidence_refs. An image or history fact must include at least one
-matching evidence_id or public message ID. If origin is image, use only local evidence_ids;
-if origin is history, use only exact message_ids from public_history. Never label an obs_*
-reference as history. The binding's evidence_refs must include every MET
-observation for its required_capabilities, with no duplicate IDs.
-Include exactly the named eligibility checks. MET requires visible support for the actual operation
-and parameters, NOT_MET is a definite failure, and missing evidence is UNKNOWN. For limitation and
-false_premise use the alternative profile_guard instead of normal answerability prerequisites.
-For EACH candidate, copy all and only its required_check_ids into checks[].check_id. Use
-bindable_parameter_names only for public_parameters[].name; these are two different name lists.
-When all checks for a binding are MET, include every required_parameter_names entry in
-public_parameters. If a required choice cannot be grounded or stated publicly, omit the binding
-or mark its relevant check UNKNOWN; never emit a MET binding with that parameter missing.
-Do not put a check ID, policy name, or verdict word into public_parameters. If the image cannot
-support a check, report UNKNOWN or NOT_MET for that check instead of omitting it.
-A limitation needs a locally visible target and a specific unreadable/cropped/ambiguous condition.
-A false premise needs a visible local contradiction, never failure to retrieve an object.
-Do not manufacture unreadability. Estimate output tokens conservatively; select a publicly bounded
-region or reject if the result cannot fit answer_max_tokens. Follow runtime_restrictions.
-Source metadata, gold answers, hidden pages, and other judges' verdicts are unavailable.""",
     "extractive_source": """Read only the image, public question, history and operation; no answer is available.
 Extract the complete minimal source span that answers the public question, retaining every
 qualifier, negation and exception needed for that answer. Copy the source's language and spelling;
@@ -365,88 +255,6 @@ visible_evidence descriptions. MET coverage requires complete evidence coverage.
 verify the actual unique visible control. For panel comparison bind each difference to both existing
 panels; no unseen state or separate image is available. Return verdict, coverage, bindings, reason.
 Unknown visual evidence requires UNKNOWN. Do not infer any other judge's decision.""",
-    "instruction_selection": """Choose the candidate that yields the most natural, useful request for
-this image and the exact public history. The candidate list is provisional: verify that every object,
-role, value, region, or pairing needed by an operation is visibly available. Compare all candidates
-and select the strongest fully supported operation. For example, counting does not realize matching,
-and repeated objects alone do not form a visible correspondence. Do not repeat a request already
-answered in the public history. When target_region is supplied, use its normalized image coordinates
-as a location cue for the bound target; a nearby object in the same scope is a different target.
-Do not answer the candidate. Set candidate_id to null only when every
-listed candidate lacks a supported new request.""",
-    "question_generation": """Write one user question realizing the selected instruction. Keep it in
-the target language and grounded in the visible scope and public history. Realize the selected
-task_id and operation exactly; do not replace it with an easier nearby task or repeat an answered
-request. Every public parameter must be realized in the question, including scope, counting unit,
-precision, predicates and hypothetical assumptions.
-When output_contract is present, state its relevant output conditions in the public question.
-For extractive QA request the source-language answer span, with its qualifiers, not a translation.
-For HTML tables explicitly request the declared static table subset, preserving cell line breaks
-and excluding executable markup and CSS outside the public allowlist.
-For chart extrema distinguish maximum, minimum, both extrema, and complete ranking, preserving ties
-and the public ordering. Do not request a matrix or chemical bond diagram as formula_transcription.
-Controller IDs such as scope_id, view_id, candidate_id and evidence IDs are private references;
-never print their values in the public question. Do not refer to a "selected region" or
-"selected image scene"; those are controller descriptions, not public visual locators.
-Describe the target using visible location or traits.
-When target_region is supplied, use it to locate the bound target in the image. Do not switch to
-another visible object in the same scope or print controller coordinates in the public question.
-If the region contains several possible targets and the intended one cannot be resolved, abstain.
-If those cues cannot identify it uniquely, return text=null with a reason.
-For scene_categorization, category_set
-must contain at least two distinct ordinary alternatives, including the supported target category;
-present all alternatives in the public question. Ask exactly one final semantic operation;
-independent compound requests are unsupported and must not be mislabeled as their first operation.
-For object_identification, the target can itself be the category to name and is withheld from this
-public operation view. Do not put that category or a synonym of the answer in the question. Refer by location or visible non-category
-traits; if that does not uniquely identify the target, return text=null with a reason.
-For attribute_lookup, ask for the named public attribute on a uniquely resolved subject without
-stating its value in the question; return text=null if only an answer-bearing description resolves it.
-For text_transcription, bound the requested text to a visible absolute region or an exact public
-scope. Do not locate text relative to another object: the transcript checker has no coordinates
-to verify above, below, beside, left, or right relationships.
-For a single still image, ask about visible action or posture only when supported by a visible cue.
-For visible_action_relation, identify the subject using non-action visual cues. Never state
-the action or posture being requested in the question, even if a private target or scope
-description contains it. If the subject cannot be identified without that clue, return text=null.
-Ask what the subject is doing or how it interacts with a visible target. A question phrased
-as "What is its body posture?" requests an attribute and does not realize this operation.
-Do not ask what a subject can or could do, is capable of, or is supported to perform. Those are
-abilities, not actions shown by the image; wheels touching the ground do not prove driving.
-The absence of motion blur cannot establish that an object is stationary.
-Never request code execution. Return public text, or set text to null and give an internal reason if unsupported.""",
-    "question_intent": """Independently classify the exact operation requested by the public
-question. Read the image, public history and all supplied task definitions. Choose the single
-task_id whose definition best describes what the question asks the assistant to do. Use null when
-the request is ambiguous, compound, or none of the definitions applies. Distinguish naming an
-object from reporting its attributes, comparing positions, counting, or explaining a claim.
-Classify a question about a subject's body posture as attribute_lookup; classify a question
-about what it is doing or its interaction with another visible object as visible_action_relation.
-Do not infer the task from a likely answer or from a prior turn's task. No selected task or
-candidate answer is supplied; return only your independent classification and brief reason.""",
-    "question_fit": """Judge whether the current question has a visible or historically grounded local
-anchor, realizes the selected instruction's operation coherently, and is useful in this
-conversation. A visible object, region, text, or complete image scope is a local anchor.
-If the delivered image view has source_view_id and source_left/top/right/bottom, it is a crop
-of exactly that original region. Resolve positions using that mapping. For local identification
-or attribute questions the actual requested subject must be visible IN this delivered crop;
-a neighboring subject that may exist elsewhere in the source image is not a valid substitute.
-If excluded context is needed to resolve the question, use UNKNOWN instead of guessing.
-Every field is required: use MET, NOT_MET, or UNKNOWN, never NOT_APPLICABLE. Mark operation_coherent NOT_MET when
-the question changes the exact task_id, even within one family; counting or spatial ordering cannot
-realize correspondence matching. Mark useful_request NOT_MET when the public history already
-contains the same answered request. When target_region is supplied, check that the question refers
-to the bound target there rather than a nearby object in the same scope. If the target cannot be
-resolved from this cue, mark local_anchor UNKNOWN. When a v7 contract is supplied, local_anchor and
-operation_coherent also require every eligibility check and public parameter to hold. Check the
-alternative profile guard for limitations or false premises; do not require normal answerability
-for a limitation. Both the target and the stated limitation/contradiction must be locally grounded.
-For visible_action_relation, an ability or hypothetical action is operation_coherent NOT_MET;
-visible contact alone cannot establish movement or intended future action.
-Reject compound independent operations and any extra machine-readable output request not supported
-by the selected operation. A still image alone cannot establish that an object is stationary from
-the absence of blur; mark such an unsupported motion question NOT_MET or UNKNOWN as appropriate.
-Explicit regrouping is useful without requiring a new visual fact.""",
     "requirement_extraction": """Extract explicit requirements from public USER text, not answers.
 This is a text extraction step BEFORE answer generation. No candidate answer or image is supplied:
 that is intentional, NOT evidence of failure. NEVER judge whether an answer exists, is correct,
@@ -830,31 +638,6 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "finite_answer": frozenset(
         {"target_language", "question", "candidate_answer", "expected_operation"}
     ),
-    "evidence_extraction": frozenset(
-        {
-            "image_id",
-            "capability_vocabulary",
-            "image_views",
-            "max_scopes",
-            "max_observations_per_scope",
-        }
-    ),
-    "attribute_recheck": frozenset(
-        {"image_id", "scope_id", "view_id", "scope_region", "scope_description", "image_views"}
-    ),
-    "candidate_binding": frozenset(
-        {
-            "target_language",
-            "public_history",
-            "candidates",
-            "scope_evidence",
-            "answer_max_tokens",
-            "image_views",
-        }
-    ),
-    "question_intent": frozenset(
-        {"target_language", "public_history", "question", "task_definitions", "image_views"}
-    ),
     "transcript_alignment": frozenset(
         {
             "target_language",
@@ -886,21 +669,6 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
             "image_views",
             "expected_operation",
             "verification_contract",
-        }
-    ),
-    "instruction_selection": frozenset(
-        {"target_language", "public_history", "candidates", "image_views"}
-    ),
-    "question_generation": frozenset(
-        {"target_language", "turn_index", "public_history", "selected_instruction", "image_views"}
-    ),
-    "question_fit": frozenset(
-        {
-            "target_language",
-            "public_history",
-            "selected_instruction",
-            "question",
-            "image_views",
         }
     ),
     "requirement_extraction": frozenset(
@@ -1035,16 +803,9 @@ def validate_stage_payload(stage: str, payload: Mapping[str, Any]) -> None:
                 "MODEL_PAYLOAD_FIELD", "Claim inventories are restricted to C_COVERAGE"
             )
     if stage.endswith("_source") or stage in {
-        "candidate_binding",
-        "instruction_selection",
-        "evidence_extraction",
-        "attribute_recheck",
         "image_profile",
         "question_draft",
         "question_gate",
-        "question_generation",
-        "question_intent",
-        "question_fit",
         "requirement_extraction",
     }:
 

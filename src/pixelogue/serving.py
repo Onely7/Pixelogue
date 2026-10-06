@@ -17,7 +17,7 @@ from pydantic import BaseModel, ValidationError
 
 from pixelogue.call_usage import measure_usage
 from pixelogue.config import ModelEndpoint, RuntimeConfig
-from pixelogue.contracts import ClaimExtraction, EvidenceInventory, TextPayload
+from pixelogue.contracts import ClaimExtraction, TextPayload
 from pixelogue.drafting import QuestionDraftBatch
 from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.gates import QuestionGateVote
@@ -25,15 +25,7 @@ from pixelogue.prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, validate_stage_
 from pixelogue.routing import ImageProfile
 from pixelogue.serialization import canonical_hash, canonical_json, strict_json_object
 from pixelogue.store import RunStore
-from pixelogue.task_evidence import (
-    ArrayScopedEvidenceReport,
-    AttributeRecheckReport,
-    CandidateBindingsReport,
-    CompactScopedEvidenceReport,
-    ImageRegion,
-    ScopedEvidenceInventory,
-    ScopedEvidenceReport,
-)
+from pixelogue.task_evidence import ImageRegion
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 SPECIALIST_SOURCE_STAGES = frozenset(
@@ -635,24 +627,6 @@ class VllmClient:
             "instruction": STAGE_INSTRUCTIONS[stage],
             "input": payload,
         }
-        if response_model in (ArrayScopedEvidenceReport, CompactScopedEvidenceReport):
-            request_text["instruction"] = STAGE_INSTRUCTIONS[stage].replace(
-                "field is an object keyed by capability name, not an array. Each value",
-                "field is an array of observations, each with a capability name from the vocabulary. Each observation",
-            )
-        if response_model is CompactScopedEvidenceReport:
-            request_text["instruction"] = (
-                request_text["instruction"]
-                .replace(
-                    "Each observation has a unique evidence_id,",
-                    "Each observation has a capability,",
-                )
-                .replace(
-                    "Copy image_id and each view_id exactly.",
-                    "The controller supplies image, view, scope and evidence identities. "
-                    "Do not output image_id, view_id, scope_id or evidence_id; return only Schema fields.",
-                )
-            )
         if retry_feedback is not None:
             request_text["retry_feedback"] = retry_feedback
         user_content: list[dict[str, Any]] = [
@@ -665,111 +639,9 @@ class VllmClient:
             {"type": "image_url", "image_url": {"url": image.data_uri()}} for image in images
         )
         schema = response_model.model_json_schema()
-        whitespace_bound = self.runtime.json_whitespace_max_chars
-        if whitespace_bound is not None and stage in {"evidence_extraction", "candidate_binding"}:
-            identity = self.endpoint.serving_runtime
-            if identity is None or not identity.bounded_whitespace_supported:
-                raise ExecutionError(
-                    "MODEL_RUNTIME_PATCH_REQUIRED",
-                    "Bounded JSON whitespace requires the verified Pixelogue XGrammar patch "
-                    "and an explicit xgrammar server with ordinary whitespace enabled",
-                )
-            schema["x-pixelogue-max-whitespace-chars"] = whitespace_bound
         _bind_direct_schema(schema, response_model, payload)
         if stage in SPECIALIST_SOURCE_STAGES:
             _bind_specialist_source_schema(schema, stage, payload)
-        if response_model in (
-            EvidenceInventory,
-            ScopedEvidenceInventory,
-            ScopedEvidenceReport,
-            ArrayScopedEvidenceReport,
-            CompactScopedEvidenceReport,
-        ):
-            image_id = payload.get("image_id")
-            if not isinstance(image_id, str) or not image_id:
-                raise ExecutionError("MODEL_PAYLOAD_FIELD", "Evidence requires an image identity")
-            if response_model is not CompactScopedEvidenceReport:
-                schema["properties"]["image_id"]["const"] = image_id
-        if response_model is AttributeRecheckReport:
-            for field in ("image_id", "scope_id", "view_id"):
-                value = payload.get(field)
-                if not isinstance(value, str) or not value:
-                    raise ExecutionError("MODEL_PAYLOAD_FIELD", f"Attribute recheck lacks {field}")
-                schema["properties"][field]["const"] = value
-        if response_model in (
-            ScopedEvidenceReport,
-            ArrayScopedEvidenceReport,
-            CompactScopedEvidenceReport,
-        ):
-            vocabulary = payload.get("capability_vocabulary")
-            limit = payload.get("max_observations_per_scope")
-            max_scopes = payload.get("max_scopes")
-            if (
-                not isinstance(vocabulary, dict)
-                or not vocabulary
-                or any(not isinstance(name, str) or not name for name in vocabulary)
-                or not isinstance(limit, int)
-                or not 0 < limit <= 50
-                or not isinstance(max_scopes, int)
-                or not 0 < max_scopes <= 8
-            ):
-                raise ExecutionError(
-                    "MODEL_PAYLOAD_FIELD", "Scoped evidence requires bounded capability names"
-                )
-            scopes_schema = schema["properties"]["scopes"]
-            scopes_schema["maxItems"] = max_scopes
-            scope_types: dict[type[BaseModel], str] = {
-                ScopedEvidenceReport: "ScopeEvidenceReport",
-                ArrayScopedEvidenceReport: "ArrayScopeEvidenceReport",
-                CompactScopedEvidenceReport: "CompactScopeEvidenceReport",
-            }
-            scope_type = scope_types[response_model]
-            observations_schema = schema["$defs"][scope_type]["properties"]["observations"]
-            if response_model is ScopedEvidenceReport:
-                observations_schema["properties"] = {
-                    name: {"$ref": "#/$defs/CapabilityReport"} for name in sorted(vocabulary)
-                }
-                observations_schema["additionalProperties"] = False
-                observations_schema["maxProperties"] = limit
-            else:
-                observations_schema["maxItems"] = limit
-                observation_type = (
-                    "CompactCapabilityObservation"
-                    if response_model is CompactScopedEvidenceReport
-                    else "CapabilityObservation"
-                )
-                schema["$defs"][observation_type]["properties"]["capability"]["enum"] = sorted(
-                    vocabulary
-                )
-        if response_model is CandidateBindingsReport:
-            candidates = payload.get("candidates")
-            if not isinstance(candidates, list) or not candidates:
-                raise ExecutionError("MODEL_PAYLOAD_FIELD", "Bindings require candidates")
-            candidate_ids = sorted({item["candidate_id"] for item in candidates})
-            check_ids = sorted(
-                {check for item in candidates for check in item["required_check_ids"]}
-            )
-            parameter_names = sorted(
-                {name for item in candidates for name in item["bindable_parameter_names"]}
-                - {"target"}
-            )
-            definitions = schema["$defs"]
-            definitions["CandidateBindingReport"]["properties"]["candidate_id"]["enum"] = (
-                candidate_ids
-            )
-            check_lengths = [len(item["required_check_ids"]) for item in candidates]
-            checks_schema = definitions["CandidateBindingReport"]["properties"]["checks"]
-            checks_schema["minItems"] = min(check_lengths)
-            checks_schema["maxItems"] = max(check_lengths)
-            definitions["EligibilityObservation"]["properties"]["check_id"]["enum"] = check_ids
-            if parameter_names:
-                definitions["PublicParameter"]["properties"]["name"]["enum"] = parameter_names
-            else:
-                # An empty enum makes the referenced object unsatisfiable in vLLM's
-                # grammar compiler, even when the containing array is empty.
-                definitions["CandidateBindingReport"]["properties"]["public_parameters"][
-                    "maxItems"
-                ] = 0
         if response_model is ClaimExtraction:
             tokens = payload.get("answer_tokens")
             if not isinstance(tokens, list) or any(

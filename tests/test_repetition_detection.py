@@ -11,9 +11,9 @@ from pixelogue.config import ModelEndpoint, RepetitionDetectionConfig, RuntimeCo
 from pixelogue.contracts import RubricVerdict
 from pixelogue.errors import ExecutionError
 from pixelogue.pipeline import SynthesisCoordinator
+from pixelogue.routing import ImageProfile
 from pixelogue.serving import VllmClient
 from pixelogue.store import RunStore
-from pixelogue.task_evidence import ScopedEvidenceReport
 
 
 @pytest.mark.parametrize(
@@ -24,7 +24,8 @@ from pixelogue.task_evidence import ScopedEvidenceReport
         {"max_pattern_size": 17},
         {"stages": []},
         {"stages": ["answer_generation"]},
-        {"stages": ["candidate_binding", "candidate_binding"]},
+        {"stages": ["question_draft", "question_draft"]},
+        {"stages": ["evidence_extraction"]},
         {"unknown": True},
     ],
 )
@@ -36,14 +37,15 @@ def test_repetition_configuration_rejects_unbounded_or_unintended_stages(setting
 @pytest.mark.parametrize(
     "stage,expected",
     [
-        ("evidence_extraction", True),
-        ("candidate_binding", True),
+        ("quantity_source", True),
+        ("question_draft", True),
+        ("image_profile", True),
         ("answer_generation", False),
-        ("question_generation", False),
-        ("rubric_item", False),
+        ("question_gate", False),
+        ("holistic_review", False),
     ],
 )
-def test_engine_guard_is_only_sent_to_explicit_extraction_stages(stage, expected):
+def test_engine_guard_is_only_sent_to_private_structured_stages(stage, expected):
     client = VllmClient(
         ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
         RuntimeConfig(repetition_detection=RepetitionDetectionConfig()),
@@ -77,7 +79,7 @@ def test_guard_is_off_by_default_and_changes_configuration_identity():
     client = VllmClient(original.models.generator_a, original.runtime, run_id="default")
     try:
         body = client._build_body(
-            "evidence_extraction", {}, (), RubricVerdict, max_tokens=512, temperature=0.0, seed=1
+            "question_draft", {}, (), RubricVerdict, max_tokens=512, temperature=0.0, seed=1
         )
     finally:
         client.client.close()
@@ -202,7 +204,12 @@ def test_extraction_recovers_within_existing_attempt_limit_and_resumes_without_h
         }
     )
     calls = []
-    report = {"image_id": "image", "scopes": [], "reason": "No supported scoped evidence"}
+    report = {
+        "image_kind": "photo",
+        "readable_text": "none",
+        "supported_families": [],
+        "reason": "No family is clearly supported",
+    }
 
     def respond(request):
         calls.append(json.loads(request.content))
@@ -223,11 +230,8 @@ def test_extraction_recovers_within_existing_attempt_limit_and_resumes_without_h
         )
 
     payload = {
-        "image_id": "image",
         "image_views": [],
-        "capability_vocabulary": {"visible_entity": "A visible subject"},
-        "max_scopes": 1,
-        "max_observations_per_scope": 2,
+        "family_definitions": [{"family": "visual_description", "operations": []}],
     }
     with RunStore(tmp_path, "recover", require_local_wal=False) as store:
         store.initialize_run("recover", config.config_hash, config.profile)
@@ -246,10 +250,10 @@ def test_extraction_recovers_within_existing_attempt_limit_and_resumes_without_h
                 if expected_success:
                     result = coordinator._invoke(
                         client,
-                        "evidence_extraction",
+                        "image_profile",
                         payload,
                         (),
-                        ScopedEvidenceReport,
+                        ImageProfile,
                         max_tokens=512,
                         temperature=0.0,
                         seed=1,
@@ -259,10 +263,10 @@ def test_extraction_recovers_within_existing_attempt_limit_and_resumes_without_h
                     with pytest.raises(ExecutionError, match="repeated token pattern"):
                         coordinator._invoke(
                             client,
-                            "evidence_extraction",
+                            "image_profile",
                             payload,
                             (),
-                            ScopedEvidenceReport,
+                            ImageProfile,
                             max_tokens=512,
                             temperature=0.0,
                             seed=1,

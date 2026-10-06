@@ -191,35 +191,6 @@ class InstructionCandidate(StrictModel):
         return self
 
 
-class EvidenceInventory(StrictModel):
-    """Bounded model observation used only to construct candidate instructions."""
-
-    image_id: str
-    capabilities: Annotated[tuple[str, ...], Field(max_length=20)]
-    visible_scopes: Annotated[tuple[str, ...], Field(max_length=8)]
-    scope_limited: bool
-    reason: Annotated[str, Field(min_length=1, max_length=240)]
-
-    @model_validator(mode="after")
-    def validate_capabilities(self) -> EvidenceInventory:
-        """Reject repeated capability keys even outside guided decoding."""
-        if len(self.capabilities) != len(set(self.capabilities)):
-            raise ValueError("capabilities must be unique")
-        return self
-
-
-class InstructionSelection(StrictModel):
-    """Validated output from one explicitly configured selector."""
-
-    candidate_id: str | None
-    reason: Annotated[str, Field(min_length=1, max_length=240)]
-
-    @property
-    def status(self) -> Literal["SELECTED", "NO_SUITABLE_CANDIDATE"]:
-        """Derive the decision so structured output cannot contradict its candidate ID."""
-        return "SELECTED" if self.candidate_id is not None else "NO_SUITABLE_CANDIDATE"
-
-
 class TextPayload(StrictModel):
     """Question or answer text returned by a model."""
 
@@ -239,36 +210,6 @@ class TextPayload(StrictModel):
     def status(self) -> Literal["OK", "UNSUPPORTED"]:
         """Derive the status so it cannot contradict the public text."""
         return "OK" if self.text is not None else "UNSUPPORTED"
-
-
-class QuestionFit(StrictModel):
-    """One judge's pre-answer question assessment."""
-
-    local_anchor: Literal["MET", "NOT_MET", "UNKNOWN"]
-    operation_coherent: Literal["MET", "NOT_MET", "UNKNOWN"]
-    useful_request: Literal["MET", "NOT_MET", "UNKNOWN"]
-    reason: Annotated[str, Field(min_length=1, max_length=240)]
-
-    @property
-    def aggregate(self) -> GateVerdict:
-        """Reduce required question-fit checks without averaging."""
-        values = {
-            GateVerdict(self.local_anchor),
-            GateVerdict(self.operation_coherent),
-            GateVerdict(self.useful_request),
-        }
-        if GateVerdict.NOT_MET in values:
-            return GateVerdict.NOT_MET
-        if values == {GateVerdict.MET}:
-            return GateVerdict.MET
-        return GateVerdict.UNKNOWN
-
-
-class QuestionIntent(StrictModel):
-    """Blind classification of the operation requested by public question text."""
-
-    task_id: str | None
-    reason: Annotated[str, Field(min_length=1, max_length=240)]
 
 
 class AtomicClaim(StrictModel):

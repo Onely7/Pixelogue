@@ -11,7 +11,7 @@ from pydantic import HttpUrl
 
 from pixelogue.chart_verifiers import ChartAnswer, ChartSource
 from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
-from pixelogue.contracts import ClaimExtraction, EvidenceInventory, RubricVerdict, TextPayload
+from pixelogue.contracts import ClaimExtraction, RubricVerdict, TextPayload
 from pixelogue.document_verifiers import DocumentSource
 from pixelogue.errors import ExecutionError
 from pixelogue.graph_verifiers import GraphAnswer, GraphSource
@@ -34,9 +34,6 @@ from pixelogue.store import RunStore
 from pixelogue.table_lookup import TableLookupSource
 from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_evidence import (
-    AttributeRecheckReport,
-    CandidateBindingsReport,
-    ScopedEvidenceReport,
     TranscriptSource,
 )
 
@@ -354,34 +351,29 @@ def test_specialist_structural_reader_sees_the_bound_schema_and_no_answer(tmp_pa
         assert "inventory" in schema["properties"]["closed"]["description"]
 
 
-def test_instruction_selector_information_boundary() -> None:
-    allowed = {
+def test_router_and_drafter_information_boundary() -> None:
+    profile = {"image_views": [], "family_definitions": []}
+    validate_stage_payload("image_profile", profile)
+    with pytest.raises(ExecutionError) as caught:
+        validate_stage_payload("image_profile", {**profile, "gold_answer": "secret"})
+    assert caught.value.reason == "MODEL_INFORMATION_LEAK"
+    draft = {
         "target_language": "en",
+        "turn_index": 1,
         "public_history": [],
-        "candidates": [],
+        "allowed_tasks": [],
+        "preferred_task_ids": [],
+        "family_plan": {},
+        "excluded_fact_keys": [],
+        "draft_count": 2,
         "image_views": [],
     }
-    validate_stage_payload("instruction_selection", allowed)
+    validate_stage_payload("question_draft", draft)
     with pytest.raises(ExecutionError) as caught:
-        validate_stage_payload("instruction_selection", {**allowed, "gold_answer": "secret"})
+        validate_stage_payload("question_draft", {**draft, "candidate_answer": "white"})
     assert caught.value.reason == "MODEL_INFORMATION_LEAK"
     with pytest.raises(ExecutionError):
-        validate_stage_payload("rubric_item", {"other_judge_verdict": "MET"})
-
-
-def test_attribute_recheck_cannot_receive_an_answer() -> None:
-    payload = {
-        "image_id": "image-1",
-        "scope_id": "subject",
-        "view_id": "full:test",
-        "scope_region": {"left": 0.1, "top": 0.1, "right": 0.8, "bottom": 0.8},
-        "scope_description": "One visible subject",
-        "image_views": [{"view_id": "full:test"}],
-    }
-    validate_stage_payload("attribute_recheck", payload)
-    with pytest.raises(ExecutionError) as caught:
-        validate_stage_payload("attribute_recheck", {**payload, "candidate_answer": "white"})
-    assert caught.value.reason == "MODEL_INFORMATION_LEAK"
+        validate_stage_payload("holistic_review", {"other_judge_verdict": "MET"})
 
 
 def test_text_payload_derives_status_from_public_text() -> None:
@@ -435,70 +427,6 @@ def test_image_part_declaration_must_match() -> None:
             seed=1,
         )
     assert caught.value.reason == "IMAGE_PART_MISMATCH"
-
-
-def test_candidate_binding_schema_restricts_supplied_names() -> None:
-    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="x")
-    try:
-        body = client._build_body(
-            "candidate_binding",
-            {
-                "image_views": [],
-                "candidates": [
-                    {
-                        "candidate_id": "candidate-1",
-                        "required_check_ids": ["scope_resolved", "count_unit_defined"],
-                        "bindable_parameter_names": ["target", "count_unit"],
-                    }
-                ],
-            },
-            (),
-            CandidateBindingsReport,
-            max_tokens=100,
-            temperature=0.0,
-            seed=1,
-        )
-    finally:
-        client.client.close()
-    definitions = body["response_format"]["json_schema"]["schema"]["$defs"]
-    assert definitions["CandidateBindingReport"]["properties"]["candidate_id"]["enum"] == [
-        "candidate-1"
-    ]
-    assert definitions["EligibilityObservation"]["properties"]["check_id"]["enum"] == [
-        "count_unit_defined",
-        "scope_resolved",
-    ]
-    assert definitions["CandidateBindingReport"]["properties"]["checks"]["minItems"] == 2
-    assert definitions["CandidateBindingReport"]["properties"]["checks"]["maxItems"] == 2
-    assert definitions["PublicParameter"]["properties"]["name"]["enum"] == ["count_unit"]
-
-
-def test_candidate_binding_schema_allows_no_optional_parameters() -> None:
-    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="x")
-    try:
-        body = client._build_body(
-            "candidate_binding",
-            {
-                "image_views": [],
-                "candidates": [
-                    {
-                        "candidate_id": "candidate-1",
-                        "required_check_ids": ["scope_resolved"],
-                        "bindable_parameter_names": ["target"],
-                    }
-                ],
-            },
-            (),
-            CandidateBindingsReport,
-            max_tokens=100,
-            temperature=0.0,
-            seed=1,
-        )
-    finally:
-        client.client.close()
-    definitions = body["response_format"]["json_schema"]["schema"]["$defs"]
-    assert "enum" not in definitions["PublicParameter"]["properties"]["name"]
-    assert definitions["CandidateBindingReport"]["properties"]["public_parameters"]["maxItems"] == 0
 
 
 def _rubric_payload() -> dict[str, object]:
@@ -1184,63 +1112,6 @@ def test_request_images_are_deduplicated_and_restore_exact_envelope(tmp_path):
             client.client.close()
 
 
-def test_evidence_schema_fixes_only_the_requested_image_identity():
-    with httpx.Client(base_url="http://127.0.0.1:8000/v1/") as http:
-        client = VllmClient(
-            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
-            RuntimeConfig(),
-            run_id="evidence-identity",
-            client=http,
-        )
-        for image_id in ("a" * 64, "b" * 64):
-            body = client._build_body(
-                "evidence_extraction",
-                {"image_id": image_id},
-                (),
-                EvidenceInventory,
-                max_tokens=1024,
-                temperature=0.0,
-                seed=1,
-            )
-            schema = body["response_format"]["json_schema"]["schema"]
-            assert schema["properties"]["image_id"]["const"] == image_id
-            assert "const" not in schema["properties"]["capabilities"]
-        assert "const" not in EvidenceInventory.model_json_schema()["properties"]["image_id"]
-
-
-def test_attribute_recheck_schema_fixes_existing_scope_and_view() -> None:
-    payload = {
-        "image_id": "image-1",
-        "scope_id": "subject",
-        "view_id": "full:test",
-        "scope_region": {"left": 0.1, "top": 0.1, "right": 0.8, "bottom": 0.8},
-        "scope_description": "Visible subject",
-        "image_views": [],
-    }
-    with httpx.Client(base_url="http://127.0.0.1:8000/v1/") as http:
-        client = VllmClient(
-            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
-            RuntimeConfig(),
-            run_id="attribute-recheck-identity",
-            client=http,
-        )
-        body = client._build_body(
-            "attribute_recheck",
-            payload,
-            (),
-            AttributeRecheckReport,
-            max_tokens=512,
-            temperature=0.0,
-            seed=1,
-        )
-        schema = body["response_format"]["json_schema"]["schema"]
-        assert {
-            field: schema["properties"][field]["const"]
-            for field in ("image_id", "scope_id", "view_id")
-        } == {field: payload[field] for field in ("image_id", "scope_id", "view_id")}
-        assert "const" not in AttributeRecheckReport.model_json_schema()["properties"]["scope_id"]
-
-
 def test_specialist_source_schema_fixes_public_ids_and_music_bar_range(tmp_path):
     path = tmp_path / "image.png"
     path.write_bytes(b"test image")
@@ -1337,56 +1208,6 @@ def test_chemical_json_object_fallback_cannot_accept_an_answer_instead_of_a_grap
         assert error.value.reason == "MODEL_SCHEMA_MISMATCH"
     finally:
         client.client.close()
-
-
-def test_model_facing_evidence_and_binding_schemas_enforce_shape():
-    evidence_schema = ScopedEvidenceReport.model_json_schema()
-    scope_schema = evidence_schema["$defs"]["ScopeEvidenceReport"]
-    assert scope_schema["properties"]["observations"]["type"] == "object"
-    assert "propertyNames" not in scope_schema["properties"]["observations"]
-    binding_schema = CandidateBindingsReport.model_json_schema()["$defs"]["CandidateBindingReport"]
-    assert "target" in binding_schema["required"]
-    assert "public_parameters" in binding_schema["required"]
-
-
-def test_scoped_evidence_guidance_names_each_capability_once():
-    with httpx.Client(base_url="http://127.0.0.1:8000/v1/") as http:
-        client = VllmClient(
-            ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"),
-            RuntimeConfig(),
-            run_id="evidence-capabilities",
-            client=http,
-        )
-        body = client._build_body(
-            "evidence_extraction",
-            {
-                "image_id": "a" * 64,
-                "image_views": [],
-                "capability_vocabulary": {
-                    "visible_entity": "Visible entity",
-                    "readable_text": "Text",
-                },
-                "max_scopes": 2,
-                "max_observations_per_scope": 3,
-            },
-            (),
-            ScopedEvidenceReport,
-            max_tokens=1024,
-            temperature=0.0,
-            seed=1,
-        )
-    schema = body["response_format"]["json_schema"]["schema"]
-    assert schema["properties"]["scopes"]["maxItems"] == 2
-    observations = schema["$defs"]["ScopeEvidenceReport"]["properties"]["observations"]
-    assert list(observations["properties"]) == ["readable_text", "visible_entity"]
-    assert observations["additionalProperties"] is False
-    assert observations["maxProperties"] == 3
-    assert (
-        "properties"
-        not in ScopedEvidenceReport.model_json_schema()["$defs"]["ScopeEvidenceReport"][
-            "properties"
-        ]["observations"]
-    )
 
 
 def test_bad_request_keeps_server_schema_reason():

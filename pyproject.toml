@@ -53,7 +53,6 @@ include = [
   "configs",
   "docs",
   "runtime/vllm/*.yaml",
-  "runtime/vllm/whitespace_patch.py",
   "runtime/vllm/pyproject.toml",
   "runtime/vllm/uv.lock",
   "validation/open_images_v7_manifest.jsonl",

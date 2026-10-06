@@ -4,14 +4,8 @@ profile: pilot
 seed: 20260915
 tasks:
   catalog_version: '7.0'
-  candidate_limit: 8
-  max_scopes: 4
-  max_observations_per_scope: 20
   evidence_max_tokens: 4096
-  binding_max_tokens: 4096
   answer_max_tokens: 1024
-  profiles:
-  - normal
   enabled_extensions: []
 evaluation:
   mode: holistic
@@ -84,8 +78,9 @@ runtime:
     min_count: 64
     recovery: retry
     stages:
-    - evidence_extraction
-    - candidate_binding
+    - '*_source'
+    - question_draft
+    - image_profile
 student_view:
   processor_repo_id: Qwen/Qwen3-VL-8B-Instruct
   processor_revision: 0c351dd01ed87e9c1b53cbc748cba10e6187ff3b

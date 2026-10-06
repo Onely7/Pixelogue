@@ -363,9 +363,6 @@ def make_coordinator(
     config = load_config(Path("configs/pilot.yaml"))
     config = config.model_copy(
         update={
-            "tasks": TaskRuntimeConfig.model_validate(
-                {**config.tasks.model_dump(), "planner": "direct"}
-            ),
             "evaluation": EvaluationConfig.model_validate(
                 {"mode": "holistic", "question_gate_label_policy": "same_contract", **evaluation}
             ),
@@ -548,13 +545,18 @@ def test_completed_direct_conversation_resumes_without_calls(tmp_path, image_art
     assert again == first and before == after
 
 
-def test_direct_planner_rejects_scoped_only_settings() -> None:
-    with pytest.raises(ValueError, match="Scoped-planner settings"):
-        TaskRuntimeConfig(planner="direct", evidence_format="compact")
-    with pytest.raises(ValueError, match="normal profile"):
-        TaskRuntimeConfig(planner="direct", profiles=("normal", "limitation"))
-    with pytest.raises(ValueError, match="holistic"):
-        EvaluationConfig(mode="detailed", repair_once=True)
+@pytest.mark.parametrize(
+    "retired",
+    [
+        {"planner": "scoped"},
+        {"evidence_format": "compact"},
+        {"candidate_limit": 4},
+        {"profiles": ["normal", "limitation"]},
+    ],
+)
+def test_retired_scoped_settings_are_rejected(retired: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        TaskRuntimeConfig.model_validate(retired)
 
 
 def test_image_views_match_attached_images(tmp_path, image_artifact) -> None:

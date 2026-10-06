@@ -12,7 +12,6 @@ from pixelogue.catalog import load_rubric_catalog, task_catalog
 from pixelogue.contracts import (
     GateVerdict,
     PublicMessage,
-    QuestionFit,
     RubricContext,
     RubricItem,
     TurnRating,
@@ -57,11 +56,6 @@ def consensus(verdicts: Sequence[GateVerdict]) -> GateVerdict:
     return GateVerdict.UNKNOWN
 
 
-def question_fit_consensus(votes: Sequence[QuestionFit]) -> GateVerdict:
-    """Reduce two complete question-fit votes."""
-    return consensus([vote.aggregate for vote in votes])
-
-
 def repeated_public_question(question: str, history: Sequence[PublicMessage]) -> bool:
     """Return whether a question repeats an earlier user message after surface normalization."""
     normalized = _normalize_public_question(question)
@@ -89,18 +83,6 @@ def repeated_answered_request(question: str, answer: str, history: Sequence[Publ
         for message in history
         if message.role == "assistant"
     )
-
-
-def identification_label_in_question(question: str, label: str) -> bool:
-    """Find a complete object label already disclosed in an identification question."""
-    label_words = _public_words(label)
-    if (
-        not label_words
-        or not any(character.isalpha() for character in label)
-        or " ".join(label_words) in GENERIC_IDENTIFICATION_REFERENTS
-    ):
-        return False
-    return _contains_public_phrase(question, label_words)
 
 
 def identification_answer_in_question(question: str, answer: str) -> bool:
@@ -181,17 +163,6 @@ def normalized_identification_words(text: str) -> list[str]:
     if words:
         words[-1] = _singular_identification_word(words[-1])
     return words
-
-
-def identification_target_named_in_evidence(label: str, details: Sequence[str]) -> bool:
-    """Check that cited observations name an identification target's head noun.
-
-    This lexical guard checks citation consistency, not whether the image is correct.
-    """
-    words = normalized_identification_words(label)
-    return bool(
-        words and any(_contains_identification_phrase(detail, words[-1:]) for detail in details)
-    )
 
 
 def _contains_identification_phrase(text: str, words: list[str]) -> bool:

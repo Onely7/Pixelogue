@@ -23,14 +23,10 @@ from pixelogue.config import PixelogueConfig, StrictModel
 from pixelogue.contracts import (
     ClaimInventory,
     ConversationArtifact,
-    EvidenceInventory,
     HistorySnapshot,
     ImageArtifact,
     InstructionCandidate,
-    InstructionSelection,
     PublicMessage,
-    QuestionFit,
-    QuestionIntent,
     RightsRecord,
     RubricItem,
     RubricVerdict,
@@ -44,9 +40,11 @@ from pixelogue.contracts import (
     TurnRating,
 )
 from pixelogue.document_verifiers import DocumentSource
+from pixelogue.drafting import QuestionDraftBatch
 from pixelogue.errors import ExternalInputError
 from pixelogue.finite_verifiers import FiniteAnswer, FiniteSource
 from pixelogue.formula_verifier import FormulaSource
+from pixelogue.gates import QuestionGateVote
 from pixelogue.geometry_verifier import GeometryAnswer, GeometrySource
 from pixelogue.graph_verifiers import GraphAnswer, GraphSource
 from pixelogue.images import assign_split, canonicalize_image, group_visual_sources
@@ -57,6 +55,7 @@ from pixelogue.research_ablation import AblationCase, AblationPlan, AblationResu
 from pixelogue.research_audit import AnswerBallot, AuditCase, AuditPack, QuestionBallot
 from pixelogue.research_exposure import ExposureCase, ExposurePlan, ExposureResult
 from pixelogue.research_history import HistoryStudyCase, HistoryTrialResult
+from pixelogue.routing import ImageProfile
 from pixelogue.rules import ComputationInventory, NumericValue, SetCheck, SetInventory
 from pixelogue.scale_verifier import ScaleAnswer, ScaleSource
 from pixelogue.serialization import canonical_hash
@@ -73,12 +72,6 @@ from pixelogue.specialist_render import RenderAnswer, RenderSource
 from pixelogue.specialist_ui import UIActionAnswer, UIActionSource
 from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_catalog import TaskCatalog
-from pixelogue.task_evidence import (
-    CandidateBindings,
-    CandidateBindingsReport,
-    ScopedEvidenceInventory,
-    ScopedEvidenceReport,
-)
 from pixelogue.task_runtime import admission_report
 
 
@@ -145,11 +138,9 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             PublicMessage,
             HistorySnapshot,
             InstructionCandidate,
-            EvidenceInventory,
-            ScopedEvidenceInventory,
-            ScopedEvidenceReport,
-            CandidateBindings,
-            CandidateBindingsReport,
+            ImageProfile,
+            QuestionDraftBatch,
+            QuestionGateVote,
             TaskCatalog,
             CalibrationObservation,
             CalibrationCertificate,
@@ -199,10 +190,7 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
             AblationCase,
             AblationPlan,
             AblationResult,
-            InstructionSelection,
             TextPayload,
-            QuestionFit,
-            QuestionIntent,
             Requirement,
             RequirementInventory,
             ClaimInventory,

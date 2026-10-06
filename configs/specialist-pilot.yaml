@@ -3,13 +3,8 @@ profile: pilot
 seed: 20260915
 tasks:
   catalog_version: "7.0"
-  candidate_limit: 8
-  max_scopes: 4
-  max_observations_per_scope: 20
   evidence_max_tokens: 4096
-  binding_max_tokens: 4096
   answer_max_tokens: 1024
-  profiles: [normal]
   # Evaluation-only until a model-bound calibration manifest is supplied.
   enabled_extensions:
     - geometric_constraint_solving

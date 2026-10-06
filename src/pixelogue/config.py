@@ -92,7 +92,6 @@ class ServingRuntimeIdentity(StrictModel):
     ]
     disable_any_whitespace: bool
     server_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-    xgrammar_whitespace_patch_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
 
     @model_validator(mode="after")
     def validate_whitespace_control(self) -> ServingRuntimeIdentity:
@@ -103,17 +102,6 @@ class ServingRuntimeIdentity(StrictModel):
         }:
             raise ValueError("whitespace suppression requires explicit xgrammar or guidance")
         return self
-
-    @property
-    def bounded_whitespace_supported(self) -> bool:
-        """Match the verified grammar extension while retaining ordinary JSON whitespace."""
-        return (
-            self.vllm_version == "0.29.0"
-            and self.structured_output_backend == "xgrammar"
-            and not self.disable_any_whitespace
-            and self.xgrammar_whitespace_patch_sha256
-            == "97e96f276ad6ad10d536f7c88e294a8115cce11bd219763c0a708dabf913020e"
-        )
 
 
 class ModelEndpoint(StrictModel):
@@ -258,14 +246,13 @@ class StorageConfig(StrictModel):
     require_local_wal: bool = True
 
 
-# Structured extraction stages whose runaway output can be stopped and retried.
-REPETITION_GUARD_STAGES = frozenset(
-    {"evidence_extraction", "candidate_binding", "question_draft", "image_profile"}
-)
+# Structured private stages whose runaway output can be stopped and retried, besides the
+# blind ``*_source`` readers.
+REPETITION_GUARD_STAGES = frozenset({"question_draft", "image_profile"})
 
 
 class RepetitionDetectionConfig(StrictModel):
-    """Bound engine-side repetition stopping to the two extraction stages."""
+    """Bound engine-side repetition stopping to private structured stages."""
 
     min_pattern_size: Annotated[int, Field(ge=1, le=16)] = 1
     max_pattern_size: Annotated[int, Field(ge=1, le=16)] = 4
@@ -274,11 +261,11 @@ class RepetitionDetectionConfig(StrictModel):
     stages: Annotated[
         tuple[Annotated[str, Field(min_length=1, max_length=64)], ...],
         Field(min_length=1, max_length=8),
-    ] = ("evidence_extraction", "candidate_binding")
+    ] = ("*_source", "question_draft", "image_profile")
 
     @model_validator(mode="after")
     def validate_patterns(self) -> RepetitionDetectionConfig:
-        """Reject inverted ranges and stage patterns outside structured extraction stages.
+        """Reject inverted ranges and stage patterns outside private structured stages.
 
         Patterns use shell-style matching. Public question and answer generation and every
         judge keep their unmodified decoding.
@@ -312,7 +299,6 @@ class RuntimeConfig(StrictModel):
     max_concurrent_images: Annotated[int, Field(ge=1, le=64)] = 1
     refill_completed_images: bool = False
     repetition_detection: RepetitionDetectionConfig | None = None
-    json_whitespace_max_chars: Annotated[int, Field(ge=1, le=256)] | None = None
     max_total_requests: Annotated[int, Field(ge=1)] = 10_000_000
     max_total_output_tokens: Annotated[int, Field(ge=1)] = 1_000_000_000
     allow_external_inference: Literal[False] = False
@@ -328,25 +314,13 @@ DEFAULT_TASK_WEIGHTS = {
 
 
 class TaskRuntimeConfig(StrictModel):
-    """Bound candidate and evidence work independently of taxonomy size."""
+    """Bound question drafting, answers and blind source reading independently of taxonomy size."""
 
     catalog_version: Literal["7.0"] = "7.0"
-    candidate_limit: Annotated[int, Field(ge=1, le=8)] = 8
-    max_scopes: Annotated[int, Field(ge=1, le=8)] = 4
-    max_observations_per_scope: Annotated[int, Field(ge=1, le=50)] = 20
     evidence_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
-    evidence_format: Literal["keyed", "array", "compact"] = "keyed"
-    attribute_recheck_enabled: bool = False
-    max_candidate_attempts: Literal[1, 2] = 1
-    question_operation_guidance: Literal["baseline", "object_identification_v1"] = "baseline"
-    fact_novelty_enabled: bool = False
-    initial_binding_batch_size: Literal[2, 8] = 8
-    binding_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
     answer_max_tokens: Annotated[int, Field(ge=256, le=8192)] = 1024
-    profiles: tuple[Literal["normal", "limitation", "false_premise"], ...] = ("normal",)
     enabled_extensions: tuple[str, ...] = ()
     calibration_manifest: Path | None = None
-    planner: Literal["scoped", "direct"] = "scoped"
     draft_count: Annotated[int, Field(ge=1, le=4)] = 2
     draft_max_tokens: Annotated[int, Field(ge=256, le=4096)] = 1024
     extra_draft_calls_per_turn: Literal[0, 1] = 1
@@ -359,7 +333,7 @@ class TaskRuntimeConfig(StrictModel):
 
     @model_validator(mode="after")
     def validate_admission_settings(self) -> TaskRuntimeConfig:
-        """Fail closed on unsupported extensions and repeated profile settings."""
+        """Fail closed on unknown families, tasks and specialized extensions."""
         from pixelogue.catalog import task_catalog
 
         catalog = task_catalog()
@@ -369,23 +343,6 @@ class TaskRuntimeConfig(StrictModel):
             raise ValueError("Unknown task family in family_targets")
         if not set(self.task_weights) <= {task.id for task in catalog.tasks}:
             raise ValueError("Unknown task in task_weights")
-        if self.planner == "direct":
-            scoped_only = {
-                "evidence_format": self.evidence_format != "keyed",
-                "attribute_recheck_enabled": self.attribute_recheck_enabled,
-                "max_candidate_attempts": self.max_candidate_attempts != 1,
-                "question_operation_guidance": self.question_operation_guidance != "baseline",
-                "fact_novelty_enabled": self.fact_novelty_enabled,
-                "initial_binding_batch_size": self.initial_binding_batch_size != 8,
-            }
-            if changed := sorted(name for name, used in scoped_only.items() if used):
-                raise ValueError(
-                    f"Scoped-planner settings do not apply to direct drafting: {changed}"
-                )
-            if self.profiles != ("normal",):
-                raise ValueError("Direct drafting supports only the normal profile")
-        if not self.profiles or len(self.profiles) != len(set(self.profiles)):
-            raise ValueError("At least one unique task profile is required")
         if len(self.enabled_extensions) != len(set(self.enabled_extensions)):
             raise ValueError("Repeated specialized extension")
         if not set(self.enabled_extensions) <= SPECIALIST_TASK_IDS:
@@ -457,20 +414,10 @@ class PixelogueConfig(StrictModel):
         if self.profile == "standard" and self.data.pilot:
             raise ValueError("standard profile cannot enable pilot mode")
         generator_repos = (self.models.generator_a.repo_id, self.models.generator_b.repo_id)
-        if self.tasks.planner == "direct" and self.evaluation.mode != "holistic":
+        if self.evaluation.mode != "holistic":
             raise ValueError("Direct drafting requires evaluation.mode=holistic")
         if self.profile == "standard" and generator_repos != PRIMARY_GENERATOR_REPOS:
             raise ValueError("standard profile requires the primary Qwen3.8/Gemma model pair")
-        if self.runtime.json_whitespace_max_chars is not None:
-            for endpoint in (self.models.generator_a, self.models.generator_b):
-                if (
-                    endpoint.serving_runtime is None
-                    or not endpoint.serving_runtime.bounded_whitespace_supported
-                ):
-                    raise ValueError(
-                        "Bounded JSON whitespace requires a verified patched xgrammar runtime "
-                        f"with ordinary whitespace enabled for {endpoint.repo_id}"
-                    )
         return self
 
     @property

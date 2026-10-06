@@ -8,13 +8,13 @@ import re
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from pixelogue.catalog import load_task_catalog, task_catalog
+from pixelogue.catalog import task_catalog
 from pixelogue.config import ModelEndpoint, PixelogueConfig
 from pixelogue.contracts import (
     AtomicClaim,
@@ -22,15 +22,11 @@ from pixelogue.contracts import (
     ClaimInventory,
     ClaimSpan,
     ConversationArtifact,
-    EvidenceInventory,
     GateVerdict,
     HistorySnapshot,
     ImageArtifact,
     InstructionCandidate,
-    InstructionSelection,
     PublicMessage,
-    QuestionFit,
-    QuestionIntent,
     RubricContext,
     RubricItem,
     RubricVerdict,
@@ -55,10 +51,8 @@ from pixelogue.evaluation import (
     has_natural_language_content,
     identification_answer_in_history,
     identification_answer_in_question,
-    identification_label_in_question,
     item_id,
     question_fingerprint,
-    question_fit_consensus,
     reciprocal_identification_disclosure,
     repeated_answered_request,
     repeated_public_question,
@@ -66,7 +60,6 @@ from pixelogue.evaluation import (
     transcription_answer_in_question,
     unverified_transcription_relation,
 )
-from pixelogue.fact_identity import requested_fact_key
 from pixelogue.focused_views import focused_view
 from pixelogue.gates import (
     GateDecision,
@@ -78,9 +71,8 @@ from pixelogue.ledger import (
     Requirement,
     RequirementInventory,
     _normalize_spec,
-    reconcile_inventories,
 )
-from pixelogue.planner import allocated_role, instruction_candidates, planned_turn_count
+from pixelogue.planner import allocated_role, planned_turn_count
 from pixelogue.prompts import is_private_prompt_echo
 from pixelogue.routing import FamilyLedger, ImageProfile, Route, choose_route, family_definitions
 from pixelogue.rules import (
@@ -94,32 +86,8 @@ from pixelogue.rules import (
 from pixelogue.serialization import canonical_hash, canonical_json
 from pixelogue.serving import ModelImage, ModelResponse
 from pixelogue.store import RunStore
-from pixelogue.task_evidence import (
-    ArrayScopedEvidenceReport,
-    AttributeRecheckReport,
-    CandidateBindingReport,
-    CandidateBindingsReport,
-    CapabilityObservation,
-    CompactScopedEvidenceReport,
-    ImageRegion,
-    ScopedEvidenceInventory,
-    ScopedEvidenceReport,
-    ScopeEvidence,
-    alias_evidence_ids,
-    bind_evidence_identity,
-    out_of_scope_region_feedback,
-    unsupported_object_label_feedback,
-)
-from pixelogue.task_runtime import (
-    attribute_fact_key,
-    bind_candidates_individually,
-    binding_candidate,
-    operation_contract,
-    question_operation_contract,
-    selector_candidate,
-    unavailable_reasons,
-    validate_evidence,
-)
+from pixelogue.task_evidence import ImageRegion
+from pixelogue.task_runtime import operation_contract, unavailable_reasons
 from pixelogue.task_verification import verify_operation
 
 OutputModel = TypeVar("OutputModel", bound=BaseModel)
@@ -128,7 +96,6 @@ type PublicTextRejectionReason = Literal[
     "INTERNAL_REFERENCE_IN_QUESTION",
     "REPEATED_PUBLIC_QUESTION",
     "REPEATED_ANSWERED_REQUEST",
-    "IDENTIFICATION_TARGET_IN_QUESTION",
     "IDENTIFICATION_ANSWER_IN_QUESTION",
     "IDENTIFICATION_ANSWER_ALREADY_PUBLIC",
     "UI_LOCATION_REPEATS_TARGET",
@@ -158,12 +125,6 @@ _INTERNAL_QUESTION_REFERENCE = re.compile(
     r")(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
-_DIRECT_IDENTIFICATION_COLOR = re.compile(
-    r"^\s*(?:what|which)\s+is\s+(?:this|that)\s+"
-    r"(?:red|orange|yellow|green|blue|purple|pink|brown|black|white|gray|grey|"
-    r"golden|silver|beige|tan)\s+[\w-]+\b",
-    re.IGNORECASE,
-)
 
 
 def internal_reference_in_question(text: str) -> bool:
@@ -178,30 +139,8 @@ MODEL_OUTPUT_ABSTENTIONS = frozenset(
         "MODEL_WHITESPACE_RUNAWAY",
         "MODEL_OUTPUT_REPETITION",
         "MODEL_SCHEMA_MISMATCH",
-        "EVIDENCE_IMAGE_MISMATCH",
-        "EVIDENCE_CAPABILITY_UNKNOWN",
-        "EVIDENCE_SCOPE_LIMIT",
         "EVIDENCE_VIEW_MISMATCH",
-        "EVIDENCE_OBSERVATION_LIMIT",
-        "EVIDENCE_ATTRIBUTE_SCOPE",
         "EXTRACTION_SOURCE_INVALID",
-    }
-)
-
-_GENERATED_BINDING_OUTPUT_FAILURES = frozenset(
-    {
-        "MODEL_CONTENT_EMPTY",
-        "MODEL_FINISH_REASON",
-        "MODEL_WHITESPACE_RUNAWAY",
-        "MODEL_OUTPUT_REPETITION",
-        "MODEL_SCHEMA_MISMATCH",
-        "CANDIDATE_BINDING_ID",
-        "CANDIDATE_EVIDENCE_SCOPE",
-        "CANDIDATE_CHECKS_MISMATCH",
-        "CANDIDATE_PARAMETER_UNKNOWN",
-        "CANDIDATE_PARAMETER_MISSING",
-        "CANDIDATE_PARAMETER_SOURCE",
-        "CANDIDATE_PARAMETER_VALUE",
     }
 )
 
@@ -280,17 +219,14 @@ class SynthesisCoordinator:
             max_workers=2 * config.runtime.max_concurrent_images,
             thread_name_prefix="pixelogue-judge",
         )
-        # Direct drafting offers only normal-profile core operations with working validators.
-        self._direct_tasks = {
+        # Drafting offers only normal-profile core operations with working validators.
+        self._draft_tasks = {
             task.id: task
             for task in task_catalog().tasks
-            if config.tasks.planner == "direct"
-            and task.status == "core_candidate"
+            if task.status == "core_candidate"
             and not unavailable_reasons(task, config.tasks, config.models)
         }
-        self.family_ledger = FamilyLedger(
-            store.committed_task_ids() if config.tasks.planner == "direct" else ()
-        )
+        self.family_ledger = FamilyLedger(store.committed_task_ids())
 
     def synthesize_batch(
         self,
@@ -467,10 +403,7 @@ class SynthesisCoordinator:
                 status="QUALITY_CANDIDATE",
             )
             return self._finish_conversation(conversation, persist=True)
-        run_turns = (
-            self._direct_turns if self.config.tasks.planner == "direct" else self._scoped_turns
-        )
-        terminal_status, terminal_stage, terminal_reason, terminal_turn_index = run_turns(
+        terminal_status, terminal_stage, terminal_reason, terminal_turn_index = self._run_turns(
             conversation_id,
             image,
             generator,
@@ -506,149 +439,7 @@ class SynthesisCoordinator:
         )
         return self._finish_conversation(conversation, persist=True)
 
-    def _scoped_turns(
-        self,
-        conversation_id: str,
-        image: ImageArtifact,
-        generator: InferenceClient,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-        target_language: Literal["en", "ja", "zh-Hans"],
-        count: int,
-        turns: list[TurnArtifact],
-        transcript: tuple[PublicMessage, ...],
-    ) -> TerminalState:
-        """Extract scoped evidence once, then bind, select and attempt each planned turn.
-
-        Committed turns are appended to ``turns`` in place.
-        """
-        inventory = self._extract_generator_evidence(generator, image, model_image, image_views)
-        inventory = self._maybe_recheck_attribute(inventory, generator, model_image, image_views)
-        inventory, evidence_aliases = alias_evidence_ids(inventory)
-        if inventory.image_id != image.image_id:
-            raise ExecutionError("EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image")
-        self.store.write_json_artifact(
-            "evidence-id-aliases",
-            {"image_id": image.image_id, "original_to_local": evidence_aliases},
-        )
-
-        terminal_status: Literal["QUALITY_CANDIDATE", "REJECTED", "ABSTAINED", "ERROR"] = (
-            "QUALITY_CANDIDATE"
-        )
-        terminal_stage = "conversation_length"
-        terminal_reason = "REQUESTED_TURN_COUNT_INCOMPLETE"
-        terminal_turn_index = min(count, len(turns) + 1)
-        for turn_index in range(len(turns) + 1, count + 1):
-            terminal_turn_index = turn_index
-            snapshot = build_history_snapshot(conversation_id, turn_index, transcript)
-            candidates = instruction_candidates(
-                inventory,
-                seed=self.config.seed,
-                turn_index=turn_index,
-                limit=self.config.tasks.candidate_limit,
-                settings=self.config.tasks,
-                models=self.config.models,
-                used_task_ids=frozenset(turn.instruction.task_id for turn in turns),
-            )
-            if candidates:
-                try:
-                    candidates = self._bind_candidate_batches(
-                        candidates,
-                        inventory,
-                        snapshot,
-                        generator,
-                        target_language,
-                        model_image,
-                        image_views,
-                        tuple(turns),
-                    )
-                except ExecutionError as error:
-                    if error.reason not in {
-                        "MODEL_CONTENT_EMPTY",
-                        "MODEL_FINISH_REASON",
-                        "MODEL_WHITESPACE_RUNAWAY",
-                        "MODEL_OUTPUT_REPETITION",
-                        "MODEL_SCHEMA_MISMATCH",
-                        "CANDIDATE_BINDING_ID",
-                        "CANDIDATE_EVIDENCE_SCOPE",
-                        "CANDIDATE_CHECKS_MISMATCH",
-                        "CANDIDATE_PARAMETER_UNKNOWN",
-                        "CANDIDATE_PARAMETER_MISSING",
-                        "CANDIDATE_PARAMETER_SOURCE",
-                        "CANDIDATE_PARAMETER_VALUE",
-                    }:
-                        raise
-                    self.store.write_json_artifact(
-                        "binding-abstentions",
-                        {
-                            "conversation_id": conversation_id,
-                            "turn_index": turn_index,
-                            "reason": error.reason,
-                            "message": str(error),
-                        },
-                    )
-                    terminal_status = "ABSTAINED"
-                    terminal_stage = "candidate_binding"
-                    terminal_reason = error.reason
-                    break
-            if not candidates:
-                terminal_status = "REJECTED"
-                terminal_stage = "candidate_admission"
-                terminal_reason = "NO_ADMISSIBLE_CANDIDATE"
-                break
-            selected = self._select_instruction(
-                candidates,
-                snapshot,
-                target_language,
-                image_views,
-                model_image,
-                turn_index,
-            )
-            if selected is None:
-                terminal_status = "REJECTED"
-                terminal_stage = "instruction_selection"
-                terminal_reason = "NO_SUPPORTED_NEW_INSTRUCTION"
-                break
-            priority = (selected,) + tuple(
-                candidate
-                for candidate in candidates
-                if candidate.candidate_id != selected.candidate_id
-            )[: self.config.tasks.max_candidate_attempts - 1]
-            outcome = self._attempt_candidates(
-                priority,
-                snapshot,
-                generator,
-                target_language,
-                model_image,
-                image_views,
-                tuple(turns),
-            )
-            turn = outcome.turn
-            if turn is None:
-                assert outcome.status != "COMMITTED"
-                terminal_status = outcome.status
-                terminal_stage = outcome.stage
-                terminal_reason = outcome.reason
-                break
-            turn_status = outcome.status
-            turns.append(turn)
-            if turn_status != "COMMITTED":
-                terminal_status = turn_status
-                terminal_stage = "answer_verification"
-                terminal_reason = outcome.reason
-                break
-            transcript = (*transcript, turn.question, turn.answer)
-            artifact_hash = self.store.write_json_artifact("turns", turn.model_dump(mode="json"))
-            with self.store.transaction() as connection:
-                connection.execute(
-                    """INSERT INTO turn_commit(
-                           conversation_id, branch_id, turn_index, attempt, artifact_hash
-                       ) VALUES (?, 'main', ?, 0, ?)""",
-                    (conversation_id, turn_index, artifact_hash),
-                )
-        return TerminalState(terminal_status, terminal_stage, terminal_reason, terminal_turn_index)
-
-    def _direct_turns(
+    def _run_turns(
         self,
         conversation_id: str,
         image: ImageArtifact,
@@ -674,7 +465,7 @@ class SynthesisCoordinator:
         for turn_index in range(len(turns) + 1, count + 1):
             terminal_turn_index = turn_index
             snapshot = build_history_snapshot(conversation_id, turn_index, transcript)
-            outcome = self._direct_turn(
+            outcome = self._attempt_turn(
                 image,
                 profile,
                 snapshot,
@@ -725,7 +516,7 @@ class SynthesisCoordinator:
                 "image_profile",
                 {
                     "image_views": image_views,
-                    "family_definitions": family_definitions(self._direct_tasks),
+                    "family_definitions": family_definitions(self._draft_tasks),
                 },
                 (model_image,),
                 ImageProfile,
@@ -760,7 +551,7 @@ class SynthesisCoordinator:
             route = choose_route(
                 profile,
                 self.family_ledger,
-                tasks=self._direct_tasks,
+                tasks=self._draft_tasks,
                 family_targets=self.config.tasks.family_targets,
                 task_weights=self.config.tasks.task_weights,
                 used_families=frozenset(turn.instruction.family for turn in committed)
@@ -781,7 +572,7 @@ class SynthesisCoordinator:
         value = json.loads(saved)
         return Route.from_json(value) if value is not None else None
 
-    def _direct_turn(
+    def _attempt_turn(
         self,
         image: ImageArtifact,
         profile: ImageProfile | None,
@@ -831,7 +622,7 @@ class SynthesisCoordinator:
                 if admitted is None:
                     continue
                 candidate, question = admitted
-                decision, candidate = self._direct_question_gate(
+                decision, candidate = self._question_gate(
                     candidate,
                     draft,
                     image,
@@ -928,7 +719,7 @@ class SynthesisCoordinator:
                     "turn_index": snapshot.turn_index,
                     "public_history": self._history(snapshot.public_history),
                     "allowed_tasks": [
-                        draft_task_contract(self._direct_tasks[task_id])
+                        draft_task_contract(self._draft_tasks[task_id])
                         for task_id in route.task_ids
                     ],
                     "preferred_task_ids": list(route.task_ids),
@@ -1049,7 +840,7 @@ class SynthesisCoordinator:
         )
         return candidate, question
 
-    def _direct_question_gate(
+    def _question_gate(
         self,
         candidate: InstructionCandidate,
         draft: QuestionDraft | None,
@@ -1102,7 +893,7 @@ class SynthesisCoordinator:
                         view_id=image.full_view.view_id,
                         turn_index=snapshot.turn_index,
                         draft_index=0,
-                        allowed_task_ids=frozenset(self._direct_tasks),
+                        allowed_task_ids=frozenset(self._draft_tasks),
                         task_id=task_id,
                     )
                 except ExecutionError:
@@ -1124,7 +915,7 @@ class SynthesisCoordinator:
                 view_id=image.full_view.view_id,
                 turn_index=snapshot.turn_index,
                 draft_index=int(str(candidate.scope_id).rsplit(":", 1)[-1]),
-                allowed_task_ids=frozenset(self._direct_tasks),
+                allowed_task_ids=frozenset(self._draft_tasks),
                 task_id=decision.task_id,
             )
             candidate = relabeled
@@ -1156,580 +947,6 @@ class SynthesisCoordinator:
         if focused is None or focused[0] is model_image:
             return (model_image,), image_views
         return (model_image, focused[0]), [*image_views, *focused[1]]
-
-    def _extract_generator_evidence(
-        self,
-        generator: InferenceClient,
-        image: ImageArtifact,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-    ) -> ScopedEvidenceInventory:
-        """Keep the existing extraction and validation when decision routing is disabled."""
-        evidence_report = self._invoke(
-            generator,
-            "evidence_extraction",
-            {
-                "image_id": image.image_id,
-                "capability_vocabulary": self._capability_vocabulary(),
-                "max_scopes": self.config.tasks.max_scopes,
-                "max_observations_per_scope": self.config.tasks.max_observations_per_scope,
-                "image_views": image_views,
-            },
-            (model_image,),
-            {
-                "keyed": ScopedEvidenceReport,
-                "array": ArrayScopedEvidenceReport,
-                "compact": CompactScopedEvidenceReport,
-            }[self.config.tasks.evidence_format],
-            max_tokens=self.config.tasks.evidence_max_tokens,
-            temperature=0.0,
-            seed=self.config.seed,
-            post_validate=lambda result: validate_evidence(
-                bind_evidence_identity(result, image.image_id, model_image.view_id),
-                model_image.view_id,
-                self.config.tasks,
-            ),
-        )
-        return bind_evidence_identity(evidence_report, image.image_id, model_image.view_id)
-
-    def _bind_candidate_batches(
-        self,
-        candidates: tuple[InstructionCandidate, ...],
-        inventory: ScopedEvidenceInventory,
-        snapshot: HistorySnapshot,
-        generator: InferenceClient,
-        target_language: str,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-        previous_turns: tuple[TurnArtifact, ...],
-    ) -> tuple[InstructionCandidate, ...]:
-        """Bind a fixed prefix and extend only when no admissible new fact remains."""
-        size = self.config.tasks.initial_binding_batch_size
-        used = frozenset(turn.instruction.candidate_id for turn in previous_turns)
-        for offset in range(0, len(candidates), size):
-            batch = candidates[offset : offset + size]
-            admitted = self._bind_candidate_batch(
-                batch,
-                inventory,
-                snapshot,
-                generator,
-                target_language,
-                model_image,
-                image_views,
-                used,
-            )
-            admitted = self._drop_answered_candidates(
-                admitted, previous_turns, snapshot.conversation_id, snapshot.turn_index
-            )
-            self.store.write_json_artifact(
-                "candidate-binding-batches",
-                {
-                    "conversation_id": snapshot.conversation_id,
-                    "turn_index": snapshot.turn_index,
-                    "offset": offset,
-                    "candidate_ids": [candidate.candidate_id for candidate in batch],
-                    "admitted_ids": [candidate.candidate_id for candidate in admitted],
-                },
-            )
-            if admitted:
-                return admitted
-        return ()
-
-    def _bind_candidate_batch(
-        self,
-        candidates: tuple[InstructionCandidate, ...],
-        inventory: ScopedEvidenceInventory,
-        snapshot: HistorySnapshot,
-        generator: InferenceClient,
-        target_language: str,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-        used_fingerprints: frozenset[str],
-    ) -> tuple[InstructionCandidate, ...]:
-        """Bind one fixed set without changing its local validation and retry contract."""
-        return self._bind_generator_candidates(
-            candidates,
-            inventory,
-            snapshot,
-            generator,
-            target_language,
-            model_image,
-            image_views,
-            used_fingerprints,
-        )
-
-    def _bind_generator_candidates(
-        self,
-        candidates: tuple[InstructionCandidate, ...],
-        inventory: ScopedEvidenceInventory,
-        snapshot: HistorySnapshot,
-        generator: InferenceClient,
-        target_language: str,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-        used_fingerprints: frozenset[str],
-    ) -> tuple[InstructionCandidate, ...]:
-        """Run the original bounded binding path without changing its local validators."""
-        conversation_id = snapshot.conversation_id
-        turn_index = snapshot.turn_index
-
-        def validate_bindings(
-            result: CandidateBindingsReport,
-            templates: tuple[InstructionCandidate, ...] = candidates,
-            public_history: tuple[PublicMessage, ...] = snapshot.public_history,
-        ) -> None:
-            parsed, parse_rejections = result.partition_bindings(
-                frozenset(template.candidate_id for template in templates)
-            )
-            result_batch = bind_candidates_individually(
-                templates,
-                parsed,
-                inventory,
-                public_history,
-                self.config.tasks,
-                used_fingerprints,
-            )
-            if not result_batch.admitted and (parse_rejections or result_batch.rejected):
-                first = (*parse_rejections, *result_batch.rejected)[0]
-                raise ExecutionError(first.reason, first.message)
-
-        bindings_report = self._invoke(
-            generator,
-            "candidate_binding",
-            {
-                "target_language": target_language,
-                "public_history": self._history(snapshot.public_history),
-                "candidates": [binding_candidate(candidate, inventory) for candidate in candidates],
-                "scope_evidence": inventory.model_dump(mode="json", exclude_none=True),
-                "answer_max_tokens": self.config.tasks.answer_max_tokens,
-                "image_views": image_views,
-            },
-            (model_image,),
-            CandidateBindingsReport,
-            max_tokens=self.config.tasks.binding_max_tokens,
-            temperature=0.0,
-            seed=self.config.seed + turn_index,
-            post_validate=validate_bindings,
-        )
-        bindings, parse_rejections = bindings_report.partition_bindings(
-            frozenset(candidate.candidate_id for candidate in candidates)
-        )
-        self.store.write_json_artifact("candidate-bindings", bindings.model_dump(mode="json"))
-        binding_result = bind_candidates_individually(
-            candidates,
-            bindings,
-            inventory,
-            snapshot.public_history,
-            self.config.tasks,
-            used_fingerprints,
-        )
-        rejected_bindings = (*parse_rejections, *binding_result.rejected)
-        if rejected_bindings:
-            self.store.write_json_artifact(
-                "candidate-binding-rejections",
-                {
-                    "conversation_id": conversation_id,
-                    "turn_index": turn_index,
-                    "rejections": [
-                        {
-                            "candidate_id": item.candidate_id,
-                            "reason": item.reason,
-                            "message": item.message,
-                        }
-                        for item in rejected_bindings
-                    ],
-                },
-            )
-        return binding_result.admitted
-
-    def _attempt_candidates(
-        self,
-        priority: tuple[InstructionCandidate, ...],
-        snapshot: HistorySnapshot,
-        generator: InferenceClient,
-        target_language: str,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-        previous_turns: tuple[TurnArtifact, ...],
-    ) -> TurnAttemptResult:
-        """Try a fixed candidate order after local question failures only.
-
-        The failed questions and decisions remain private. Every candidate sees exactly the
-        same committed prefix, and transport failures or unknown evidence stop the attempt.
-        """
-        if not priority or len(priority) > self.config.tasks.max_candidate_attempts:
-            raise ValueError("Candidate attempts exceed the configured bound")
-        plan = tuple(
-            {
-                "attempt_id": canonical_hash(
-                    {
-                        "run": self.run_id,
-                        "conversation": snapshot.conversation_id,
-                        "turn": snapshot.turn_index,
-                        "history": snapshot.history_hash,
-                        "candidate": candidate.candidate_id,
-                        "rank": rank,
-                    }
-                ),
-                "candidate_id": candidate.candidate_id,
-                "rank": rank,
-            }
-            for rank, candidate in enumerate(priority)
-        )
-        self.store.write_json_artifact(
-            "candidate-attempt-plans",
-            {
-                "conversation_id": snapshot.conversation_id,
-                "turn_index": snapshot.turn_index,
-                "history_hash": snapshot.history_hash,
-                "attempts": plan,
-            },
-        )
-        rejected_questions: set[str] = set()
-        for candidate, attempt in zip(priority, plan, strict=True):
-            try:
-                outcome = self._attempt_turn(
-                    candidate,
-                    snapshot,
-                    generator,
-                    target_language,
-                    model_image,
-                    image_views,
-                    previous_turns,
-                    rejected_question_fingerprints=frozenset(rejected_questions),
-                )
-            except ExecutionError as error:
-                self.store.write_json_artifact(
-                    "candidate-attempt-outcomes",
-                    {**attempt, "status": "EXECUTION_FAILURE", "reason": error.reason},
-                )
-                raise
-            self.store.write_json_artifact(
-                "candidate-attempt-outcomes",
-                {
-                    **attempt,
-                    "status": outcome.status,
-                    "stage": outcome.stage,
-                    "reason": outcome.reason,
-                    "question_fingerprint": outcome.question_fingerprint,
-                },
-            )
-            if not (
-                outcome.turn is None
-                and outcome.status == "REJECTED"
-                and (
-                    outcome.stage == "question_generation"
-                    or (
-                        outcome.stage == "question_gate"
-                        and outcome.reason == "QUESTION_GATE_NOT_MET"
-                    )
-                )
-            ):
-                return outcome
-            if outcome.question_fingerprint is not None:
-                rejected_questions.add(outcome.question_fingerprint)
-        return outcome
-
-    def _attempt_turn(
-        self,
-        selected: InstructionCandidate,
-        snapshot: HistorySnapshot,
-        generator: InferenceClient,
-        target_language: str,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-        previous_turns: tuple[TurnArtifact, ...],
-        *,
-        rejected_question_fingerprints: frozenset[str] = frozenset(),
-    ) -> TurnAttemptResult:
-        """Generate and verify one selected operation against its unchanged public prefix."""
-        drafted = self._generate_question(
-            selected,
-            snapshot,
-            generator,
-            target_language,
-            model_image,
-            image_views,
-            previous_turns,
-            rejected_question_fingerprints=rejected_question_fingerprints,
-        )
-        if isinstance(drafted, TurnAttemptResult):
-            return drafted
-        question = drafted
-        turn_index = snapshot.turn_index
-        requirements: tuple[Requirement, ...] = ()
-        if self.config.evaluation.mode == "detailed" or selected.catalog_version is not None:
-            stopped = self._gate_question(
-                selected, snapshot, question, target_language, model_image, image_views
-            )
-            if stopped is not None:
-                return stopped
-        if self.config.evaluation.mode == "detailed":
-            requirement_status, requirements = self._extract_requirements(
-                snapshot.public_history,
-                question,
-                target_language,
-                turn_index,
-            )
-            if requirement_status is not GateVerdict.MET:
-                terminal_status = (
-                    "REJECTED" if requirement_status is GateVerdict.NOT_MET else "ABSTAINED"
-                )
-                terminal_stage = "requirement_extraction"
-                terminal_reason = f"REQUIREMENT_{requirement_status.value}"
-                return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
-        answered = self._generate_answer(
-            selected,
-            snapshot,
-            generator,
-            question,
-            requirements,
-            target_language,
-            model_image,
-            image_views,
-            previous_turns,
-        )
-        if isinstance(answered, TurnAttemptResult):
-            return answered
-        return self._review_answer(
-            selected,
-            snapshot,
-            generator,
-            question,
-            answered,
-            requirements,
-            target_language,
-            model_image,
-            image_views,
-            previous_turns,
-        )
-
-    def _generate_question(
-        self,
-        selected: InstructionCandidate,
-        snapshot: HistorySnapshot,
-        generator: InferenceClient,
-        target_language: str,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-        previous_turns: tuple[TurnArtifact, ...],
-        *,
-        rejected_question_fingerprints: frozenset[str] = frozenset(),
-    ) -> PublicMessage | TurnAttemptResult:
-        """Write one public question and apply the deterministic pre-judge checks."""
-        conversation_id = snapshot.conversation_id
-        turn_index = snapshot.turn_index
-        turns = previous_turns
-        terminal_status: Literal["REJECTED", "ABSTAINED", "ERROR"]
-        target_value = next(
-            (
-                parameter.value
-                for parameter in selected.public_parameters
-                if parameter.name == "target"
-            ),
-            None,
-        )
-
-        def validate_question_draft(
-            result: TextPayload,
-            *,
-            history: tuple[PublicMessage, ...] = snapshot.public_history,
-            selected_instruction: InstructionCandidate = selected,
-            target: str | int | bool | tuple[str, ...] | None = target_value,
-            previous_turns: tuple[TurnArtifact, ...] = tuple(turns),
-            current_turn: int = turn_index,
-        ) -> None:
-            if result.text is None:
-                return
-            if question_fingerprint(result.text) in rejected_question_fingerprints:
-                reason = "REPEATED_REJECTED_QUESTION"
-            elif internal_reference_in_question(result.text):
-                reason = "INTERNAL_REFERENCE_IN_QUESTION"
-            elif repeated_public_question(result.text, history):
-                reason = "REPEATED_PUBLIC_QUESTION"
-            elif (
-                selected_instruction.task_id == "object_identification"
-                and isinstance(target, str)
-                and identification_label_in_question(result.text, target)
-            ):
-                reason = "IDENTIFICATION_TARGET_IN_QUESTION"
-            elif (
-                selected_instruction.task_id == "object_identification"
-                and isinstance(target, str)
-                and reciprocal_identification_disclosure(
-                    result.text,
-                    target,
-                    tuple(
-                        (turn.question, turn.answer)
-                        for turn in previous_turns
-                        if turn.status == "COMMITTED"
-                        and turn.instruction.task_id == "object_identification"
-                    ),
-                )
-            ):
-                reason = "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC"
-            elif selected_instruction.task_id == "visible_action_relation" and (
-                action_affordance_question(result.text)
-            ):
-                reason = "ACTION_AFFORDANCE_NOT_VISIBLE"
-            elif selected_instruction.task_id == "text_transcription" and (
-                unverified_transcription_relation(result.text)
-            ):
-                reason = "TEXT_RELATION_UNVERIFIED"
-            elif selected_instruction.task_id == "scene_categorization" and not (
-                isinstance(
-                    options := next(
-                        (
-                            parameter.value
-                            for parameter in selected_instruction.public_parameters
-                            if parameter.name == "category_set"
-                        ),
-                        None,
-                    ),
-                    tuple,
-                )
-                and scene_options_in_question(result.text, options)
-            ):
-                reason = "CATEGORY_OPTIONS_NOT_PUBLIC"
-            else:
-                return
-            self._record_public_text_rejection(
-                conversation_id,
-                current_turn,
-                field="question",
-                reason=reason,
-                content=result.text,
-            )
-            raise ExecutionError(reason, "Question draft discloses or repeats its requested fact")
-
-        try:
-            question_payload = self._invoke(
-                generator,
-                "question_generation",
-                {
-                    "target_language": target_language,
-                    "turn_index": turn_index,
-                    "public_history": self._history(snapshot.public_history),
-                    "selected_instruction": question_operation_contract(
-                        selected, guidance=self.config.tasks.question_operation_guidance
-                    ),
-                    "image_views": image_views,
-                },
-                (model_image,),
-                TextPayload,
-                max_tokens=256,
-                temperature=0.7,
-                seed=self.config.seed + turn_index,
-                post_validate=validate_question_draft,
-            )
-        except ExecutionError as error:
-            if error.reason not in {
-                "INTERNAL_REFERENCE_IN_QUESTION",
-                "REPEATED_PUBLIC_QUESTION",
-                "IDENTIFICATION_TARGET_IN_QUESTION",
-                "RECIPROCAL_IDENTIFICATION_ALREADY_PUBLIC",
-                "ACTION_AFFORDANCE_NOT_VISIBLE",
-                "TEXT_RELATION_UNVERIFIED",
-                "CATEGORY_OPTIONS_NOT_PUBLIC",
-                "REPEATED_REJECTED_QUESTION",
-            }:
-                raise
-            terminal_status = "REJECTED"
-            terminal_stage = "question_generation"
-            terminal_reason = error.reason
-            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
-        if question_payload.status != "OK":
-            terminal_status = "REJECTED"
-            terminal_stage = "question_generation"
-            terminal_reason = "QUESTION_NOT_GENERATED"
-            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
-        assert question_payload.text is not None
-        question = PublicMessage(
-            message_id=f"{conversation_id}:q:{turn_index}",
-            turn_index=turn_index,
-            role="user",
-            content=question_payload.text,
-        )
-        if is_private_prompt_echo(question.content):
-            self._record_public_text_rejection(
-                conversation_id,
-                turn_index,
-                field="question",
-                reason="PRIVATE_PROMPT_ECHO",
-                content=question.content,
-            )
-            terminal_status = "REJECTED"
-            terminal_stage = "question_generation"
-            terminal_reason = "PRIVATE_PROMPT_ECHO"
-            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
-        if internal_reference_in_question(question.content):
-            self._record_public_text_rejection(
-                conversation_id,
-                turn_index,
-                field="question",
-                reason="INTERNAL_REFERENCE_IN_QUESTION",
-                content=question.content,
-            )
-            terminal_status = "REJECTED"
-            terminal_stage = "question_generation"
-            terminal_reason = "INTERNAL_REFERENCE_IN_QUESTION"
-            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
-        if repeated_public_question(question.content, snapshot.public_history):
-            self._record_public_text_rejection(
-                conversation_id,
-                turn_index,
-                field="question",
-                reason="REPEATED_PUBLIC_QUESTION",
-                content=question.content,
-            )
-            terminal_status = "REJECTED"
-            terminal_stage = "question_generation"
-            terminal_reason = "REPEATED_PUBLIC_QUESTION"
-            return TurnAttemptResult(None, terminal_status, terminal_stage, terminal_reason)
-        return question
-
-    def _gate_question(
-        self,
-        selected: InstructionCandidate,
-        snapshot: HistorySnapshot,
-        question: PublicMessage,
-        target_language: str,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-    ) -> TurnAttemptResult | None:
-        """Run the blind operation classification and question-fit gates before answering."""
-        turn_index = snapshot.turn_index
-        fit = self._question_intent(
-            snapshot.public_history,
-            question,
-            selected,
-            target_language,
-            image_views,
-            model_image,
-            turn_index,
-        )
-        if fit is GateVerdict.MET:
-            fit = self._question_fit(
-                snapshot.public_history,
-                question,
-                selected,
-                target_language,
-                image_views,
-                model_image,
-                turn_index,
-            )
-        if fit is not GateVerdict.MET:
-            terminal_status = "ABSTAINED" if fit is GateVerdict.UNKNOWN else "REJECTED"
-            terminal_stage = "question_gate"
-            terminal_reason = f"QUESTION_GATE_{fit.value}"
-            return TurnAttemptResult(
-                None,
-                terminal_status,
-                terminal_stage,
-                terminal_reason,
-                question_fingerprint(question.content),
-            )
-        return None
 
     def _generate_answer(
         self,
@@ -2148,7 +1365,7 @@ class SynthesisCoordinator:
             self.config.evaluation.mode == "detailed"
             or turn.instruction.catalog_version is not None
         ):
-            decision, _ = self._direct_question_gate(
+            decision, _ = self._question_gate(
                 turn.instruction,
                 None,
                 conversation.image,
@@ -2287,93 +1504,6 @@ class SynthesisCoordinator:
             return None
         return repaired
 
-    def _extract_requirements(
-        self,
-        history: Sequence[PublicMessage],
-        question: PublicMessage,
-        language: str,
-        turn_index: int,
-    ) -> tuple[GateVerdict, tuple[Requirement, ...]]:
-        messages = (*history, question)
-        references = {f"m{index}": message.message_id for index, message in enumerate(messages)}
-        local_messages = tuple(
-            message.model_copy(update={"message_id": reference})
-            for reference, message in zip(references, messages, strict=True)
-        )
-        inventories = [
-            self._invoke(
-                client,
-                "requirement_extraction",
-                {
-                    "target_language": language,
-                    "public_history": self._history(local_messages[:-1]),
-                    "question": question.content,
-                    "question_message_id": local_messages[-1].message_id,
-                },
-                (),
-                RequirementInventory,
-                max_tokens=1024,
-                temperature=0.0,
-                seed=self.config.seed + turn_index,
-                trial_id=f"blind-judge:{judge_index}",
-            )
-            for judge_index, client in enumerate(self.generators.values())
-        ]
-        inventories = [
-            inventory.model_copy(
-                update={
-                    "requirements": tuple(
-                        spec.model_copy(
-                            update={"source_message_id": references[spec.source_message_id]}
-                        )
-                        for spec in inventory.requirements
-                    )
-                }
-            )
-            for inventory in inventories
-        ]
-        if not all(item.extraction_complete for item in inventories):
-            return GateVerdict.UNKNOWN, ()
-        requirements = reconcile_inventories(
-            inventories,
-            (*history, question),
-            turn_index,
-        )
-        if requirements is None:
-            return GateVerdict.UNKNOWN, ()
-        return GateVerdict.MET, requirements
-
-    def _select_instruction(
-        self,
-        candidates: tuple[InstructionCandidate, ...],
-        history: Any,
-        language: str,
-        image_views: list[dict[str, str]],
-        model_image: ModelImage,
-        turn_index: int,
-    ) -> InstructionCandidate | None:
-        result = self._invoke(
-            self.selector,
-            "instruction_selection",
-            {
-                "target_language": language,
-                "public_history": self._history(history.public_history),
-                "candidates": [selector_candidate(candidate) for candidate in candidates],
-                "image_views": image_views,
-            },
-            (model_image,),
-            InstructionSelection,
-            max_tokens=256,
-            temperature=0.0,
-            seed=self.config.seed + turn_index,
-        )
-        if result.status == "NO_SUITABLE_CANDIDATE":
-            return None
-        by_id = {candidate.candidate_id: candidate for candidate in candidates}
-        if result.candidate_id not in by_id:
-            return None
-        return by_id[result.candidate_id]
-
     def record_failed_image(
         self,
         image: ImageArtifact,
@@ -2413,86 +1543,6 @@ class SynthesisCoordinator:
             return self._finish_conversation(conversation, persist=True)
         self.store.write_json_artifact("conversations", conversation.model_dump(mode="json"))
         return conversation
-
-    def _question_intent(
-        self,
-        history: Sequence[PublicMessage],
-        question: PublicMessage,
-        instruction: InstructionCandidate,
-        language: str,
-        image_views: list[dict[str, str]],
-        model_image: ModelImage,
-        turn_index: int,
-    ) -> GateVerdict:
-        """Classify the public operation without showing its selected task or answer."""
-        catalog = task_catalog()
-        public_payload = {
-            "target_language": language,
-            "public_history": self._history(history),
-            "question": question.content,
-            "task_definitions": [
-                {"task_id": task.id, "definition": task.definition_en} for task in catalog.tasks
-            ],
-            "image_views": image_views,
-        }
-        votes = self._invoke_judges(
-            "question_intent",
-            public_payload,
-            (model_image,),
-            QuestionIntent,
-            max_tokens=128,
-            seed=self.config.seed + turn_index,
-        )
-        known = {task.id for task in catalog.tasks}
-        task_ids = [vote.task_id for vote in votes]
-        if any(task_id not in known for task_id in task_ids):
-            verdict = GateVerdict.UNKNOWN
-        elif task_ids == [instruction.task_id, instruction.task_id]:
-            verdict = GateVerdict.MET
-        elif task_ids[0] == task_ids[1]:
-            verdict = GateVerdict.NOT_MET
-        else:
-            verdict = GateVerdict.UNKNOWN
-        self.store.write_json_artifact(
-            "question-intent-decisions",
-            {
-                "question_message_id": question.message_id,
-                "expected_task_id": instruction.task_id,
-                "votes": [vote.model_dump(mode="json") for vote in votes],
-                "verdict": verdict.value,
-            },
-        )
-        return verdict
-
-    def _question_fit(
-        self,
-        history: Sequence[PublicMessage],
-        question: PublicMessage,
-        instruction: InstructionCandidate,
-        language: str,
-        image_views: list[dict[str, str]],
-        model_image: ModelImage,
-        turn_index: int,
-    ) -> GateVerdict:
-        focused = self._local_verification_view(instruction, image_views, model_image)
-        if focused is None:
-            return GateVerdict.UNKNOWN
-        model_image, image_views = focused
-        votes = self._invoke_judges(
-            "question_fit",
-            {
-                "target_language": language,
-                "public_history": self._history(history),
-                "selected_instruction": operation_contract(instruction),
-                "question": question.content,
-                "image_views": image_views,
-            },
-            (model_image,),
-            QuestionFit,
-            max_tokens=256,
-            seed=self.config.seed + turn_index,
-        )
-        return question_fit_consensus(votes)
 
     def _local_verification_view(
         self,
@@ -3086,132 +2136,6 @@ class SynthesisCoordinator:
                 )
         return conversation
 
-    def _drop_answered_candidates(
-        self,
-        candidates: Sequence[InstructionCandidate],
-        prior_turns: Sequence[TurnArtifact],
-        conversation_id: str,
-        turn_index: int,
-    ) -> tuple[InstructionCandidate, ...]:
-        """Omit already answered object-name and explicit attribute requests."""
-        retained: list[InstructionCandidate] = []
-        answered_attributes = {
-            key
-            for turn in prior_turns
-            if turn.status == "COMMITTED"
-            if (key := attribute_fact_key(turn.instruction)) is not None
-        }
-        answered_facts = {
-            key
-            for turn in prior_turns
-            if turn.status == "COMMITTED"
-            if (key := requested_fact_key(turn.instruction)) is not None
-        }
-        if self.config.tasks.fact_novelty_enabled:
-            self.store.write_json_artifact(
-                "candidate-fact-identities",
-                {
-                    "conversation_id": conversation_id,
-                    "turn_index": turn_index,
-                    "candidates": [
-                        {
-                            "candidate_id": candidate.candidate_id,
-                            "fact_key": asdict(key)
-                            if (key := requested_fact_key(candidate))
-                            else None,
-                        }
-                        for candidate in candidates
-                    ],
-                },
-            )
-        for candidate in candidates:
-            if (fact_key := attribute_fact_key(candidate)) is not None and (
-                fact_key in answered_attributes
-                or self._direct_identification_stated_color(fact_key, prior_turns)
-            ):
-                self.store.write_json_artifact(
-                    "candidate-admission-rejections",
-                    {
-                        "conversation_id": conversation_id,
-                        "turn_index": turn_index,
-                        "candidate_id": candidate.candidate_id,
-                        "reason": "ATTRIBUTE_FACT_ALREADY_PUBLIC",
-                    },
-                )
-                continue
-            if self.config.tasks.fact_novelty_enabled and (
-                (requested := requested_fact_key(candidate)) is not None
-                and requested in answered_facts
-            ):
-                self.store.write_json_artifact(
-                    "candidate-admission-rejections",
-                    {
-                        "conversation_id": conversation_id,
-                        "turn_index": turn_index,
-                        "candidate_id": candidate.candidate_id,
-                        "reason": "REQUESTED_FACT_ALREADY_PUBLIC",
-                        "fact_key": asdict(requested),
-                    },
-                )
-                continue
-            target = next(
-                (item.value for item in candidate.public_parameters if item.name == "target"),
-                None,
-            )
-            same_scope_messages = tuple(
-                message
-                for turn in prior_turns
-                if turn.status == "COMMITTED"
-                if turn.instruction.scope_id == candidate.scope_id
-                for message in (turn.question, turn.answer)
-            )
-            if (
-                candidate.task_id == "object_identification"
-                and isinstance(target, str)
-                and identification_answer_in_history(target, same_scope_messages)
-            ):
-                self.store.write_json_artifact(
-                    "candidate-admission-rejections",
-                    {
-                        "conversation_id": conversation_id,
-                        "turn_index": turn_index,
-                        "candidate_id": candidate.candidate_id,
-                        "reason": "IDENTIFICATION_ANSWER_ALREADY_PUBLIC",
-                    },
-                )
-                continue
-            retained.append(candidate)
-        return tuple(retained)
-
-    @staticmethod
-    def _direct_identification_stated_color(
-        fact_key: tuple[str, str, str, str], prior_turns: Sequence[TurnArtifact]
-    ) -> bool:
-        """Recognize a color already stated in a direct, committed naming question.
-
-        This intentionally handles only a narrow public pattern. A color mentioned for a nearby
-        object, or a part-specific request such as nose color, must remain eligible.
-        """
-        view_id, scope_id, target, attribute = fact_key
-        if attribute != "color":
-            return False
-
-        def normalized_name(value: str) -> str:
-            words = re.findall(r"\w+", value.casefold())
-            while words and words[0] in {"a", "an", "the"}:
-                words.pop(0)
-            return " ".join(words)
-
-        return any(
-            turn.status == "COMMITTED"
-            and turn.instruction.task_id == "object_identification"
-            and turn.instruction.scope_id == scope_id
-            and (turn.instruction.view_id or "") == view_id
-            and normalized_name(turn.answer.content) == target
-            and _DIRECT_IDENTIFICATION_COLOR.search(turn.question.content) is not None
-            for turn in prior_turns
-        )
-
     @staticmethod
     def _answer_disclosure_reason(
         instruction: InstructionCandidate,
@@ -3486,24 +2410,7 @@ class SynthesisCoordinator:
             "MODEL_FINISH_REASON",
             "MODEL_WHITESPACE_RUNAWAY",
             "MODEL_SCHEMA_MISMATCH",
-            "EVIDENCE_IMAGE_MISMATCH",
             "EXTRACTION_SOURCE_INVALID",
-            "EVIDENCE_CAPABILITY_UNKNOWN",
-            "EVIDENCE_SCOPE_LIMIT",
-            "EVIDENCE_VIEW_MISMATCH",
-            "EVIDENCE_OBSERVATION_LIMIT",
-            "EVIDENCE_ATTRIBUTE_SCOPE",
-            "CANDIDATE_BINDING_ID",
-            "CANDIDATE_EVIDENCE_SCOPE",
-            "CANDIDATE_CHECKS_MISMATCH",
-            "CANDIDATE_PARAMETER_UNKNOWN",
-            "CANDIDATE_PARAMETER_MISSING",
-            "CANDIDATE_PARAMETER_SOURCE",
-            "CANDIDATE_PARAMETER_VALUE",
-            "REPEATED_PUBLIC_QUESTION",
-            "INTERNAL_REFERENCE_IN_QUESTION",
-            "IDENTIFICATION_TARGET_IN_QUESTION",
-            "TEXT_RELATION_UNVERIFIED",
             "DRAFT_CONTRACT_INVALID",
         }
         retry_feedback: str | None = None
@@ -3517,7 +2424,7 @@ class SynthesisCoordinator:
                 call_kwargs["seed"] = int(call_kwargs["seed"]) + 100_000 * attempt
                 call_kwargs["retry_feedback"] = retry_feedback
                 if (
-                    stage in {"evidence_extraction", "chart_source", "graph_source"}
+                    stage in {"chart_source", "graph_source"}
                     and prior_error == "MODEL_FINISH_REASON"
                 ):
                     original_tokens = int(kwargs["max_tokens"])
@@ -3525,21 +2432,6 @@ class SynthesisCoordinator:
             response: ModelResponse | None = None
             try:
                 response = client.invoke(stage, payload, images, model, **call_kwargs)
-                if (
-                    isinstance(
-                        response.value,
-                        (
-                            EvidenceInventory,
-                            ScopedEvidenceInventory,
-                            ScopedEvidenceReport,
-                            ArrayScopedEvidenceReport,
-                        ),
-                    )
-                    and response.value.image_id != payload["image_id"]
-                ):
-                    raise ExecutionError(
-                        "EVIDENCE_IMAGE_MISMATCH", "Evidence refers to another image"
-                    )
                 if isinstance(response.value, ClaimExtraction):
                     answer = PublicMessage(
                         message_id="answer",
@@ -3590,52 +2482,7 @@ class SynthesisCoordinator:
                     if error.reason == "MODEL_SCHEMA_MISMATCH":
                         required = model.model_json_schema().get("required", [])
                         retry_feedback += " Required top-level fields: " + ", ".join(required) + "."
-                        if stage == "evidence_extraction":
-                            retry_feedback += (
-                                (
-                                    " observations must be an array with a capability name on each observation."
-                                    if model
-                                    in {ArrayScopedEvidenceReport, CompactScopedEvidenceReport}
-                                    else " observations must be an object keyed by each capability name."
-                                )
-                                + " Combine visible instances in one observation per capability and use"
-                                " only capability_vocabulary. Every scope and observation region"
-                                " must satisfy 0 <= left < right <= 1 and"
-                                " 0 <= top < bottom <= 1. Keep each observation inside its scope;"
-                                " never use a point or an all-1 box."
-                            )
-                            if response is not None and isinstance(
-                                response.value,
-                                (
-                                    ScopedEvidenceReport,
-                                    ArrayScopedEvidenceReport,
-                                    CompactScopedEvidenceReport,
-                                ),
-                            ):
-                                retry_feedback += out_of_scope_region_feedback(response.value)
-                                retry_feedback += unsupported_object_label_feedback(response.value)
-                        elif stage == "candidate_binding":
-                            retry_feedback += (
-                                " Every binding needs the separate target object; do not repeat"
-                                " target in public_parameters. Include only operation-relevant"
-                                " parameters, use each name once, and"
-                                " match origin with evidence_refs."
-                            )
-                            retry_feedback += (
-                                " Required fields in each binding: "
-                                + ", ".join(CandidateBindingReport.model_json_schema()["required"])
-                                + ". estimated_answer_tokens must be a positive integer."
-                            )
-                            if "Factual parameters require explicit evidence references" in str(
-                                error
-                            ):
-                                retry_feedback += (
-                                    " A public instruction choice has origin=instruction and no"
-                                    " evidence_refs. An image or history fact needs matching"
-                                    " evidence_refs. Omit names outside this candidate's"
-                                    " bindable_parameter_names."
-                                )
-                        elif stage == "table_lookup_source":
+                        if stage == "table_lookup_source":
                             retry_feedback += (
                                 " Extract every row/column label as a string, preserving blank"
                                 " labels. Include row_anchor and col_anchor for the selected"
@@ -3673,16 +2520,6 @@ class SynthesisCoordinator:
                                 " positive-extent rectangles inside scope_region."
                             )
                             retry_feedback += self._chart_region_retry_feedback(error)
-                    elif error.reason == "EVIDENCE_IMAGE_MISMATCH":
-                        retry_feedback = (
-                            "The previous response referred to another image. Re-examine only the "
-                            "attached image and regenerate the complete evidence object. "
-                            f"Copy the input image_id exactly: {payload['image_id']}."
-                        )
-                    if error.reason.startswith("CANDIDATE_"):
-                        retry_feedback += (
-                            f" Correct this exact contract mismatch: {str(error)[:600]}."
-                        )
                     if error.reason == "MODEL_SCHEMA_MISMATCH" and str(error).startswith(
                         "DUPLICATE_JSON_KEY"
                     ):
@@ -3699,9 +2536,7 @@ class SynthesisCoordinator:
                             "view_ids": [image.view_id for image in images],
                             "question_message_id": payload.get("question_message_id"),
                             "turn_index": (
-                                0
-                                if stage == "evidence_extraction"
-                                else len(history) // 2 + 1
+                                len(history) // 2 + 1
                                 if isinstance(history, list)
                                 else payload.get("turn_index", 1)
                             ),
@@ -3766,25 +2601,6 @@ class SynthesisCoordinator:
                 "The previous response failed schema validation. Return one complete JSON object "
                 "with every required field, unique array items, and a short non-empty reason."
             )
-        if reason == "EVIDENCE_ATTRIBUTE_SCOPE":
-            return (
-                "The attribute region lies outside its same-scope visible_entity region. "
-                "Keep the subject's entity box fixed. Report a property only inside that box; "
-                "if it belongs to another subject or cannot be resolved, report UNKNOWN."
-            )
-        if reason.startswith("EVIDENCE_"):
-            return (
-                "Re-examine this image view. Use only names in capability_vocabulary,"
-                " one observation per capability per scope, and the exact supplied view_id."
-            )
-        if reason.startswith("CANDIDATE_"):
-            return (
-                "Rebind only the supplied candidate IDs. Use only each candidate's"
-                " parameter_contract, exact eligibility_checks and local evidence IDs."
-                " Include all MET required_capabilities in binding evidence_refs."
-                " A parameter with origin=image uses only local evidence IDs; origin=history"
-                " uses only exact message_ids from public_history, never obs_* IDs."
-            )
         if reason == "MODEL_FINISH_REASON":
             return (
                 "The previous response was incomplete. Return a concise, complete JSON object "
@@ -3810,28 +2626,6 @@ class SynthesisCoordinator:
                 " permitted parameter_contract value, use only bindable_parameter_names, and keep"
                 " target_region inside scope_region."
             )
-        if reason == "REPEATED_PUBLIC_QUESTION":
-            return (
-                "The draft repeats an answered question. Keep the selected task and ask for a"
-                " visibly supported new target, attribute, or public condition."
-            )
-        if reason == "INTERNAL_REFERENCE_IN_QUESTION":
-            return (
-                "The draft contains an unresolved controller reference such as scope_0"
-                " or selected region. Refer to the target by its visible location or traits;"
-                " never copy scope_id, view_id, candidate_id, or evidence IDs into public text."
-            )
-        if reason == "IDENTIFICATION_TARGET_IN_QUESTION":
-            return (
-                "The draft identifies the object before asking its identity. Refer to its"
-                " location or non-category visible traits without naming the target label."
-            )
-        if reason == "TEXT_RELATION_UNVERIFIED":
-            return (
-                "The transcript verifier has no coordinates for a relative locator."
-                " Bound the text by a visible absolute region or exact public scope;"
-                " do not claim that it is above, below, beside, or left/right of another object."
-            )
         return "The previous response was empty. Return one concise, complete JSON object."
 
     @staticmethod
@@ -3855,135 +2649,3 @@ class SynthesisCoordinator:
             encoded_sha256=image.full_view.encoded_sha256,
             media_type=image.full_view.media_type,
         )
-
-    @staticmethod
-    def _capability_vocabulary() -> dict[str, str]:
-        catalog = load_task_catalog()
-        return dict(sorted(catalog["capabilities"].items()))
-
-    def _maybe_recheck_attribute(
-        self,
-        inventory: ScopedEvidenceInventory,
-        generator: InferenceClient,
-        model_image: ModelImage,
-        image_views: list[dict[str, str]],
-    ) -> ScopedEvidenceInventory:
-        """Optionally ask about one missing visible property before any answer exists."""
-        if not self.config.tasks.attribute_recheck_enabled:
-            return inventory
-        scope = next(
-            (
-                item
-                for item in inventory.scopes
-                if len(item.observations) < self.config.tasks.max_observations_per_scope
-                and not any(obs.capability == "visible_attribute" for obs in item.observations)
-                and all(
-                    any(
-                        obs.capability == capability and obs.verdict == "MET"
-                        for obs in item.observations
-                    )
-                    for capability in ("visible_entity", "visible_interaction")
-                )
-            ),
-            None,
-        )
-        if scope is None:
-            return inventory
-        subject_region = next(
-            obs.region
-            for obs in scope.observations
-            if obs.capability == "visible_entity" and obs.verdict == "MET"
-        )
-        try:
-            report = self._invoke(
-                generator,
-                "attribute_recheck",
-                {
-                    "image_id": inventory.image_id,
-                    "scope_id": scope.scope_id,
-                    "view_id": scope.view_id,
-                    "scope_region": subject_region.model_dump(mode="json"),
-                    "scope_description": scope.public_description,
-                    "image_views": image_views,
-                },
-                (model_image,),
-                AttributeRecheckReport,
-                max_tokens=512,
-                temperature=0.0,
-                seed=self.config.seed + 17,
-            )
-            region = report.region
-            parent = subject_region
-            if (
-                report.image_id != inventory.image_id
-                or report.scope_id != scope.scope_id
-                or report.view_id != scope.view_id
-                or not (
-                    parent.left <= region.left < region.right <= parent.right
-                    and parent.top <= region.top < region.bottom <= parent.bottom
-                )
-            ):
-                raise ExecutionError(
-                    "EVIDENCE_RECHECK_SCOPE", "Attribute recheck refers outside its source scope"
-                )
-            used = {obs.evidence_id for item in inventory.scopes for obs in item.observations}
-            index = 1
-            while (evidence_id := f"attribute-recheck-{index}") in used:
-                index += 1
-            updated = ScopeEvidence(
-                scope_id=scope.scope_id,
-                view_id=scope.view_id,
-                public_description=scope.public_description,
-                object_label=scope.object_label,
-                region=scope.region,
-                observations=(
-                    *scope.observations,
-                    CapabilityObservation(
-                        evidence_id=evidence_id,
-                        capability="visible_attribute",
-                        verdict=report.verdict,
-                        region=region,
-                        detail=report.detail,
-                    ),
-                ),
-            )
-            enriched = ScopedEvidenceInventory(
-                image_id=inventory.image_id,
-                scopes=tuple(
-                    updated if item.scope_id == scope.scope_id else item
-                    for item in inventory.scopes
-                ),
-                reason=inventory.reason,
-            )
-            validate_evidence(enriched, model_image.view_id, self.config.tasks)
-            self.store.write_json_artifact(
-                "evidence-attribute-rechecks",
-                {
-                    "image_id": inventory.image_id,
-                    "scope_id": scope.scope_id,
-                    "verdict": report.verdict,
-                    "evidence_id": evidence_id,
-                },
-            )
-            return enriched
-        except ExecutionError as error:
-            self.store.write_json_artifact(
-                "evidence-attribute-rechecks",
-                {
-                    "image_id": inventory.image_id,
-                    "scope_id": scope.scope_id,
-                    "reason": error.reason,
-                    "message": str(error)[:600],
-                },
-            )
-            if error.reason not in {
-                "MODEL_CONTENT_EMPTY",
-                "MODEL_FINISH_REASON",
-                "MODEL_WHITESPACE_RUNAWAY",
-                "MODEL_OUTPUT_REPETITION",
-                "MODEL_SCHEMA_MISMATCH",
-                "EVIDENCE_RECHECK_SCOPE",
-                "EVIDENCE_ATTRIBUTE_SCOPE",
-            }:
-                raise
-            return inventory

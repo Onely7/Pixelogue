@@ -7,7 +7,13 @@ import httpx
 import pytest
 
 from pixelogue.config import ModelEndpoint, RuntimeConfig, ServingRuntimeIdentity, load_config
-from pixelogue.contracts import GateVerdict, InstructionCandidate, PublicMessage, RubricVerdict
+from pixelogue.contracts import (
+    GateVerdict,
+    InstructionCandidate,
+    PublicMessage,
+    RubricVerdict,
+    build_history_snapshot,
+)
 from pixelogue.errors import ExecutionError
 from pixelogue.pipeline import SynthesisCoordinator
 from pixelogue.profiling import profile_database
@@ -279,6 +285,7 @@ def test_two_blind_judges_using_same_endpoint_replay_independently(
                         "operation_coherent": "MET",
                         "useful_request": "MET",
                         "reason": "Visible request.",
+                        "realized_task_id": "attribute_lookup",
                     }
                 ),
                 {"prompt_tokens": 12, "completion_tokens": 9},
@@ -314,18 +321,17 @@ def test_two_blind_judges_using_same_endpoint_replay_independently(
                 ]
                 coordinator = SynthesisCoordinator(config, "blind-resume", store, *clients)
                 for _ in range(2):
-                    assert (
-                        coordinator._question_fit(
-                            (),
-                            question,
-                            instruction,
-                            "en",
-                            [coordinator._view_metadata(image)],
-                            coordinator._model_image(image, root),
-                            1,
-                        )
-                        is GateVerdict.MET
+                    decision, _ = coordinator._question_gate(
+                        instruction,
+                        None,
+                        image,
+                        build_history_snapshot("blind-resume", 1, ()),
+                        question,
+                        "en",
+                        coordinator._model_image(image, root),
+                        [coordinator._view_metadata(image)],
                     )
+                    assert decision.verdict is GateVerdict.MET
                 budget = store.connection.execute("SELECT * FROM budget").fetchone()
                 assert budget["request_count"] == 2 and budget["output_tokens"] == 18
     assert len(calls) == 2
@@ -384,7 +390,7 @@ def test_visual_cache_keeps_image_operation_processor_schema_history_and_judges_
 
     from PIL import Image
 
-    from pixelogue.contracts import QuestionFit
+    from pixelogue.gates import QuestionGateVote
     from pixelogue.prompts import STAGE_INSTRUCTIONS
     from pixelogue.serving import ModelImage
 
@@ -411,12 +417,13 @@ def test_visual_cache_keeps_image_operation_processor_schema_history_and_judges_
         return httpx.Response(
             200,
             json=completion(
-                '{"local_anchor":"MET","operation_coherent":"MET","useful_request":"MET","reason":"Visible."}',
+                '{"local_anchor":"MET","operation_coherent":"MET","useful_request":"MET",'
+                '"reason":"Visible.","realized_task_id":"attribute_lookup"}',
                 {"prompt_tokens": 4, "completion_tokens": 3},
             ),
         )
 
-    class OtherQuestionFit(QuestionFit):
+    class OtherQuestionGateVote(QuestionGateVote):
         pass
 
     endpoint = ModelEndpoint(
@@ -430,6 +437,7 @@ def test_visual_cache_keeps_image_operation_processor_schema_history_and_judges_
             "scope_id": "subject",
             "public_parameters": [{"name": "attribute", "value": "color"}],
         },
+        "task_definitions": [{"task_id": "attribute_lookup", "definition": "Read a property."}],
         "image_views": [{"view_id": original_image.view_id}],
     }
     with RunStore(tmp_path, "visual-identity", require_local_wal=False) as store:
@@ -438,13 +446,17 @@ def test_visual_cache_keeps_image_operation_processor_schema_history_and_judges_
         ) as http:
 
             def ask(
-                body=payload, visual=original_image, model=QuestionFit, lock=endpoint, trial=None
+                body=payload,
+                visual=original_image,
+                model=QuestionGateVote,
+                lock=endpoint,
+                trial=None,
             ):
                 client = VllmClient(
                     lock, RuntimeConfig(), run_id="visual-identity", store=store, client=http
                 )
                 return client.invoke(
-                    "question_fit",
+                    "question_gate",
                     body,
                     (visual,),
                     model,
@@ -468,7 +480,7 @@ def test_visual_cache_keeps_image_operation_processor_schema_history_and_judges_
             )
             ask(lock=endpoint.model_copy(update={"processor_revision": "b" * 40}))
             ask(lock=endpoint.model_copy(update={"revision": "b" * 40}))
-            ask(model=OtherQuestionFit)
+            ask(model=OtherQuestionGateVote)
             ask(
                 body=payload
                 | {
@@ -482,8 +494,8 @@ def test_visual_cache_keeps_image_operation_processor_schema_history_and_judges_
                 ask(trial=judge)
             monkeypatch.setitem(
                 STAGE_INSTRUCTIONS,
-                "question_fit",
-                STAGE_INSTRUCTIONS["question_fit"] + " Updated contract.",
+                "question_gate",
+                STAGE_INSTRUCTIONS["question_gate"] + " Updated contract.",
             )
             ask()
         assert (
