@@ -178,6 +178,9 @@ def choose_route(
         tasks = {task_id: task for task_id, task in tasks.items() if lightly_verified(task)}
     available = {task.family for task in tasks.values()}
     feasible = set(profile.supported_families) & available if profile is not None else set()
+    if profile is not None and profile.image_kind != "screen":
+        # Screen operations need an actual interface; annotated figures were routed here.
+        feasible.discard("screen_ui")
     basis: Literal["profile", "fallback"] = "profile"
     if not feasible:
         feasible = set(FALLBACK_FAMILIES) & available

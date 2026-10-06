@@ -655,10 +655,13 @@ The controller and a separate visual classifier will check references and every 
 
 STAGE_INSTRUCTIONS["image_profile"] = """Profile this single image for task routing before any
 question exists. Return image_kind, readable_text (none, some or dense legible text) and
-supported_families: the family IDs from family_definitions for which at least one listed operation
-could be asked and answered from clearly visible content. Omit a family when the image lacks that
-kind of content (for example no chart, no table, no readable text) or when you are unsure. Judge
-only visible pixels. Keep reason under 25 words. Do not write questions, answers or labels."""
+supported_families. image_kind is screen only for a software, web or device screenshot with
+visible interface controls; annotated figures, diagrams and photographs are not screens.
+supported_families lists the family IDs from family_definitions for which at least one listed
+operation could be asked and answered from clearly visible content. Omit a family when the image
+lacks that kind of content (for example no chart, no table, no readable text) or when you are
+unsure. Judge only visible pixels. Keep reason under 25 words. Do not write questions, answers or
+labels."""
 
 STAGE_INSTRUCTIONS["question_draft"] = """Write up to draft_count distinct candidate user questions
 for the next turn of an image-grounded conversation. Each draft realizes exactly one operation

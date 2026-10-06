@@ -604,3 +604,27 @@ def test_anchor_turns_offer_only_lightly_verified_operations() -> None:
         turn_index=3,
     )
     assert later is not None and later.primary_family in {"set_logic", "table_understanding"}
+
+
+def test_screen_operations_need_a_screen_image() -> None:
+    tasks = _tasks("screen_ui", "visual_description")
+    figure = ImageProfile(
+        image_kind="diagram",
+        readable_text="some",
+        supported_families=("screen_ui", "visual_description"),
+        reason="r",
+    )
+    route = choose_route(
+        figure,
+        FamilyLedger(["object_identification"] * 3),
+        tasks=tasks,
+        family_targets="uniform",
+        task_weights={},
+        used_families=frozenset(),
+        used_task_ids=frozenset(),
+        seed=1,
+        image_id="img",
+        turn_index=1,
+    )
+    assert route is not None
+    assert "screen_ui" not in {route.primary_family, route.secondary_family}
