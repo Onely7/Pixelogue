@@ -568,3 +568,39 @@ def test_image_views_match_attached_images(tmp_path, image_artifact) -> None:
         store.close()
     for stage, payload, count in a.calls + b.calls:
         assert len(payload["image_views"]) == count, stage
+
+
+def test_anchor_turns_offer_only_lightly_verified_operations() -> None:
+    tasks = _tasks("visual_description", "set_logic", "table_understanding")
+    ledger = FamilyLedger(["object_identification"] * 9)
+    profile = _profile("visual_description", "set_logic", "table_understanding")
+    light = choose_route(
+        profile,
+        ledger,
+        tasks=tasks,
+        family_targets="uniform",
+        task_weights={},
+        used_families=frozenset(),
+        used_task_ids=frozenset(),
+        seed=1,
+        image_id="img",
+        turn_index=1,
+        light_only=True,
+    )
+    assert light is not None and light.primary_family == "visual_description"
+    assert all(
+        tasks[task].verification_contracts == ("dual_visual_review",) for task in light.task_ids
+    )
+    later = choose_route(
+        profile,
+        ledger,
+        tasks=tasks,
+        family_targets="uniform",
+        task_weights={},
+        used_families=frozenset(),
+        used_task_ids=frozenset(),
+        seed=1,
+        image_id="img",
+        turn_index=3,
+    )
+    assert later is not None and later.primary_family in {"set_logic", "table_understanding"}

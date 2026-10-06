@@ -376,6 +376,7 @@ class TaskRuntimeConfig(StrictModel):
     draft_max_tokens: Annotated[int, Field(ge=256, le=4096)] = 1024
     extra_draft_calls_per_turn: Literal[0, 1] = 1
     profile_max_tokens: Annotated[int, Field(ge=128, le=1024)] = 384
+    anchor_turns: Annotated[int, Field(ge=0, le=6)] = 2
     family_targets: Literal["uniform"] | dict[str, Annotated[float, Field(gt=0)]] = "uniform"
     task_weights: dict[str, Annotated[float, Field(gt=0, le=1)]] = Field(
         default_factory=lambda: dict(DEFAULT_TASK_WEIGHTS)

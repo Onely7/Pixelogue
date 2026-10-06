@@ -31,6 +31,17 @@ FALLBACK_FAMILIES = (
 )
 PRIMARY_TASKS = 4
 SECONDARY_TASKS = 2
+# Operations verified only by the two blind reviews, evidence binding or transcript alignment.
+# Structured extraction verifiers (sets, tables, charts, graphs, scales, geometry, formulas)
+# abstain far more often, so early turns that decide the two-turn minimum avoid them.
+LIGHT_CONTRACTS = frozenset(
+    {"dual_visual_review", "evidence_binding_check", "transcript_alignment"}
+)
+
+
+def lightly_verified(task: TaskDefinition) -> bool:
+    """Return whether an operation needs no structured extraction verifier."""
+    return set(task.verification_contracts) <= LIGHT_CONTRACTS
 
 
 class ImageProfile(StrictModel):
@@ -155,11 +166,16 @@ def choose_route(
     seed: int,
     image_id: str,
     turn_index: int,
+    light_only: bool = False,
 ) -> Route | None:
     """Choose primary and secondary families and their preferred operations.
 
-    Returns ``None`` only when no available family exists at all.
+    ``light_only`` restricts the offer to lightly verified operations, for the turns that
+    decide whether a conversation reaches its minimum length. Returns ``None`` only when no
+    available family exists at all.
     """
+    if light_only:
+        tasks = {task_id: task for task_id, task in tasks.items() if lightly_verified(task)}
     available = {task.family for task in tasks.values()}
     feasible = set(profile.supported_families) & available if profile is not None else set()
     basis: Literal["profile", "fallback"] = "profile"

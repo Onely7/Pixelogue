@@ -800,6 +800,7 @@ class SynthesisCoordinator:
                 seed=self.config.seed,
                 image_id=image.image_id,
                 turn_index=snapshot.turn_index,
+                light_only=snapshot.turn_index <= self.config.tasks.anchor_turns,
             )
             saved = self.store.save_turn_route(
                 snapshot.conversation_id,
