@@ -104,7 +104,7 @@ def export_bundle(
                 "generation_model": item.generation_model,
                 "operation_ids": [turn.instruction.task_id for turn in item.turns],
                 "catalog_versions": [
-                    turn.instruction.catalog_version or "legacy-24" for turn in item.turns
+                    turn.instruction.catalog_version or "unversioned" for turn in item.turns
                 ],
                 "primary_operation_id": item.turns[-1].instruction.task_id,
             }

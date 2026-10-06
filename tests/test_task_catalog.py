@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from pixelogue.catalog import load_legacy_migration, load_task_catalog, task_catalog
+from pixelogue.catalog import load_task_catalog, task_catalog
 from pixelogue.config import load_config
 from pixelogue.contracts import InstructionCandidate
 from pixelogue.drafting import FactKey, QuestionDraft, draft_task_contract, draft_to_candidate
@@ -26,17 +26,12 @@ from pixelogue.task_runtime import (
 REGION = ImageRegion(left=0.0, top=0.0, right=1.0, bottom=1.0)
 
 
-def test_catalog_counts_and_legacy_mapping_cover_the_specification():
+def test_catalog_counts_cover_the_specification():
     catalog = task_catalog()
     assert len(catalog.tasks) == 72
     assert sum(task.status == "core_candidate" for task in catalog.tasks) == 65
     assert sum(task.status == "validator_gated_extension" for task in catalog.tasks) == 7
     assert len(catalog.families) == 14
-    migration = {row["old_id"]: row for row in load_legacy_migration()}
-    assert len(migration) == 24
-    assert migration["chart_lookup"]["new_ids"] == ["chart_encoding_lookup", "chart_value_lookup"]
-    assert migration["grounded_sum"]["new_ids"] == ["grounded_arithmetic"]
-    assert migration["region_description"]["new_ids"] == ["grounded_description"]
 
 
 @pytest.mark.parametrize(
@@ -62,14 +57,14 @@ def test_catalog_rejects_malformed_counts_versions_and_references(mutation):
         TaskCatalog.model_validate_json(canonical_json(catalog))
 
 
-def test_compile_exposes_admission_migration_and_versioned_run_identity(tmp_path):
+def test_compile_exposes_admission_and_versioned_run_identity(tmp_path):
     config = load_config(Path("configs/pilot.yaml"))
     compiled = compile_configuration(config)
     assert compiled["task_catalog"]["counts"]["tasks"] == 72
     assert not compiled["task_admission"]["screen_to_code"]["normal_profile_available"]
     assert {"ImageProfile", "QuestionDraftBatch", "QuestionGateVote"} <= set(compiled["schemas"])
     assert "ScopedEvidenceInventory" not in compiled["schemas"]
-    assert len(compiled["legacy_task_migration"]) == 24
+    assert "legacy_task_migration" not in compiled
     # An old configuration-only identity cannot resume under a new catalog contract.
     from pixelogue.serialization import canonical_hash
 

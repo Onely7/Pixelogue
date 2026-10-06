@@ -17,7 +17,7 @@ from pixelogue.calibration import (
     CalibrationManifest,
     CalibrationObservation,
 )
-from pixelogue.catalog import load_legacy_migration, load_task_catalog
+from pixelogue.catalog import load_task_catalog
 from pixelogue.chart_verifiers import ChartAnswer, ChartSource
 from pixelogue.config import PixelogueConfig, StrictModel
 from pixelogue.contracts import (
@@ -212,7 +212,6 @@ def compile_configuration(config: PixelogueConfig) -> dict[str, Any]:
         "language_quotas": config.language_quotas,
         "task_catalog": task_catalog,
         "task_admission": admission_report(config.tasks, config.models),
-        "legacy_task_migration": load_legacy_migration(),
         "schemas": schemas,
     }
     return {**body, "compiled_hash": canonical_hash(body)}
@@ -430,11 +429,11 @@ def summarize_operations(
     for conversation in conversations:
         turns = [turn for turn in conversation.turns if turn.status == "COMMITTED"]
         for turn in turns:
-            version = turn.instruction.catalog_version or "legacy-24"
+            version = turn.instruction.catalog_version or "unversioned"
             key = f"{version}:{turn.instruction.task_id}"
             committed[key] = committed.get(key, 0) + 1
         if turns:
             last = turns[-1].instruction
-            key = f"{last.catalog_version or 'legacy-24'}:{last.task_id}"
+            key = f"{last.catalog_version or 'unversioned'}:{last.task_id}"
             primary[key] = primary.get(key, 0) + 1
     return {"committed_turns": committed, "primary_conversations": primary}

@@ -1573,38 +1573,9 @@ normal, limitation, false_premise
 
 A response behavior orthogonal to task ID. Alternative profile guards below replace, not blindly reuse, normal answerability prerequisites.
 
-## Legacy migration
-
-| Existing ID | New IDs | Parameter changes |
-|---|---|---|
-| `object_identification` | `object_identification` | {} |
-| `attribute_lookup` | `attribute_lookup` | {} |
-| `region_description` | `grounded_description` | {"scope": "bounded_region"} |
-| `visual_summary` | `visual_summary` | {} |
-| `relation_lookup` | `spatial_relation` | {"frame": "explicit image-plane or supported depth frame"} |
-| `attribute_comparison` | `attribute_comparison` | {} |
-| `spatial_ordering` | `spatial_ordering` | {} |
-| `correspondence_matching` | `visual_correspondence` | {} |
-| `visible_count` | `entity_count` | {"count_unit": "required"} |
-| `conditional_selection` | `predicate_selection` | {"predicate": "explicit Boolean predicate"} |
-| `exclusion_selection` | `set_operation` | {"operator": "difference"} |
-| `attribute_grouping` | `attribute_grouping` | {} |
-| `text_transcription` | `text_transcription` | {} |
-| `text_field_extraction` | `text_field_extraction` | {} |
-| `text_reading_order` | `text_reading_order` | {} |
-| `label_value_linking` | `label_value_linking` | {} |
-| `table_lookup` | `table_cell_lookup` | {} |
-| `table_selection` | `table_predicate_selection` | {} |
-| `chart_lookup` | `chart_encoding_lookup`, `chart_value_lookup` | {"migration": "reclassify by actual requested output; not both by default"} |
-| `chart_comparison` | `chart_comparison` | {} |
-| `grounded_sum` | `grounded_arithmetic` | {"operator": "add"} |
-| `grounded_difference` | `grounded_arithmetic` | {"operator": "subtract"} |
-| `grounded_product_quotient` | `grounded_arithmetic` | {"operator": "multiply or divide, read from question"} |
-| `table_aggregation` | `grounded_aggregation` | {"operand_source": "table", "aggregation": "read from question"} |
-
 ## Verification limits
 
-Only catalog structure, cross-references, source-table preservation, and migration coverage are checked by the bundled validation tests. No Pixelogue runtime integration, model call, image test, expert-domain validation, or SFT improvement measurement is included. See INTEGRATION.md for the implementation handoff.
+Only catalog structure, cross-references and source-table preservation are checked by the bundled validation tests. No Pixelogue runtime integration, model call, image test, expert-domain validation, or SFT improvement measurement is included. See INTEGRATION.md for the implementation handoff.
 
 ## Conditional verification and routing
 

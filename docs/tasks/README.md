@@ -8,7 +8,7 @@ The installed catalog contains **65 core candidates and 7 validator-gated extens
 
 ## Catalog membership and runtime admission
 
-`pixelogue compile` emits the complete catalog, strict JSON Schemas, an advisory 24-ID migration map, and `task_admission`. Every `task_admission` entry reports the required validators, their environments, any certified calibration domains, and the concrete reasons that normal-profile use is blocked.
+`pixelogue compile` emits the complete catalog, strict JSON Schemas and `task_admission`. Every `task_admission` entry reports the required validators, their environments, any certified calibration domains, and the concrete reasons that normal-profile use is blocked.
 
 All **65 core operations** have normal verification paths, and synthesis drafts questions only for these core operations. The 31 operations connected in v7 use blind structured extraction followed by deterministic checks for finite sets, arithmetic, tables, charts, documents, formulas, graphs, scales, marked geometry and finite patterns. Unknown notation, incomplete extraction, ambiguous results or disagreement between extractors causes abstention. `grounded_arithmetic` uses the same exact numeric engine, including its original add/subtract/multiply/divide cases. Public precision and unit rules determine admissible calculations.
 
@@ -79,7 +79,7 @@ Model-facing operation contracts omit answer-bearing target labels and free-form
 
 ## Migration and analysis
 
-Use a **new run ID**. The run identity includes configuration, code, prompts, Schemas, catalog, specialist lock, model and processor revisions, seed and the prepared input/rights manifest identity. Old 24-task artifacts retain their original labels; `task_catalog_legacy.yaml` and `legacy_24_migration.json` provide advisory mappings only. In particular, `chart_lookup` requires reclassification from the actual question, not automatic assignment to two new operations. Turns saved by the retired scoped planner keep `origin: scoped`, their evidence references and requirements; they remain readable and can be re-rated. Old stores can still be inspected with `replay` and backed up.
+Use a **new run ID**. The run identity includes configuration, code, prompts, Schemas, catalog, specialist lock, model and processor revisions, seed and the prepared input/rights manifest identity. Turns saved by the retired scoped planner keep `origin: scoped`, their evidence references and requirements; they remain readable and can be re-rated. Old stores can still be inspected with `replay` and backed up.
 
 Synthesis and rerating write an `.operations.json` sidecar counting all committed operation IDs and the final committed operation per conversation. Stopped tails are excluded. V7 selection uses the final committed family as its primary label; the semantic fingerprint retains the full task sequence. Export records operation IDs and catalog versions only in provenance, keeping training messages public-only. Existing evaluation-source exclusions and rights checks remain in force.
 
