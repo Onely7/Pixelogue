@@ -36,7 +36,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot-001/conversations.jsonl
 ```
 
-standardと通常pilotは `runtime.max_concurrent_images` により最大4画像、1 GPUのモデル対pilotは最大2画像を同時に処理します。独立した要求をvLLMへ重ねて送り、continuous batchingが働くようにするためです。測定時の `--workers` は設定上限以下に限り、より高い並列数の比較には上限を明示した別設定を使います。`conversations.jsonl` は計画した入力順で保存します。1つの対話内の往復は確定済みの公開履歴に依存するため、順番を変えません。1往復の中では、2つの評価器への呼び出しと、各検証器の2回の読み取りを並行して送ります。データベースへの書き込みは直列のままです。
+standard、通常pilot、1 GPUのモデル対pilotは、`runtime.max_concurrent_images` により最大4画像を同時に処理します。1 GPUのモデル対pilotは、完了した画像の枠にすぐ次の画像を入れます（`runtime.refill_completed_images: true`）。標準のモデル対とrouterを1 GPUで動かし、この補充を使った計測では、4画像は2画像に比べて1画像あたりの壁時計時間が約0.71倍で、収量はほぼ同じでした。8画像の追加短縮は約7%にとどまり、各画像の待ち時間は約2倍になりました。独立した要求をvLLMへ重ねて送り、continuous batchingが働くようにするためです。測定時の `--workers` は設定上限以下に限り、より高い並列数の比較には上限を明示した別設定を使います。`conversations.jsonl` は計画した入力順で保存します。1つの対話内の往復は確定済みの公開履歴に依存するため、順番を変えません。1往復の中では、2つの評価器への呼び出しと、各検証器の2回の読み取りを並行して送ります。データベースへの書き込みは直列のままです。
 
 並列数1/2/4の比較では、6回のrunと固定済みの `experiment-plan.json`・`progress.json` を同じディレクトリに保存し、`python validation/compare_concurrency_runs.py EXPERIMENT_DIR` を実行します。JSON・CSV・Markdownの集計で画像順、モデル割当、設定hash、ターン数を検査します。自動品質候補数／合成時GPU時間は記述的な値であり、人手承認済み出力／総割当GPU時間は独立評価票が確定するまで未測定です。
 

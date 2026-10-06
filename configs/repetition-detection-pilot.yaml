@@ -60,7 +60,8 @@ runtime:
   request_timeout_seconds: 180
   transport_max_attempts: 3
   structured_output_max_attempts: 2
-  max_concurrent_images: 2
+  max_concurrent_images: 4
+  refill_completed_images: true
   max_total_requests: 10000000
   max_total_output_tokens: 1000000000
   allow_external_inference: false

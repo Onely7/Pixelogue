@@ -15,7 +15,7 @@ uv run --locked pixelogue synthesize \
   --output artifacts/open-images-pilot/conversations.jsonl
 ```
 
-同時に処理する独立画像の上限は `runtime.max_concurrent_images` で指定します。standardと通常pilotは4件、1 GPUのモデル対pilotは2件を上限とします。直列実行には `--workers 1`、測定時には設定上限以下の `--workers N` を指定します。より高い並列数を比較するときは、別の設定で上限を明示します。1つの対話内の往復は順番どおりに処理し、最終的な対話レコードも入力順で保存します。
+同時に処理する独立画像の上限は `runtime.max_concurrent_images` で指定します。standard、通常pilot、1 GPUのモデル対pilotはいずれも4件を上限とします。直列実行には `--workers 1`、測定時には設定上限以下の `--workers N` を指定します。より高い並列数を比較するときは、別の設定で上限を明示します。1つの対話内の往復は順番どおりに処理し、最終的な対話レコードも入力順で保存します。
 
 言語と2つの生成モデルは、小さなbatchでも設定比率どおりに割り当てます。1対話の質問と回答は同じ生成モデルが担当します。各画像は次の順序で処理します。
 
