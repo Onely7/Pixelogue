@@ -3,7 +3,7 @@ profile: pilot
 seed: 20260915
 tasks:
   catalog_version: "7.0"
-  evidence_max_tokens: 4096
+  source_max_tokens: 4096
   answer_max_tokens: 1024
   enabled_extensions: []
 evaluation:
@@ -26,19 +26,12 @@ data:
     image_ids_manifest: null
     metadata_url: https://storage.googleapis.com/openimages/2018_04/validation/validation-images-with-rotation.csv
 models:
-  selector:
+  router:
     repo_id: Qwen/Qwen3.5-2B
     revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
     processor_revision: 15852e8c16360a2fea060d615a32b45270f8a8fc
     base_url: http://127.0.0.1:18000/v1
     gpu_memory_utilization: 0.2
-  selector_alternative:
-    repo_id: Qwen/Qwen3.6-35B-A3B
-    revision: 995ad96eacd98c81ed38be0c5b274b04031597b0
-    processor_revision: 995ad96eacd98c81ed38be0c5b274b04031597b0
-    base_url: http://127.0.0.1:8001/v1
-    tensor_parallel_size: 2
-  active_selector: default
   # Temporary one-GPU substitute; standard.yaml keeps the Qwen3.8/Gemma pair.
   generator_a:
     repo_id: Qwen/Qwen3.5-9B

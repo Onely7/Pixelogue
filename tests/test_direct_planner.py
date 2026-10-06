@@ -370,9 +370,7 @@ def make_coordinator(
     )
     store = RunStore(tmp_path / "runs", "direct", require_local_wal=False)
     store.initialize_run("direct", config.config_hash, config.profile)
-    selector = DirectClient(
-        config.models.active_selector_endpoint, router or {"image_profile": profile_value}
-    )
+    selector = DirectClient(config.models.router, router or {"image_profile": profile_value})
     a = DirectClient(config.models.generator_a, script_a)
     b = DirectClient(config.models.generator_b, script_b)
     return SynthesisCoordinator(config, "direct", store, selector, a, b), store, selector, a, b

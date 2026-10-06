@@ -314,7 +314,7 @@ def test_two_blind_judges_using_same_endpoint_replay_independently(
                         endpoint, config.runtime, run_id="blind-resume", store=store, client=http
                     )
                     for endpoint in [
-                        config.models.active_selector_endpoint,
+                        config.models.router,
                         config.models.generator_a,
                         config.models.generator_b,
                     ]

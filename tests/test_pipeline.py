@@ -722,9 +722,7 @@ def _coordinator(
     config = load_config(Path("configs/pilot.yaml"))
     store = RunStore(tmp_path / "runs", "test", require_local_wal=False)
     store.initialize_run("test", config.config_hash, config.profile)
-    selector = ScriptedClient(
-        config.models.active_selector_endpoint, concurrency_probe=concurrency_probe
-    )
+    selector = ScriptedClient(config.models.router, concurrency_probe=concurrency_probe)
     generators = [
         ScriptedClient(
             endpoint,
@@ -1625,7 +1623,7 @@ def test_holistic_prefix_survives_reopening_and_exports_only_committed_turns(
     store.close()
     with RunStore(tmp_path / "runs", "test", require_local_wal=False) as reopened:
         reopened.initialize_run("test", co.config.config_hash, co.config.profile)
-        resumed = SynthesisCoordinator(co.config, "test", reopened, co.selector, a, b)
+        resumed = SynthesisCoordinator(co.config, "test", reopened, co.router, a, b)
         calls = len(a.calls) + len(b.calls)
         assert resumed.synthesize_image(image, root) == accepted
         assert len(a.calls) + len(b.calls) == calls
@@ -1911,7 +1909,7 @@ def test_blind_transcription_sees_full_context_and_rejects_an_incomplete_bound(
         store.close()
 
 
-def test_chart_inventory_uses_the_configured_evidence_budget_without_accepting_unknown(
+def test_chart_inventory_uses_the_configured_source_budget_without_accepting_unknown(
     tmp_path, image_artifact, monkeypatch
 ):
     image, root = image_artifact
@@ -1952,7 +1950,7 @@ def test_chart_inventory_uses_the_configured_evidence_budget_without_accepting_u
             if stage == "chart_source":
                 assert "candidate_answer" not in payload
                 assert images == (original,)
-                assert kwargs["max_tokens"] == coordinator.config.tasks.evidence_max_tokens
+                assert kwargs["max_tokens"] == coordinator.config.tasks.source_max_tokens
                 assert instruction.scope_region is not None
                 return ChartSource(
                     task_id=instruction.task_id,

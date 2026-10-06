@@ -49,7 +49,7 @@ standard 構成では、次のサーバー設定を使います。
 ```text
 runtime/vllm/generator-a.yaml        -> Qwen3.8-27B-FP8、port 8002、tensor parallel size 2
 runtime/vllm/generator-b.yaml        -> Gemma 4 31B、port 8003、tensor parallel size 2
-runtime/vllm/selector-default.yaml   -> Qwen3.5-2B、port 8000、tensor parallel size 1
+runtime/vllm/router-default.yaml   -> Qwen3.5-2B、port 8000、tensor parallel size 1
 ```
 
 起動直前に `doctor --config configs/standard.yaml` を実行し、空いていると判定された GPU だけを割り当てます。各サーバーは、別々の `tmux` ウィンドウで起動します。次の例では、GPU番号を実際に空いていた番号へ置き換えてください。
@@ -65,7 +65,7 @@ CUDA_VISIBLE_DEVICES=2,3 HF_HOME=/var/tmp/pixelogue-hf \
 
 CUDA_VISIBLE_DEVICES=4 HF_HOME=/var/tmp/pixelogue-hf \
   uv run --project runtime/vllm --locked vllm serve \
-  --config runtime/vllm/selector-default.yaml
+  --config runtime/vllm/router-default.yaml
 ```
 
 ここで示したGPU番号は例です。必要なメモリは、ハードウェアと推論環境によって変わります。`doctor` による静的検査と、実際の起動確認の両方を行ってください。
@@ -98,7 +98,7 @@ curl -fsS http://127.0.0.1:8002/v1/models
 
 CUDA_VISIBLE_DEVICES=3 HF_HOME=/var/tmp/pixelogue-hf \
   uv run --project runtime/vllm --locked vllm serve \
-  --config runtime/vllm/selector-default.yaml
+  --config runtime/vllm/router-default.yaml
 ```
 
 Gitに含まれるGPUメモリ使用率の上限は、9Bサーバーが0.68、2Bの選択器が0.20です。48 GiB級のメモリを持つRTX 6000 Adaで確認した値なので、別のGPUへそのまま適用せず、容量を再確認してください。

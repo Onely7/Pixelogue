@@ -49,7 +49,7 @@ The standard servers use these files:
 ```text
 runtime/vllm/generator-a.yaml        -> Qwen3.8-27B-FP8, port 8002, tensor parallel size 2
 runtime/vllm/generator-b.yaml        -> Gemma 4 31B, port 8003, tensor parallel size 2
-runtime/vllm/selector-default.yaml   -> Qwen3.5-2B, port 8000, tensor parallel size 1
+runtime/vllm/router-default.yaml   -> Qwen3.5-2B, port 8000, tensor parallel size 1
 ```
 
 Run `doctor --config configs/standard.yaml` immediately before launch and assign only the idle GPUs it reports. Start each server in its own `tmux` window. For example, after replacing the device IDs with GPUs confirmed to be idle:
@@ -65,7 +65,7 @@ CUDA_VISIBLE_DEVICES=2,3 HF_HOME=/var/tmp/pixelogue-hf \
 
 CUDA_VISIBLE_DEVICES=4 HF_HOME=/var/tmp/pixelogue-hf \
   uv run --project runtime/vllm --locked vllm serve \
-  --config runtime/vllm/selector-default.yaml
+  --config runtime/vllm/router-default.yaml
 ```
 
 These device numbers are examples. Required memory depends on the hardware and serving runtime, so the static `doctor` result and an actual startup check are both required.
@@ -98,7 +98,7 @@ curl -fsS http://127.0.0.1:8002/v1/models
 
 CUDA_VISIBLE_DEVICES=3 HF_HOME=/var/tmp/pixelogue-hf \
   uv run --project runtime/vllm --locked vllm serve \
-  --config runtime/vllm/selector-default.yaml
+  --config runtime/vllm/router-default.yaml
 ```
 
 The checked-in memory-utilization limits are 0.68 for the 9B server and 0.20 for the 2B selector. They were validated for an RTX 6000 Ada with 48 GiB-class memory. Re-run capacity checks on a different GPU instead of copying those values blindly.

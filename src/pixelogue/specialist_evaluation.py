@@ -334,7 +334,7 @@ def run_specialist_evaluation(
                         return model.model_validate_json(canonical_json(saved.value))
                     request_images = () if stage in ANSWER_ONLY_STAGES else (image,)
                     max_tokens = (
-                        config.tasks.evidence_max_tokens
+                        config.tasks.source_max_tokens
                         if stage.startswith("specialist_") and stage.endswith("_source")
                         else 2048
                     )

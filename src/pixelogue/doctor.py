@@ -114,18 +114,7 @@ def diagnose(config: PixelogueConfig, *, check_servers: bool = False) -> DoctorR
     """Inspect revision locks, idle GPU capacity, and optional local endpoints."""
     gpus = inspect_gpus()
     endpoints: Sequence[tuple[str, ModelEndpoint, bool]] = (
-        (
-            "selector",
-            config.models.active_selector_endpoint,
-            True,
-        ),
-        (
-            "selector_alternative",
-            config.models.selector_alternative
-            if config.models.active_selector == "default"
-            else config.models.selector,
-            False,
-        ),
+        ("router", config.models.router, True),
         ("generator_a", config.models.generator_a, True),
         ("generator_b", config.models.generator_b, True),
     )

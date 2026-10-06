@@ -435,9 +435,7 @@ def run_ablation_plan(
         store.initialize_run(
             run_id, canonical_hash({"research_plan": plan.plan_hash}), config.profile
         )
-        selector = VllmClient(
-            config.models.active_selector_endpoint, config.runtime, run_id=run_id, store=None
-        )
+        router = VllmClient(config.models.router, config.runtime, run_id=run_id, store=None)
         clients = {
             "generator_a": VllmClient(
                 config.models.generator_a, config.runtime, run_id=run_id, store=None
@@ -447,7 +445,7 @@ def run_ablation_plan(
             ),
         }
         coordinator = SynthesisCoordinator(
-            config, run_id, store, selector, clients["generator_a"], clients["generator_b"]
+            config, run_id, store, router, clients["generator_a"], clients["generator_b"]
         )
         try:
             for trial in plan.trials:
@@ -465,7 +463,7 @@ def run_ablation_plan(
                 write_json(result_path, result)
                 stats["completed" if result.status == "COMPLETE" else "failed"] += 1
         finally:
-            selector.client.close()
+            router.client.close()
             for client in clients.values():
                 client.client.close()
     return stats

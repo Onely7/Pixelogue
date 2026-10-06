@@ -127,11 +127,9 @@ class ModelEndpoint(StrictModel):
 
 
 class ModelConfig(StrictModel):
-    """Assign fixed models to instruction selection, generation, and judging."""
+    """Assign fixed models to image routing, question drafting, answering and judging."""
 
-    selector: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.5-2B")
-    selector_alternative: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.6-35B-A3B")
-    active_selector: Literal["default", "alternative"] = "default"
+    router: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.5-2B")
     generator_a: ModelEndpoint = ModelEndpoint(repo_id="Qwen/Qwen3.8-27B-FP8", quantization="fp8")
     generator_b: ModelEndpoint = ModelEndpoint(
         repo_id="google/gemma-4-31B-it-qat-w4a16-ct", quantization="compressed-tensors"
@@ -143,12 +141,9 @@ class ModelConfig(StrictModel):
 
     @model_validator(mode="after")
     def validate_roles(self) -> ModelConfig:
-        """Require the approved selector and generation repositories."""
-        allowed_selectors = {"Qwen/Qwen3.5-2B", "Qwen/Qwen3.6-35B-A3B"}
-        if self.selector.repo_id not in allowed_selectors:
-            raise ValueError("selector must be an approved Qwen instruction selector")
-        if self.selector_alternative.repo_id not in allowed_selectors:
-            raise ValueError("selector_alternative must be an approved Qwen selector")
+        """Require the approved image router and generation repositories."""
+        if self.router.repo_id != "Qwen/Qwen3.5-2B":
+            raise ValueError("router must be the approved Qwen/Qwen3.5-2B image router")
         generator_repos = (self.generator_a.repo_id, self.generator_b.repo_id)
         if generator_repos not in {PRIMARY_GENERATOR_REPOS, PILOT_GENERATOR_REPOS}:
             raise ValueError(
@@ -165,13 +160,6 @@ class ModelConfig(StrictModel):
         if any(weight <= 0 for weight in self.generation_allocation.values()):
             raise ValueError("generation allocation weights must be positive")
         return self
-
-    @property
-    def active_selector_endpoint(self) -> ModelEndpoint:
-        """Return the explicitly selected instruction model."""
-        if self.active_selector == "alternative":
-            return self.selector_alternative
-        return self.selector
 
 
 class LanguageTarget(StrictModel):
@@ -317,7 +305,7 @@ class TaskRuntimeConfig(StrictModel):
     """Bound question drafting, answers and blind source reading independently of taxonomy size."""
 
     catalog_version: Literal["7.0"] = "7.0"
-    evidence_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
+    source_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
     answer_max_tokens: Annotated[int, Field(ge=256, le=8192)] = 1024
     enabled_extensions: tuple[str, ...] = ()
     calibration_manifest: Path | None = None

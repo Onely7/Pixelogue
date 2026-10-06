@@ -33,7 +33,7 @@ def _gpus(count: int) -> tuple[GpuDevice, ...]:
 
 def test_required_servers_receive_distinct_gpus_or_report_shortfall() -> None:
     endpoints = (
-        ("selector", _endpoint("Qwen/Qwen3.5-2B", 1), True),
+        ("router", _endpoint("Qwen/Qwen3.5-2B", 1), True),
         ("generator_a", _endpoint("Qwen/Qwen3.8-27B-FP8", 2), True),
         ("generator_b", _endpoint("google/gemma-4-31B-it-qat-w4a16-ct", 2), True),
     )
@@ -62,8 +62,8 @@ def test_unknown_utilization_is_reported_without_admitting_the_device(
     assert gpus[0].utilization_percent is None
     assert not gpus[0].idle
     assert gpus[1].idle
-    endpoints = (("selector", _endpoint("Qwen/Qwen3.5-2B", 1), True),)
-    assert _allocate_required_gpus(endpoints, gpus) == {"selector": (1,)}
+    endpoints = (("router", _endpoint("Qwen/Qwen3.5-2B", 1), True),)
+    assert _allocate_required_gpus(endpoints, gpus) == {"router": (1,)}
 
 
 def test_quantized_standard_pair_can_share_one_large_idle_gpu() -> None:
@@ -78,7 +78,7 @@ def test_quantized_standard_pair_can_share_one_large_idle_gpu() -> None:
     )
     endpoints = (
         (
-            "selector",
+            "router",
             _endpoint("Qwen/Qwen3.5-2B", 1).model_copy(update={"gpu_memory_utilization": 0.10}),
             True,
         ),
@@ -100,5 +100,5 @@ def test_quantized_standard_pair_can_share_one_large_idle_gpu() -> None:
     assert _allocate_required_gpus(endpoints, (gpu,)) == {
         "generator_a": (4,),
         "generator_b": (4,),
-        "selector": (4,),
+        "router": (4,),
     }

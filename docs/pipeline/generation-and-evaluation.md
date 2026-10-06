@@ -12,7 +12,7 @@ Long GPU processes must run in `tmux`. Inspect `nvidia-smi`, choose an idle devi
 
 ```text
 runtime/vllm/generator-qwen35-9b.yaml  -> port 8002
-runtime/vllm/selector-default.yaml     -> port 8000
+runtime/vllm/router-default.yaml     -> port 8000
 ```
 
 Check both through Pixelogue:

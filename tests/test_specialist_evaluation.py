@@ -415,5 +415,5 @@ def test_invalid_specialist_reading_gets_one_bounded_retry(
     else:
         assert "positive extent" in (feedback[1] or "")
     assert len(feedback) == 3
-    assert output_limits == [config.tasks.evidence_max_tokens] * 3
+    assert output_limits == [config.tasks.source_max_tokens] * 3
     assert fallback_modes == [False, uses_json_fallback, False]

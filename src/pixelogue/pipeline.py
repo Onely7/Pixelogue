@@ -183,7 +183,7 @@ class SynthesisCoordinator:
         config: PixelogueConfig,
         run_id: str,
         store: RunStore,
-        selector: InferenceClient,
+        router: InferenceClient,
         generator_a: InferenceClient,
         generator_b: InferenceClient,
     ) -> None:
@@ -191,7 +191,7 @@ class SynthesisCoordinator:
         self.config = config
         self.run_id = run_id
         self.store = store
-        self.selector = selector
+        self.router = router
         self.generators = {"generator_a": generator_a, "generator_b": generator_b}
         # Judge pairs and paired blind readers overlap; store writes stay serialized.
         self._judge_pool = ThreadPoolExecutor(
@@ -485,7 +485,7 @@ class SynthesisCoordinator:
         """Ask the router model for a coarse profile; malformed output falls back to defaults."""
         try:
             return self._invoke(
-                self.selector,
+                self.router,
                 "image_profile",
                 {
                     "image_views": image_views,
@@ -1079,7 +1079,7 @@ class SynthesisCoordinator:
             answer=answer,
             history_hash=snapshot.history_hash,
             generation_model=generator.endpoint.repo_id,
-            selector_model=self.selector.endpoint.repo_id,
+            selector_model=self.router.endpoint.repo_id,
             rating=rating,
             status=turn_status,
         )
@@ -1547,7 +1547,7 @@ class SynthesisCoordinator:
             # Full context lets blind transcription readers detect a requested unit
             # extending beyond its bound rectangle; the controller checks containment.
             max_tokens = (
-                self.config.tasks.evidence_max_tokens
+                self.config.tasks.source_max_tokens
                 if stage in {"table_source", "table_lookup_source", "chart_source", "graph_source"}
                 or (stage.startswith("specialist_") and stage.endswith("_source"))
                 else 2048

@@ -16,7 +16,7 @@ def test_example_profiles_are_valid_and_separate() -> None:
     assert pilot.profile == "pilot" and pilot.data.pilot
     assert standard.profile == "standard" and not standard.data.pilot
     assert standard.data.target_dialogues == 30_000
-    assert pilot.models.active_selector_endpoint.repo_id == "Qwen/Qwen3.5-2B"
+    assert pilot.models.router.repo_id == "Qwen/Qwen3.5-2B"
     assert (standard.models.generator_a.repo_id, standard.models.generator_b.repo_id) == (
         "Qwen/Qwen3.8-27B-FP8",
         "google/gemma-4-31B-it-qat-w4a16-ct",
@@ -30,8 +30,7 @@ def test_example_profiles_are_valid_and_separate() -> None:
     assert all(
         endpoint.revision and endpoint.processor_revision
         for endpoint in (
-            pilot.models.selector,
-            pilot.models.selector_alternative,
+            pilot.models.router,
             pilot.models.generator_a,
             pilot.models.generator_b,
         )
@@ -81,7 +80,7 @@ def test_unknown_model_and_quantization_are_rejected() -> None:
         PixelogueConfig.model_validate(base)
 
     base = load_config(Path("configs/pilot.yaml")).model_dump(mode="json")
-    base["models"]["selector"]["quantization"] = "int4"
+    base["models"]["router"]["quantization"] = "int4"
     with pytest.raises(ValidationError):
         PixelogueConfig.model_validate(base)
 

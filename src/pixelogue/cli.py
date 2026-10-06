@@ -360,7 +360,7 @@ def _clients(
     config = load_config(config_path)
     return (
         VllmClient(
-            config.models.active_selector_endpoint,
+            config.models.router,
             config.runtime,
             run_id=run_id,
             store=store,
@@ -659,12 +659,12 @@ def synthesize(
         require_local_wal=config.storage.require_local_wal,
     ) as store:
         store.initialize_run(run_id, run_contract_hash, config.profile)
-        selector, generator_a, generator_b = _clients(config_path, run_id, store)
+        router, generator_a, generator_b = _clients(config_path, run_id, store)
         coordinator = SynthesisCoordinator(
             config,
             run_id,
             store,
-            selector,
+            router,
             generator_a,
             generator_b,
         )
@@ -751,12 +751,12 @@ def rate_existing(
         require_local_wal=config.storage.require_local_wal,
     ) as store:
         store.initialize_run(run_id, config.config_hash, config.profile)
-        selector, generator_a, generator_b = _clients(config_path, run_id, store)
+        router, generator_a, generator_b = _clients(config_path, run_id, store)
         coordinator = SynthesisCoordinator(
             config,
             run_id,
             store,
-            selector,
+            router,
             generator_a,
             generator_b,
         )

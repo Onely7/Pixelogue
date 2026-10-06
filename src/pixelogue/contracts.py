@@ -126,7 +126,7 @@ class HistorySnapshot(StrictModel):
 
 
 class InstructionCandidate(StrictModel):
-    """A grounded task option offered to an instruction selector."""
+    """One drafted operation with its public parameters and verification contracts."""
 
     candidate_id: str
     task_id: str
@@ -247,6 +247,7 @@ class TurnArtifact(StrictModel):
     answer: PublicMessage
     history_hash: Sha256
     generation_model: str
+    # The image router; the field keeps its earlier name so saved turns stay readable.
     selector_model: str
     requirements: tuple[Requirement, ...] = ()
     rating: TurnRating

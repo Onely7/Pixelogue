@@ -12,7 +12,7 @@
 
 ```text
 runtime/vllm/generator-qwen35-9b.yaml  -> port 8002
-runtime/vllm/selector-default.yaml     -> port 8000
+runtime/vllm/router-default.yaml     -> port 8000
 ```
 
 Pixelogue側から両方を確認します。

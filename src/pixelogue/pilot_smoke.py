@@ -315,10 +315,10 @@ def main() -> None:
         _wait_model(generator, 18002, "Qwen/Qwen3.5-9B", 1800)
         _phase(output_dir, "generator_ready")
         _request_holder_handoff(output_dir)
-        _phase(output_dir, "selector_loading")
-        selector = _start_server("selector", "runtime/vllm/selector-gpu-watch.yaml", output_dir)
-        _wait_model(selector, 18000, "Qwen/Qwen3.5-2B", 900)
-        _phase(output_dir, "selector_ready")
+        _phase(output_dir, "router_loading")
+        router = _start_server("router", "runtime/vllm/router-gpu-watch.yaml", output_dir)
+        _wait_model(router, 18000, "Qwen/Qwen3.5-2B", 900)
+        _phase(output_dir, "router_ready")
         _run_logged(
             [
                 "uv",
