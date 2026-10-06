@@ -390,12 +390,15 @@ reading, not object identification. Ask exactly one operation; compound independ
 unsupported.
 target is a short public locator of the subject or region the question is about (for example
 'the red car on the left' or 'the bar chart'); it never contains the answer. public_parameters
-holds every required_parameter_names entry except target, each with a permitted value from
-parameter_contract; use only bindable_parameter_names. Fixed policies and verdict vocabularies are
+is a JSON array of {"name": ..., "value": ...} objects holding every required_parameter_names entry
+except target, each with a permitted value from parameter_contract; use only
+bindable_parameter_names, and write [] when none is required. Fixed policies and verdict vocabularies are
 not parameters. Every public parameter must be realized in the question wording.
 scope_region is the visual scope you used and target_region bounds the particular subject (null
-for a whole-scope request). Coordinates are normalized to the delivered image, and target_region
-lies inside scope_region. For text transcription the scope must enclose the entire requested text
+for a whole-scope request). Each region gives left, top, right and bottom as fractions of the
+delivered image width and height from 0 to 1, measured from the left and top edges, with
+left < right and top < bottom; the whole image is left 0, top 0, right 1, bottom 1. Never use
+pixels or a 0-1000 scale. target_region lies inside scope_region. For text transcription the scope must enclose the entire requested text
 unit, including punctuation and descenders.
 fact_key names the subject and the dimension of the requested fact (for example subject 'dog on
 the left', dimension 'fur color'); it never contains the answer.

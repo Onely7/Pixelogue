@@ -342,6 +342,49 @@ def test_source_schema_retry_names_nested_contracts(
         assert "edge array" not in (client.retry_feedback[1] or "")
 
 
+@pytest.mark.parametrize("reason", ["MODEL_SCHEMA_MISMATCH", "MODEL_OUTPUT_REPETITION"])
+def test_draft_retry_restates_region_and_parameter_formats(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reason: str
+) -> None:
+    config = load_config(Path("configs/pilot.yaml"))
+    store = RunStore(tmp_path / "runs", "draft-retry", require_local_wal=False)
+    client = ScriptedClient(config.models.generator_a, reject_selection=True)
+    coordinator = SynthesisCoordinator(config, "draft-retry", store, client, client, client)
+    original = client.invoke
+    failed = False
+
+    def fail_once(*args: Any, **kwargs: Any) -> ModelResponse:
+        nonlocal failed
+        if not failed:
+            failed = True
+            client.retry_feedback.append(kwargs.get("retry_feedback"))
+            raise ExecutionError(reason, "invalid draft batch")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(client, "invoke", fail_once)
+    try:
+        batch = coordinator._invoke(
+            client,
+            "question_draft",
+            {},
+            (),
+            QuestionDraftBatch,
+            max_tokens=256,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        store.close()
+
+    assert batch.drafts == ()
+    assert client.retry_feedback[0] is None
+    feedback = client.retry_feedback[1] or ""
+    assert all(
+        fragment in feedback
+        for fragment in ("JSON array", "fractions from 0 to 1", "left < right", "0-1000")
+    )
+
+
 def test_chart_retry_names_bad_regions_without_copying_private_output(tmp_path, monkeypatch):
     config = load_config(Path("configs/pilot.yaml"))
     store = RunStore(tmp_path / "runs", "chart-region-retry", require_local_wal=False)

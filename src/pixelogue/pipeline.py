@@ -98,6 +98,14 @@ MODEL_OUTPUT_FAILURES = frozenset(
         "MODEL_SCHEMA_MISMATCH",
     }
 )
+# Gemma tends to write 0-1000 boxes or a parameter mapping; under constrained decoding those
+# collapse to {1, 1, 1, 1} regions or whitespace runaways, so a retry restates both formats.
+DRAFT_FORMAT_FEEDBACK = (
+    " Write public_parameters as a JSON array of name and value objects ([] when none is"
+    " required). Give every scope_region and target_region as fractions from 0 to 1 of the"
+    " image width and height with left < right and top < bottom, never pixels or a 0-1000"
+    " scale; target_region stays inside scope_region or is null."
+)
 _INTERNAL_QUESTION_REFERENCE = re.compile(
     r"(?<![A-Za-z0-9])(?:"
     r"(?:scope|view|candidate|evidence|obs)_[A-Za-z0-9_]+"
@@ -1991,6 +1999,11 @@ class SynthesisCoordinator:
                                 " positive-extent rectangles inside scope_region."
                             )
                             retry_feedback += self._chart_region_retry_feedback(error)
+                    if stage == "question_draft" and error.reason in {
+                        "MODEL_SCHEMA_MISMATCH",
+                        "MODEL_OUTPUT_REPETITION",
+                    }:
+                        retry_feedback += DRAFT_FORMAT_FEEDBACK
                     if error.reason == "MODEL_SCHEMA_MISMATCH" and str(error).startswith(
                         "DUPLICATE_JSON_KEY"
                     ):
