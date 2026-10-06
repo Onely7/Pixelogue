@@ -63,7 +63,6 @@ uv run --locked pytest
 | 画像のルーター | `Qwen/Qwen3.8-27B`（生成器 A のサーバー） |
 | 生成器・評価器 A | [`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B) |
 | 生成器・評価器 B | [`google/gemma-4-31B-it`](https://huggingface.co/google/gemma-4-31B-it) |
-| 独立した学習側画像プロセッサー | `Qwen/Qwen3-VL-8B-Instruct` |
 
 `configs/pilot.yaml` は、1 GPUで動作を検証するための一時的なプロファイルです。生成器と評価器の2つの論理的な役割を、1つの `Qwen/Qwen3.5-9B` エンドポイントへ割り当てています。この構成ではパイプラインの動作を確認できますが、異なるモデルによる評価の多様性は確認できません。画像の割り当ては別の `Qwen/Qwen3.5-2B` サーバーが行います。`configs/standard.yaml` で使用する本来のモデルは変更していません。
 

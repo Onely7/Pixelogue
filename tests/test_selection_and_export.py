@@ -3,6 +3,7 @@ from __future__ import annotations
 from itertools import combinations
 
 import pytest
+from pydantic import ValidationError
 
 from pixelogue.contracts import (
     ConversationArtifact,
@@ -10,6 +11,7 @@ from pixelogue.contracts import (
     PublicMessage,
     SelectionCandidate,
     SourcePurpose,
+    TrainingContent,
     TurnArtifact,
     TurnRating,
 )
@@ -150,6 +152,26 @@ def test_training_export_places_image_once(image_artifact) -> None:
     ]
     assert len(image_parts) == 1
     assert record.messages[0].role == "user"
+    view = image_artifact[0].full_view
+    assert (image_parts[0].image, image_parts[0].width, image_parts[0].height) == (
+        view.relative_path,
+        256,
+        192,
+    )
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"type": "image", "image": "images/a.png", "width": 640},
+        {"type": "image", "image": "images/a.png", "height": 480},
+        {"type": "image", "image": "images/a.png", "width": 0, "height": 480},
+        {"type": "text", "text": "A question?", "width": 640, "height": 480},
+    ],
+)
+def test_training_parts_require_pixel_size_only_on_images(fields: dict) -> None:
+    with pytest.raises(ValidationError):
+        TrainingContent.model_validate(fields)
 
 
 def test_evaluation_image_can_never_be_training_output(image_artifact) -> None:

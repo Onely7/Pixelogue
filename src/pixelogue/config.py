@@ -347,24 +347,6 @@ class TaskRuntimeConfig(StrictModel):
         return self
 
 
-class StudentViewConfig(StrictModel):
-    """Training-side image processor lock kept independent from teacher models."""
-
-    processor_repo_id: Literal["Qwen/Qwen3-VL-8B-Instruct"] = "Qwen/Qwen3-VL-8B-Instruct"
-    processor_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")] = (
-        "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b"
-    )
-    min_pixels: Annotated[int, Field(ge=1)] = 128 * 128
-    max_pixels: Annotated[int, Field(ge=1)] = 2048 * 2048
-
-    @model_validator(mode="after")
-    def validate_pixel_window(self) -> StudentViewConfig:
-        """Require a non-empty supported pixel window."""
-        if self.max_pixels < self.min_pixels:
-            raise ValueError("student max_pixels must be at least min_pixels")
-        return self
-
-
 class EvaluationConfig(StrictModel):
     """Configure the blind question gate and holistic answer review."""
 
@@ -385,7 +367,6 @@ class PixelogueConfig(StrictModel):
     models: ModelConfig = ModelConfig()
     storage: StorageConfig = StorageConfig()
     runtime: RuntimeConfig = RuntimeConfig()
-    student_view: StudentViewConfig = StudentViewConfig()
     tasks: TaskRuntimeConfig = TaskRuntimeConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
 

@@ -83,7 +83,7 @@ Only the first kind enters `training.jsonl`. Ratings and provenance are written 
 
 **Pool** : The fixed set of quality-candidate conversations from which selection chooses final records.
 
-**Processor** : The image preprocessor paired with a model. The training-side processor's revision and pixel limits are recorded separately from every teacher model.
+**Processor** : The image preprocessor paired with a model. Each model endpoint pins its processor revision (`processor_revision`) together with the model revision.
 
 **Endpoint** : The local HTTP address where Pixelogue sends model requests, such as `http://127.0.0.1:8002/v1`.
 
@@ -106,4 +106,4 @@ The standard configuration uses `Qwen/Qwen3.8-27B` for generator and evaluator r
 
 The temporary `configs/pilot.yaml` override points roles A and B to one `Qwen/Qwen3.5-9B` endpoint so the current validation run fits on one GPU. It checks the pipeline path without providing two model lineages. Pilot results must state that limitation and must not be presented as results from the standard model pair.
 
-For the standard pair, configuration requires the router to repeat generator A's endpoint; only the temporary Qwen3.5-9B pilot uses a separate `Qwen/Qwen3.5-2B` router. No other model replaces the router after a failure. The training-side image processor is separately pinned to `Qwen/Qwen3-VL-8B-Instruct`; changing a teacher model does not change that lock.
+For the standard pair, configuration requires the router to repeat generator A's endpoint; only the temporary Qwen3.5-9B pilot uses a separate `Qwen/Qwen3.5-2B` router. No other model replaces the router after a failure.

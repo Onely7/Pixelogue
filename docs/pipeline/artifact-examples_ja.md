@@ -322,33 +322,33 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
     {
       "role": "user",
       "content": [
-        {"type": "image", "text": null, "image": "images/ab/abcdef.png"},
-        {"type": "text", "text": "What color are the squares in this image?", "image": null}
+        {"type": "image", "text": null, "image": "images/ab/abcdef.png", "width": 640, "height": 480},
+        {"type": "text", "text": "What color are the squares in this image?", "image": null, "width": null, "height": null}
       ]
     },
     {
       "role": "assistant",
       "content": [
-        {"type": "text", "text": "They are red.", "image": null}
+        {"type": "text", "text": "They are red.", "image": null, "width": null, "height": null}
       ]
     },
     {
       "role": "user",
       "content": [
-        {"type": "text", "text": "How are the squares arranged?", "image": null}
+        {"type": "text", "text": "How are the squares arranged?", "image": null, "width": null, "height": null}
       ]
     },
     {
       "role": "assistant",
       "content": [
-        {"type": "text", "text": "They form a single horizontal row.", "image": null}
+        {"type": "text", "text": "They form a single horizontal row.", "image": null, "width": null, "height": null}
       ]
     }
   ]
 }
 ```
 
-画像は1回だけ現れ、後の質問は保存された公開履歴に依存します。操作契約、質問案、評価器の票、評価記録は含まれません。
+画像は1回だけ現れ、出力した画像ファイルの横と縦のピクセル数も記録されます。後の質問は保存された公開履歴に依存します。操作契約、質問案、評価器の票、評価記録は含まれません。
 
 対応する来歴は、別の行として保存します。
 
@@ -359,12 +359,6 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
   "image_id": "image-example-001",
   "visual_group_id": "visual-group-example-001",
   "generation_model": "Qwen/Qwen3.8-27B",
-  "student_processor_lock": {
-    "repo_id": "Qwen/Qwen3-VL-8B-Instruct",
-    "revision": "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",
-    "min_pixels": 16384,
-    "max_pixels": 4194304
-  },
   "operation_ids": ["attribute_lookup", "grounded_description"],
   "catalog_versions": ["7.0", "7.0"],
   "primary_operation_id": "grounded_description"

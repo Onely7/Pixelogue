@@ -36,8 +36,11 @@ def training_record(conversation: ConversationArtifact) -> TrainingRecord:
             raise AuditError("UNCOMMITTED_TURN_EXPORT", conversation.conversation_id)
         user_content: list[TrainingContent] = []
         if index == 0:
+            view = conversation.image.full_view
             user_content.append(
-                TrainingContent(type="image", image=conversation.image.full_view.relative_path)
+                TrainingContent(
+                    type="image", image=view.relative_path, width=view.width, height=view.height
+                )
             )
         user_content.append(TrainingContent(type="text", text=turn.question.content))
         messages.append(TrainingMessage(role="user", content=tuple(user_content)))
@@ -56,7 +59,6 @@ def export_bundle(
     destination: Path,
     *,
     profile: str,
-    student_processor_lock: dict[str, object] | None = None,
 ) -> dict[str, Path]:
     """Write immutable training, rating, and provenance JSONL outputs."""
     if profile != "standard":
@@ -100,7 +102,6 @@ def export_bundle(
                 "image_id": item.image.image_id,
                 "visual_group_id": item.image.visual_group_id,
                 "generation_model": item.generation_model,
-                "student_processor_lock": student_processor_lock,
                 "operation_ids": [turn.instruction.task_id for turn in item.turns],
                 "catalog_versions": [
                     turn.instruction.catalog_version or "legacy-24" for turn in item.turns

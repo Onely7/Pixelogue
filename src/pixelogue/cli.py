@@ -834,12 +834,6 @@ def export(
         read_json(selection_path, SelectionManifest),
         destination,
         profile=config.profile,
-        student_processor_lock={
-            "repo_id": config.student_view.processor_repo_id,
-            "revision": config.student_view.processor_revision,
-            "min_pixels": config.student_view.min_pixels,
-            "max_pixels": config.student_view.max_pixels,
-        },
     )
     typer.echo(json.dumps({key: str(path) for key, path in outputs.items()}))
 

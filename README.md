@@ -67,7 +67,6 @@ Japanese documentation begins at [README_ja.md](README_ja.md).
 | Image router | `Qwen/Qwen3.8-27B` (generator A's server) |
 | Generator and evaluator A | [`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B) |
 | Generator and evaluator B | [`google/gemma-4-31B-it`](https://huggingface.co/google/gemma-4-31B-it) |
-| Independent training-side image processor | `Qwen/Qwen3-VL-8B-Instruct` |
 
 `configs/pilot.yaml` is a temporary one-GPU validation profile. It maps both logical generator and evaluator roles to one `Qwen/Qwen3.5-9B` endpoint, so it checks pipeline operation without providing evaluator-model diversity. Its images are routed by a separate `Qwen/Qwen3.5-2B` server. It does not change the intended models in `configs/standard.yaml`.
 

@@ -322,33 +322,33 @@ No evaluation-only row should be presented as released training data. The follow
     {
       "role": "user",
       "content": [
-        {"type": "image", "text": null, "image": "images/ab/abcdef.png"},
-        {"type": "text", "text": "What color are the squares in this image?", "image": null}
+        {"type": "image", "text": null, "image": "images/ab/abcdef.png", "width": 640, "height": 480},
+        {"type": "text", "text": "What color are the squares in this image?", "image": null, "width": null, "height": null}
       ]
     },
     {
       "role": "assistant",
       "content": [
-        {"type": "text", "text": "They are red.", "image": null}
+        {"type": "text", "text": "They are red.", "image": null, "width": null, "height": null}
       ]
     },
     {
       "role": "user",
       "content": [
-        {"type": "text", "text": "How are the squares arranged?", "image": null}
+        {"type": "text", "text": "How are the squares arranged?", "image": null, "width": null, "height": null}
       ]
     },
     {
       "role": "assistant",
       "content": [
-        {"type": "text", "text": "They form a single horizontal row.", "image": null}
+        {"type": "text", "text": "They form a single horizontal row.", "image": null, "width": null, "height": null}
       ]
     }
   ]
 }
 ```
 
-The image appears once. Later questions rely on the preserved public history. Operation contracts, drafts, votes, and rating records are absent.
+The image appears once, with the pixel width and height of the exported file. Later questions rely on the preserved public history. Operation contracts, drafts, votes, and rating records are absent.
 
 The corresponding provenance row remains separate:
 
@@ -359,12 +359,6 @@ The corresponding provenance row remains separate:
   "image_id": "image-example-001",
   "visual_group_id": "visual-group-example-001",
   "generation_model": "Qwen/Qwen3.8-27B",
-  "student_processor_lock": {
-    "repo_id": "Qwen/Qwen3-VL-8B-Instruct",
-    "revision": "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",
-    "min_pixels": 16384,
-    "max_pixels": 4194304
-  },
   "operation_ids": ["attribute_lookup", "grounded_description"],
   "catalog_versions": ["7.0", "7.0"],
   "primary_operation_id": "grounded_description"

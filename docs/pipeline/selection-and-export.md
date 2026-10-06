@@ -78,9 +78,9 @@ uv run --locked pixelogue export \
 
 | File | Intended contents |
 |---|---|
-| `training.jsonl` | Public user and assistant messages. The image appears once, in the first user message. |
+| `training.jsonl` | Public user and assistant messages. The image appears once, in the first user message, with its pixel width and height. |
 | `ratings.jsonl` | Per-turn rating items (holistic review and operation checks) and aggregate ratings. |
-| `provenance.jsonl` | Source, image, visual group, generation model, operation IDs and catalog versions, and training-side processor lock. |
+| `provenance.jsonl` | Source, image, visual group, generation model, and operation IDs and catalog versions. |
 | `selection.json` | Frozen-pool identity, selected IDs, solver result, and audit binding. |
 
 Candidate IDs, drafts, fact keys, judge reasons, source titles, and operational fields never enter `training.jsonl`. An evaluation image is rejected again at export even if an earlier step was misconfigured.

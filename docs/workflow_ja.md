@@ -95,12 +95,12 @@ uv run --locked pixelogue export \
 
 | ファイル | 内容 |
 |---|---|
-| `training.jsonl` | 公開 user/assistant 文。画像参照は最初の user message に 1 回だけ |
+| `training.jsonl` | 公開 user/assistant 文。画像参照は最初の user message に 1 回だけ入り、横と縦のピクセル数も記録 |
 | `ratings.jsonl` | turn ごとの評価項目と集約結果 |
-| `provenance.jsonl` | 出典、visual group、生成モデル、操作ID、独立した student processor lock |
+| `provenance.jsonl` | 出典、visual group、生成モデル、操作ID |
 | `selection.json` | 固定 pool、選抜 ID、solver status、監査 hash |
 
-候補 ID、質問案、fact key、評価理由、画像タイトル、運用情報は `training.jsonl` に入りません。学習側のQwen3-VL-8B processor lock は、ルーターを含むどの教師モデルとも独立しており、provenance に記録します。
+候補 ID、質問案、fact key、評価理由、画像タイトル、運用情報は `training.jsonl` に入りません。画像の要素には、出力した画像ファイルの横と縦のピクセル数を記録します。後でどのモデルを学習させる場合も、そのモデルの縮小・拡大の規則を当てはめられます。
 
 ### 生成中の進捗表示
 

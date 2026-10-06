@@ -99,12 +99,12 @@ The output files have different audiences:
 
 | File | Contents |
 |---|---|
-| `training.jsonl` | Public user and assistant messages; the image appears once in the first user message |
+| `training.jsonl` | Public user and assistant messages; the image appears once in the first user message, with its pixel width and height |
 | `ratings.jsonl` | Per-turn rating items and aggregate results |
-| `provenance.jsonl` | Source, visual group, generator, operation IDs, and independent student processor lock |
+| `provenance.jsonl` | Source, visual group, generator, and operation IDs |
 | `selection.json` | Frozen pool identity, selected IDs, solver status, and audit hash |
 
-Candidate IDs, drafts, fact keys, judge reasons, source titles, and operational fields never enter `training.jsonl`. The training-side Qwen3-VL-8B processor lock is independent of every teacher model, including the router, and is recorded in provenance.
+Candidate IDs, drafts, fact keys, judge reasons, source titles, and operational fields never enter `training.jsonl`. The image part records the exported file's pixel width and height, so a later training run can apply any model's resizing rule.
 
 ### Synthesis progress
 

@@ -78,9 +78,9 @@ uv run --locked pixelogue export \
 
 | ファイル | 内容 |
 |---|---|
-| `training.jsonl` | 公開する質問と回答。画像参照は最初のuser messageに1回だけ入る。 |
+| `training.jsonl` | 公開する質問と回答。画像参照は最初のuser messageに1回だけ入り、横と縦のピクセル数も記録する。 |
 | `ratings.jsonl` | 往復ごとの評価項目（総合評価と操作検証）と集約結果。 |
-| `provenance.jsonl` | 取得元、画像、類似画像グループ、生成モデル、操作IDとカタログ版、学習側画像プロセッサーの固定情報。 |
+| `provenance.jsonl` | 取得元、画像、類似画像グループ、生成モデル、操作IDとカタログ版。 |
 | `selection.json` | 固定pool、選抜ID、ソルバーの結果、監査との結び付き。 |
 
 candidate ID、質問案、fact key、評価理由、画像タイトル、実行情報は `training.jsonl` に入りません。前段の設定に誤りがあっても、検証用画像はexport時にもう一度拒否されます。

@@ -354,19 +354,29 @@ class SelectionManifest(StrictModel):
 
 
 class TrainingContent(StrictModel):
-    """One text or image part in a training message."""
+    """One text or image part in a training message.
+
+    An image part always records the pixel width and height of the exported file, so any
+    later training run can apply its own model's resizing rule.
+    """
 
     type: Literal["text", "image"]
     text: str | None = None
     image: str | None = None
+    width: Annotated[int, Field(ge=1)] | None = None
+    height: Annotated[int, Field(ge=1)] | None = None
 
     @model_validator(mode="after")
     def validate_content(self) -> TrainingContent:
-        """Require exactly one value matching the content kind."""
-        if self.type == "text" and (self.text is None or self.image is not None):
+        """Require exactly the values that match the content kind."""
+        if self.type == "text" and (
+            self.text is None or self.image is not None or self.width or self.height
+        ):
             raise ValueError("text content requires only text")
-        if self.type == "image" and (self.image is None or self.text is not None):
-            raise ValueError("image content requires only image")
+        if self.type == "image" and (
+            self.image is None or self.text is not None or self.width is None or self.height is None
+        ):
+            raise ValueError("image content requires the image path, width and height")
         return self
 
 
