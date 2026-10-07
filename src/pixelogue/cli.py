@@ -12,6 +12,7 @@ import typer
 
 from pixelogue.audit_ui import AuditSession, SupplementalPack, make_audit_server
 from pixelogue.capabilities import evaluate_capabilities
+from pixelogue.catalog import task_catalog
 from pixelogue.config import load_config
 from pixelogue.contracts import (
     ConversationArtifact,
@@ -94,6 +95,7 @@ from pixelogue.specialist_evaluation import (
 )
 from pixelogue.sscd import SscdEmbedder
 from pixelogue.store import RunStore
+from pixelogue.task_docs import render_tasks_markdown
 from pixelogue.task_status import task_status_report, write_task_status_reports
 
 app = typer.Typer(
@@ -376,11 +378,24 @@ def compile_command(
     output: Annotated[Path, typer.Option("--output", dir_okay=False)] = Path(
         "artifacts/compiled-plan.json"
     ),
+    tasks_markdown: Annotated[
+        Path | None,
+        typer.Option(
+            "--tasks-markdown",
+            dir_okay=False,
+            help="Also write the task reference generated from the catalog.",
+        ),
+    ] = None,
 ) -> None:
     """Validate configuration and emit resolved catalogs and JSON Schemas."""
     compiled = compile_configuration(load_config(config_path))
     write_json(output, compiled)
-    typer.echo(json.dumps({"output": str(output), "compiled_hash": compiled["compiled_hash"]}))
+    summary = {"output": str(output), "compiled_hash": compiled["compiled_hash"]}
+    if tasks_markdown is not None:
+        tasks_markdown.parent.mkdir(parents=True, exist_ok=True)
+        tasks_markdown.write_text(render_tasks_markdown(task_catalog()), encoding="utf-8")
+        summary["tasks_markdown"] = str(tasks_markdown)
+    typer.echo(json.dumps(summary))
 
 
 @app.command("task-status")

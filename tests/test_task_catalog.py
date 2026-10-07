@@ -7,8 +7,10 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from typer.testing import CliRunner
 
 from pixelogue.catalog import load_task_catalog, task_catalog
+from pixelogue.cli import app
 from pixelogue.config import load_config
 from pixelogue.contracts import InstructionCandidate
 from pixelogue.drafting import FactKey, QuestionDraft, draft_task_contract, draft_to_candidate
@@ -18,6 +20,7 @@ from pixelogue.prompts import validate_stage_payload
 from pixelogue.serialization import canonical_json
 from pixelogue.store import RunStore
 from pixelogue.task_catalog import TaskCatalog
+from pixelogue.task_docs import REGENERATE_COMMAND, render_tasks_markdown
 from pixelogue.task_evidence import ImageRegion
 from pixelogue.task_runtime import (
     fingerprint,
@@ -239,3 +242,28 @@ def test_model_payloads_exclude_catalog_provenance() -> None:
         validate_stage_payload("question_gate", {"selected_instruction": {"provenance": "labels"}})
     with pytest.raises(ExecutionError, match="Forbidden fields"):
         validate_stage_payload("question_gate", {"selected_instruction": {"example_question": "x"}})
+
+
+def test_committed_task_reference_is_generated_from_the_catalog() -> None:
+    rendered = render_tasks_markdown(task_catalog())
+    committed = Path("docs/tasks/TASKS.md").read_text(encoding="utf-8")
+    assert committed == rendered, f"Regenerate the task reference with: {REGENERATE_COMMAND}"
+    for task in task_catalog().tasks:
+        assert f"#### `{task.id}`: {task.label}" in rendered
+
+
+def test_compile_writes_the_task_reference_on_request(tmp_path: Path) -> None:
+    reference = tmp_path / "docs" / "TASKS.md"
+    result = CliRunner().invoke(
+        app,
+        [
+            "compile",
+            "--output",
+            str(tmp_path / "plan.json"),
+            "--tasks-markdown",
+            str(reference),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["tasks_markdown"] == str(reference)
+    assert reference.read_text(encoding="utf-8") == render_tasks_markdown(task_catalog())

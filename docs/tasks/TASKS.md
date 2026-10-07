@@ -1,1601 +1,1211 @@
-# Pixelogue task catalog v7
-
-**Supplied design reference.** The operation definitions below are preserved from the proposal. The [runtime admission guide](README.md) distinguishes implemented checks from blocked requirements; the design document itself is not an implementation claim.
-
-72 operation contracts: 65 core candidates and 7 opt-in extensions. These counts are design choices, not an empirical optimum. Every task still requires per-image eligibility and applicable validation.
-
-Base: Onely7/Pixelogue, feat/pixelogue-foundation-tsubame-edit, commit 50ed89a60c9a7b6a724cd6a7ea03e8d57696b026.
-
-## Scope
-
-All image-specific factual premises must come from this canvas or validated image-derived public history. General language/notation/math rules are permitted; a question may publicly choose a filter or hypothesis without asserting it is an observed fact.
-
-Only one source image is assumed. Existing panels can be compared; missing pages or a second image cannot be invented. The source table is a prior research artifact, not complete QA-record verification.
-
-## Catalog overview
-
-| No. | Task ID | Operation | Family | Status |
-|---:|---|---|---|---|
-| 1 | `object_identification` | Object identification | visual_description | core_candidate |
-| 2 | `attribute_lookup` | Visible attribute lookup | visual_description | core_candidate |
-| 3 | `visible_action_relation` | Visible action or interaction | visual_description | core_candidate |
-| 4 | `scene_categorization` | Scene categorization | visual_description | core_candidate |
-| 5 | `grounded_description` | Grounded scene or region description | visual_description | core_candidate |
-| 6 | `visual_summary` | Visual synthesis and summary | visual_description | core_candidate |
-| 7 | `referring_object_resolution` | Resolve a referring expression | reference_spatial | core_candidate |
-| 8 | `referring_expression_generation` | Generate a discriminating reference | reference_spatial | core_candidate |
-| 9 | `spatial_relation` | Spatial relation lookup | reference_spatial | core_candidate |
-| 10 | `spatial_ordering` | Spatial ordering | reference_spatial | core_candidate |
-| 11 | `attribute_comparison` | Visible attribute comparison | reference_spatial | core_candidate |
-| 12 | `visual_correspondence` | Explicit visual correspondence | reference_spatial | core_candidate |
-| 13 | `entity_count` | Count a bounded set | set_logic | core_candidate |
-| 14 | `predicate_selection` | Predicate-based selection | set_logic | core_candidate |
-| 15 | `set_operation` | Union, intersection, or difference | set_logic | core_candidate |
-| 16 | `attribute_grouping` | Grouping and partitioning | set_logic | core_candidate |
-| 17 | `set_cardinality_comparison` | Compare set cardinalities | set_logic | core_candidate |
-| 18 | `quantified_statement_verification` | Verify a quantified proposition | set_logic | core_candidate |
-| 19 | `grounded_hypothetical_update` | Explicit hypothetical set update | set_logic | core_candidate |
-| 20 | `text_transcription` | Verbatim text transcription | text_reading | core_candidate |
-| 21 | `text_field_extraction` | Extract specified text fields | text_reading | core_candidate |
-| 22 | `text_reading_order` | Reconstruct reading order | text_reading | core_candidate |
-| 23 | `label_value_linking` | Link labels and values | text_reading | core_candidate |
-| 24 | `text_visual_binding` | Relate text and visual content | text_reading | core_candidate |
-| 25 | `formula_transcription` | Transcribe mathematical notation | text_reading | core_candidate |
-| 26 | `code_transcription` | Transcribe visible code | text_reading | core_candidate |
-| 27 | `document_extractive_qa` | Extractive document question answering | document_understanding | core_candidate |
-| 28 | `document_evidence_synthesis` | Synthesize distributed document evidence | document_understanding | core_candidate |
-| 29 | `document_summary` | Document summary or key points | document_understanding | core_candidate |
-| 30 | `document_structure_reconstruction` | Reconstruct document structure | document_understanding | core_candidate |
-| 31 | `cross_region_consistency_check` | Cross-region consistency checking | document_understanding | core_candidate |
-| 32 | `document_layout_role` | Identify document element roles | document_understanding | core_candidate |
-| 33 | `table_cell_lookup` | Table lookup with hierarchical headers | table_understanding | core_candidate |
-| 34 | `table_predicate_selection` | Filter and order table records | table_understanding | core_candidate |
-| 35 | `table_structure_reconstruction` | Reconstruct a table | table_understanding | core_candidate |
-| 36 | `table_cross_reference` | Join explicitly linked tables | table_understanding | core_candidate |
-| 37 | `chart_encoding_lookup` | Read chart or map encodings | chart_map_understanding | core_candidate |
-| 38 | `chart_value_lookup` | Read an encoded value | chart_map_understanding | core_candidate |
-| 39 | `chart_comparison` | Compare chart values | chart_map_understanding | core_candidate |
-| 40 | `chart_extremum_ranking` | Find extrema or rank chart entries | chart_map_understanding | core_candidate |
-| 41 | `chart_trend_summary` | Summarize a chart trend | chart_map_understanding | core_candidate |
-| 42 | `chart_series_relation` | Analyze relations between series | chart_map_understanding | core_candidate |
-| 43 | `chart_data_reconstruction` | Reconstruct chart data | chart_map_understanding | core_candidate |
-| 44 | `quantity_comparison` | Compare or rank quantities | quantitative_reasoning | core_candidate |
-| 45 | `grounded_arithmetic` | Grounded arithmetic expression | quantitative_reasoning | core_candidate |
-| 46 | `grounded_aggregation` | Aggregate a complete set of quantities | quantitative_reasoning | core_candidate |
-| 47 | `unit_conversion` | Convert displayed units | quantitative_reasoning | core_candidate |
-| 48 | `measurement_reading` | Read a visual measuring scale | quantitative_reasoning | core_candidate |
-| 49 | `diagram_element_lookup` | Identify diagram elements | diagram_graph | core_candidate |
-| 50 | `graph_connectivity` | Recover graph connectivity | diagram_graph | core_candidate |
-| 51 | `graph_path_tracing` | Trace a visible path | diagram_graph | core_candidate |
-| 52 | `diagram_process_description` | Describe an explicit diagram process | diagram_graph | core_candidate |
-| 53 | `diagram_branch_evaluation` | Apply a depicted branch rule | diagram_graph | core_candidate |
-| 54 | `geometric_relation_analysis` | Analyze depicted geometry | pattern_geometry | core_candidate |
-| 55 | `pattern_rule_identification` | Identify a bounded visual rule | pattern_geometry | core_candidate |
-| 56 | `pattern_completion` | Complete a visual pattern | pattern_geometry | core_candidate |
-| 57 | `rule_based_exception` | Find a rule violation | pattern_geometry | core_candidate |
-| 58 | `ui_element_grounding` | Locate a UI target | screen_ui | core_candidate |
-| 59 | `ui_state_reading` | Read visible UI state | screen_ui | core_candidate |
-| 60 | `screen_summary` | Summarize a screen | screen_ui | core_candidate |
-| 61 | `panel_comparison` | Compare panels already in one image | multi_region | core_candidate |
-| 62 | `visible_sequence_description` | Describe an explicitly ordered panel sequence | multi_region | core_candidate |
-| 63 | `visual_claim_verification` | Verify a visible claim | evidence_verification | core_candidate |
-| 64 | `evidence_localization` | Locate supporting evidence | evidence_verification | core_candidate |
-| 65 | `answerability_assessment` | Assess answerability | evidence_verification | core_candidate |
-| 66 | `geometric_constraint_solving` | Solve explicit geometric constraints | validated_extensions | validator_gated_extension |
-| 67 | `diagram_to_code` | Reconstruct a diagram as code | validated_extensions | validator_gated_extension |
-| 68 | `screen_to_code` | Reconstruct a screenshot as markup | validated_extensions | validator_gated_extension |
-| 69 | `music_notation_reading` | Read music notation | validated_extensions | validator_gated_extension |
-| 70 | `chemical_structure_reading` | Read a chemical structure | validated_extensions | validator_gated_extension |
-| 71 | `circuit_structure_reading` | Read a circuit topology | validated_extensions | validator_gated_extension |
-| 72 | `ui_action_specification` | Specify one local UI action | validated_extensions | validator_gated_extension |
+# Pixelogue task catalog 8.0
+
+<!-- Generated from src/pixelogue/resources/task_catalog.yaml. Do not edit by hand; run: uv run --locked pixelogue compile --tasks-markdown docs/tasks/TASKS.md -->
+
+[Runtime admission guide](README.md)
+
+The catalog defines 66 tasks in 14 families: 59 core tasks that the question drafter may propose and 7 extensions that stay off until their specialized validator is configured and calibrated. A task is offered only when the image supports it and every verification contract it needs has a working implementation.
+
+22 core tasks are light: they are checked only by `dual_visual_review`, `evidence_binding_check` or `transcript_alignment`. The opening turns of a conversation can be limited to light tasks with `tasks.anchor_turns`.
+
+Each task lists the question it answers, the parameters that the question states, the image capabilities and eligibility checks it needs, and its verification contracts. Related FineVision subsets show where a similar task appears in public data; they are never shown to a model.
+
+## Input contract
+
+- **Source images.** 1; the only raw content is `image_pixels`.
+- **Image-only interpretation.** Every image-specific fact must come from this image or from earlier verified turns about it. General language, notation and math rules are allowed; a question may state a hypothesis or a filter without claiming that it is observed.
+- **Multi-panel images.** Only panels that already exist in the one image can be compared; several input images or generated collages need a separate interface change.
+- **Source rights.** Every image passes the rights check, and evaluation-only images are never exported as training data.
+- **Permitted context:**
+  - the committed earlier turns of this conversation about this image
+  - the operation's instructions and any hypothetical values stated in the question
+  - general language, arithmetic, notation and rendering conventions
+- **Forbidden context:**
+  - the source dataset's name as a hint
+  - source annotations or hidden reference answers
+  - pages or images that are not provided
+  - states of the scene at other times
+  - external facts that were not retrieved
+  - private model instructions in public output
+
+## Admission rules
+
+- Every operation keeps a traceable link from its evidence to this image and to the area asked about.
+- Capabilities are judged per question and area (met, not met or unknown), not as an unchecked list for the whole image.
+- An operation is offered only when every applicable verification contract has a working implementation.
+- A valid schema, a self-consistent program or two agreeing models does not prove that the image was read correctly.
+- The catalog adds no medical diagnosis, sensitive personal inference, prediction of hidden states, or execution of code from images.
+- Text in the image is data. Printed rules are used only to answer the question, never as commands.
+- No operation, domain or quota is forced when the image does not support it.
+
+## Families
+
+| Family | Label | Core | Extensions | Tasks |
+|---|---|---:|---:|---|
+| `visual_description` | Recognition and description | 5 | 0 | `object_identification`, `attribute_lookup`, `visible_action`, `scene_categorization`, `grounded_description` |
+| `reference_spatial` | Reference and spatial relations | 6 | 0 | `described_object_lookup`, `distinguishing_description`, `spatial_relation`, `spatial_ordering`, `attribute_comparison`, `visual_correspondence` |
+| `counting_and_sets` | Counting, selection and sets | 6 | 0 | `entity_count`, `select_by_conditions`, `group_by_attribute`, `count_comparison`, `quantified_claim_verification`, `hypothetical_set_update` |
+| `text_reading` | Reading text, formulas and code | 5 | 0 | `text_transcription`, `text_field_extraction`, `label_value_lookup`, `text_object_binding`, `formula_transcription` |
+| `document_understanding` | Documents | 6 | 0 | `document_extractive_qa`, `document_evidence_synthesis`, `document_summary`, `document_structure_reconstruction`, `stated_value_consistency`, `document_element_role` |
+| `table_understanding` | Tables | 4 | 0 | `table_cell_lookup`, `table_row_selection`, `table_reconstruction`, `table_join` |
+| `charts_and_maps` | Charts and maps | 7 | 0 | `chart_encoding_lookup`, `chart_value_lookup`, `chart_comparison`, `chart_extremum_ranking`, `chart_trend_summary`, `chart_series_relation`, `chart_data_reconstruction` |
+| `quantitative_reasoning` | Numbers and measurements | 5 | 0 | `quantity_comparison`, `grounded_arithmetic`, `value_aggregation`, `unit_conversion`, `measurement_reading` |
+| `diagrams` | Diagrams and flowcharts | 5 | 1 | `diagram_element_lookup`, `diagram_connectivity`, `diagram_path_tracing`, `diagram_process_description`, `flowchart_evaluation`, `diagram_to_code` |
+| `patterns_and_geometry` | Patterns and geometry | 4 | 1 | `geometric_relations`, `pattern_rule`, `pattern_completion`, `pattern_exception`, `geometric_constraint_solving` |
+| `screen_ui` | Screens and user interfaces | 2 | 2 | `ui_element_location`, `ui_state_reading`, `screen_to_code`, `ui_action_specification` |
+| `multi_panel` | Multi-panel images | 2 | 0 | `panel_comparison`, `panel_sequence_description` |
+| `evidence_verification` | Claims and answerability | 2 | 0 | `visual_claim_verification`, `answerability_assessment` |
+| `specialist_notation` | Music, chemistry and circuit notation | 0 | 3 | `music_notation_reading`, `chemical_structure_reading`, `circuit_structure_reading` |
+
+## Tasks
+
+### Recognition and description (`visual_description`)
+
+#### `object_identification`: Identify an object
+
+The user asks what a visible thing is; the answer names its ordinary category as precisely as its appearance shows, such as 'a golden retriever' or 'a coffee mug'. People are named only by a generic category such as 'a child' or 'a cyclist'. Use text_transcription instead for reading a printed name.
+
+- **Status.** core; light verification.
+- **Example question.** What is the object on the left side of the desk?
+- **Do not infer.** A person's identity, a brand or exact product model that is not printed, or a category that the visible features do not support.
+- **Required capabilities.** `visible_entity`.
+- **Eligibility checks.** `scope_resolved`, `visible_category_supported`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `cocoqa`, `lvis_instruct4v`, `vqav2`, `objects365_qa`.
+- **Parameters.** None.
+
+#### `attribute_lookup`: Read a visible attribute
+
+The user names one property of a visible object, such as its color, shape, material, relative size, posture or state (open, lit, broken); the answer states that property. Use visible_action instead for what a person or animal is doing.
+
+- **Status.** core; light verification.
+- **Example question.** What color is the umbrella that the woman is holding?
+- **Do not infer.** Feelings, intentions, health, age, real-world measurements, or any hidden or sensitive personal attribute.
+- **Required capabilities.** `visible_entity`, `visible_attribute`.
+- **Eligibility checks.** `scope_resolved`, `attribute_visible`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `coco_colors`, `cocoqa`, `lnqa`, `vqav2`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `attribute` | yes | text | The property being asked about, such as 'color' or 'what is on the person's head'; never the property's value. |
+
+#### `visible_action`: Describe a visible action
+
+The user asks what a visible person or animal is doing, or how it interacts with an object; the answer describes only the action or contact shown in this still image. Use attribute_lookup instead for posture alone and spatial_relation for where things are placed.
+
+- **Status.** core; light verification.
+- **Example question.** What is the man in the red jacket doing with the rope?
+- **Do not infer.** What happened before or will happen next, intentions, speed, or abilities such as what an object could do.
+- **Required capabilities.** `visible_entity`, `visible_interaction`.
+- **Eligibility checks.** `scope_resolved`, `action_visually_supported`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `sharegpt4v(coco)`, `LLaVA_Instruct_150K`, `vqav2`, `drivelm`.
+- **Parameters.** None.
 
-## Detailed operation contracts
+#### `scene_categorization`: Classify the scene
+
+The user lists two to five distinct kinds of scene, one of which matches the image, such as 'kitchen, office or street', and asks which one it shows; the answer picks the option that the visible evidence supports.
+
+- **Status.** core; light verification.
+- **Example question.** Is this scene a kitchen, an office or a street?
+- **Do not infer.** A city, a landmark name or an exact location from outside knowledge.
+- **Required capabilities.** `scene_context`.
+- **Eligibility checks.** `scope_resolved`, `visible_category_supported`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `indoor_qa`, `vision_flan(filtered)`, `vqav2`.
 
-### 01. object_identification
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `category_set` | yes | list of 2 to 5 | The scene options that the question offers, written exactly as in the question, for example ['kitchen', 'office', 'street']. |
+
+#### `grounded_description`: Describe the image or a region
+
+The user asks for a brief, standard or detailed description or summary of the whole image, a screen or a named region; the answer covers only visible content, such as objects, people, text, layout and interface controls, and how they are arranged.
+
+- **Status.** core; light verification.
+- **Example question.** Briefly describe what this screenshot shows.
+- **Do not infer.** Backstories, purposes, identities, emotions, or objects and events that are not visible.
+- **Required capabilities.** `resolvable_region`, `multiple_facts`.
+- **Eligibility checks.** `scope_resolved`, `description_claims_visible`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `densefusion_1m`, `image_textualization(filtered)`, `laion_gpt4v`, `localized_narratives`, `sharegpt4o`, `sharegpt4v(llava)`, `sharegpt4v(sam)`, `textcaps`, `LLaVA_Instruct_150K`, `websight`, `screen2words`, `screenqa`.
 
-Name a resolved visible entity at the finest category supported by its appearance, including generic person categories; do not infer an individual's identity or an exact product model.
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `detail_level` | yes | one of `brief`, `standard`, `detailed` | How much detail the question asks for: brief is one or two sentences, detailed covers all notable visible content. |
+
+### Reference and spatial relations (`reference_spatial`)
+
+#### `described_object_lookup`: Find the object that matches a description
+
+The user describes one object by its appearance, position or relation to other objects, such as 'the cup right of the plate with a blue handle'; the answer says which object that is, by its name, label or position, or says that the description fits several objects or none.
+
+- **Status.** core; light verification.
+- **Example question.** Which cup is to the right of the plate and has a blue handle?
+- **Do not infer.** Picking one of several matching objects without saying that the description is ambiguous.
+- **Required capabilities.** `multiple_entities`, `discriminating_attributes`.
+- **Eligibility checks.** `scope_resolved`, `unique_referent`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `visual7w`, `lvis_instruct4v`, `clevr`, `super_clevr(mathv360k)`.
+- **Parameters.** None.
+
+#### `distinguishing_description`: Describe an object so it can be told apart
+
+The user points to one object by a visible label, color or position and asks for a short description that distinguishes it from the other similar objects; the answer gives features or relations that only that object has.
+
+- **Status.** core; light verification.
+- **Example question.** Describe the dog lying on the bench so that it cannot be confused with the other dogs.
+- **Do not infer.** Hidden IDs, invisible markers, or features that the other similar objects share.
+- **Required capabilities.** `multiple_entities`, `discriminating_attributes`.
+- **Eligibility checks.** `scope_resolved`, `unique_referent`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `localized_narratives`, `lvis_instruct4v`, `visual7w`.
+- **Parameters.** None.
 
-**Required image capabilities:** `visible_entity`.
+#### `spatial_relation`: State where one object is relative to another
+
+The user asks where one visible object is relative to another, such as left of, above, in front of or inside; the answer states the relation from the viewpoint that the question names.
+
+- **Status.** core; light verification.
+- **Example question.** As seen in the image, is the bicycle to the left or to the right of the tree?
+- **Do not infer.** Distances in real units, or left and right that depend on a viewpoint the question does not state.
+- **Required capabilities.** `multiple_entities`, `spatial_layout`.
+- **Eligibility checks.** `scope_resolved`, `relation_frame_defined`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `spatialsense`, `vsr`, `clevr`.
 
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. The chosen ordinary category is justified by the image; do not guess named identities or obscure fine-grained classes.
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `frame` | yes | one of `image`, `object`, `depth` | The viewpoint: image means left, right, above and below as seen in the picture; object means relative to the named object's own front and sides; depth means nearer to or farther from the camera. |
 
-**Question example (only when its referenced objects and conditions are actually present):** What object is on the left of the desk?
+#### `spatial_ordering`: Order objects by position
+
+The user asks to list every object of a stated kind in a given direction, such as left to right or nearest to farthest; the answer gives the complete order and mentions any ties.
+
+- **Status.** core; structured verification.
+- **Example question.** List the labeled boxes from left to right.
+- **Do not infer.** An order for objects that overlap or whose positions cannot be told apart.
+- **Required capabilities.** `multiple_entities`, `spatial_layout`, `closed_scope`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`.
+- **Verification contracts.** `dual_visual_review`, `closed_set_check`.
+- **Related FineVision subsets.** `spatialsense`, `clevr`, `super_clevr(mathv360k)`.
 
-**Do not infer:** Unseen brand, exact model, named identity, or private personal attributes.
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `direction` | yes | one of `left_to_right`, `right_to_left`, `top_to_bottom`, `bottom_to_top`, `nearest_to_farthest`, `farthest_to_nearest` | The direction of the order, as seen in the image. |
 
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
+#### `attribute_comparison`: Compare an attribute across objects
+
+The user asks how two or more visible objects compare in a visible property, such as color, shape or relative size; the answer states their similarities or differences.
+
+- **Status.** core; light verification.
+- **Example question.** How do the two bags differ in color and shape?
+- **Do not infer.** Real-world size from apparent size, quality, value, or other properties that are not visible.
+- **Required capabilities.** `multiple_entities`, `comparable_attributes`.
+- **Eligibility checks.** `scope_resolved`, `comparable_basis`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `mimic_cgd`, `mmra`, `vqav2`, `clevr`.
+- **Parameters.** None.
+
+#### `visual_correspondence`: Follow a drawn link or key
 
-**Parameters:** {}
+The user asks what a visible line, arrow, number, letter or legend entry connects or refers to; the answer follows that explicit link, for example from label B to the picture it points at.
+
+- **Status.** core; light verification.
+- **Example question.** Which picture is connected to label B?
+- **Do not infer.** A link based only on closeness, alignment or similar appearance.
+- **Required capabilities.** `explicit_mapping`.
+- **Eligibility checks.** `scope_resolved`, `association_explicit`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `CoSyn_400k_graphic`, `spatialsense`, `clevr`, `ai2d_merged`.
+- **Parameters.** None.
+
+### Counting, selection and sets (`counting_and_sets`)
+
+#### `entity_count`: Count objects
+
+The user asks how many objects of a stated kind are in the image or in a named area; the answer gives the exact number, and zero only when the whole area is visible. Use count_comparison instead to compare two counts.
 
-**FineVision inspirations:** `cocoqa`, `lvis_instruct4v`, `vqav2`, `objects365_qa`. These are abstractions/projections, not claims of identical supervision.
+- **Status.** core; structured verification.
+- **Example question.** How many red cups are on the table?
+- **Do not infer.** Objects hidden or cut off by the frame, or a different unit than the one asked about, such as petals instead of flowers.
+- **Required capabilities.** `closed_scope`, `countable_entities`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `count_unit_defined`.
+- **Verification contracts.** `dual_visual_review`, `closed_set_check`.
+- **Related FineVision subsets.** `cocoqa`, `oodvqa`, `tallyqa`, `clevr`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `count_unit` | yes | text | What counts as one item, such as 'each apple' or 'each person, including partly hidden ones'. |
+
+#### `select_by_conditions`: List the objects that meet stated conditions
+
+The user states one or more visible conditions, such as color, shape, printed text or position, combined with and, or and not; the answer lists every object in the named area that meets them.
 
-**Sources:** https://arxiv.org/abs/1505.02074 ; https://arxiv.org/abs/2311.07574 ; https://arxiv.org/abs/1612.00837 ; https://www.objects365.org/overview.html ; https://arxiv.org/html/2510.17269v2
-
-### 02. attribute_lookup
-
-Report a visible property of a resolved object, including color, shape, material appearance, posture, or externally visible state.
-
-**Required image capabilities:** `visible_entity`, `visible_attribute`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. The requested property is visually supported and not a hidden or sensitive personal attribute.
-
-**Question example (only when its referenced objects and conditions are actually present):** What color is the lid?
-
-**Do not infer:** Internal emotion, material composition, intent, health, real-world dimensions, or hidden state.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `coco_colors`, `cocoqa`, `lnqa`, `vqav2`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://huggingface.co/datasets/hazal-karakus/mscoco-controlnet-canny-less-colors ; https://arxiv.org/abs/1505.02074 ; https://vikhyat.net/posts/2024-08-17-lnqa.html ; https://arxiv.org/abs/1612.00837
-
-### 03. visible_action_relation
-
-Describe the action or interaction directly supported by body configuration and object contact in this still image.
-
-**Required image capabilities:** `visible_entity`, `visible_interaction`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Visible pose/contact supports the description; temporal or intentional claims are excluded.
-
-**Question example (only when its referenced objects and conditions are actually present):** What is the person holding?
-
-**Do not infer:** A preceding event, future action, intent, or speed inferred from a still frame.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `sharegpt4v(coco)`, `LLaVA_Instruct_150K`, `vqav2`, `drivelm`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2311.12793 ; https://arxiv.org/abs/2304.08485 ; https://arxiv.org/abs/1612.00837 ; https://arxiv.org/abs/2312.14150
-
-### 04. scene_categorization
-
-Classify the broad visible scene using declared ordinary scene categories and observable evidence.
-
-**Required image capabilities:** `scene_context`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. The chosen ordinary category is justified by the image; do not guess named identities or obscure fine-grained classes.
-
-**Question example (only when its referenced objects and conditions are actually present):** Does this image show a kitchen, a bedroom, or an outdoor scene?
-
-**Do not infer:** A precise geographical location or landmark name from outside knowledge.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"category_set": "must be public in the question or a versioned ordinary-category vocabulary"}
-
-**FineVision inspirations:** `indoor_qa`, `vision_flan(filtered)`, `vqav2`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://huggingface.co/datasets/keremberke/indoor-scene-classification ; https://arxiv.org/html/2510.17269v2 ; https://arxiv.org/abs/2402.11690 ; https://arxiv.org/abs/1612.00837
-
-### 05. grounded_description
-
-Describe the objects, attributes, visible interactions, spatial relations, and readable text relevant to the specified scene or region.
-
-**Required image capabilities:** `resolvable_region`, `multiple_facts`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Every description clause has a visible basis within scope.
-
-**Question example (only when its referenced objects and conditions are actually present):** Describe the objects and their arrangement in the lower half of the image.
-
-**Do not infer:** Invented backstory, identity, hidden objects, or reasons for events.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"scope": "whole image or resolved region", "detail_level": ["brief", "standard", "detailed"]}
-
-**FineVision inspirations:** `densefusion_1m`, `image_textualization(filtered)`, `laion_gpt4v`, `localized_narratives`, `sharegpt4o`, `sharegpt4v(llava)`, `sharegpt4v(sam)`, `textcaps`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://proceedings.neurips.cc/paper_files/paper/2024/hash/20ffc2b42c7de4a1960cfdadf305bbe2-Abstract-Datasets_and_Benchmarks_Track.html ; https://arxiv.org/abs/2406.07502 ; https://huggingface.co/datasets/laion/gpt4v-dataset ; https://link.springer.com/10.1007/978-3-030-58558-7_38 ; https://sharegpt4o.github.io/ ; https://arxiv.org/abs/2311.12793 ; https://arxiv.org/abs/2003.12462
-
-### 06. visual_summary
-
-Select and compress the main visible facts into a requested high-level account instead of enumerating every detail.
-
-**Required image capabilities:** `scene_context`, `multiple_facts`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Compression preserves source meaning and does not introduce an ungrounded fact.
-
-**Question example (only when its referenced objects and conditions are actually present):** Summarize what is visible in this image in one sentence.
-
-**Do not infer:** An unstated event purpose or unsupported emotional narrative.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"detail_level": ["brief", "standard"]}
-
-**FineVision inspirations:** `densefusion_1m`, `image_textualization(filtered)`, `sharegpt4o`, `LLaVA_Instruct_150K`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://proceedings.neurips.cc/paper_files/paper/2024/hash/20ffc2b42c7de4a1960cfdadf305bbe2-Abstract-Datasets_and_Benchmarks_Track.html ; https://arxiv.org/abs/2406.07502 ; https://sharegpt4o.github.io/ ; https://arxiv.org/abs/2304.08485
-
-### 07. referring_object_resolution
-
-Identify the unique visible target satisfying a combination of attributes and relations in the public referring expression.
-
-**Required image capabilities:** `multiple_entities`, `discriminating_attributes`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Verify that the public reference identifies one target; if multiple match, revise the question or use an ambiguity profile.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which cup is to the right of the plate and has a blue handle?
-
-**Do not infer:** Choosing among indistinguishable targets without acknowledging ambiguity.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `visual7w`, `lvis_instruct4v`, `clevr`, `super_clevr(mathv360k)`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/1511.03416 ; https://arxiv.org/abs/2311.07574 ; https://arxiv.org/abs/1612.06890 ; https://github.com/Lizw14/Super-CLEVR ; https://arxiv.org/abs/2406.17294
-
-### 08. referring_expression_generation
-
-Describe a visibly identified target so another reader can distinguish it from the other candidates in the same scope.
-
-**Required image capabilities:** `multiple_entities`, `discriminating_attributes`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Verify that the public reference identifies one target; if multiple match, revise the question or use an ambiguity profile.
-
-**Question example (only when its referenced objects and conditions are actually present):** Describe the highlighted object so it cannot be confused with the other objects.
-
-**Do not infer:** Using private object IDs, invisible highlights, or non-discriminating descriptions.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"target_binding": "must already be publicly resolvable; no invented marker"}
-
-**FineVision inspirations:** `localized_narratives`, `lvis_instruct4v`, `visual7w`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://link.springer.com/10.1007/978-3-030-58558-7_38 ; https://arxiv.org/abs/2311.07574 ; https://arxiv.org/abs/1511.03416
-
-### 09. spatial_relation
-
-State a relation between resolved visible targets in an explicitly declared image-plane or supported depth frame.
-
-**Required image capabilities:** `multiple_entities`, `spatial_layout`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Specify image-plane/depth frame and orientation; reject unsupported metric or viewpoint-invariant claims.
-
-**Question example (only when its referenced objects and conditions are actually present):** Where is the bicycle relative to the tree?
-
-**Do not infer:** Metric distance, camera-independent left/right, or uncertain depth ordering.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `spatialsense`, `vsr`, `clevr`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://openaccess.thecvf.com/content_ICCV_2019/html/Yang_SpatialSense_An_Adversarially_Crowdsourced_Benchmark_for_Spatial_Relation_Recognition_ICCV_2019_paper.html ; https://arxiv.org/abs/2205.00363 ; https://arxiv.org/abs/1612.06890
-
-### 10. spatial_ordering
-
-Order a finite set of visible targets by a specified spatial key and preserve ties or ambiguity.
-
-**Required image capabilities:** `multiple_entities`, `spatial_layout`, `closed_scope`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Specify image-plane/depth frame and orientation; reject unsupported metric or viewpoint-invariant claims.
-
-**Question example (only when its referenced objects and conditions are actually present):** List the labeled boxes from left to right.
-
-**Do not infer:** Invented order between overlapping or unresolved positions.
-
-**Verification contracts:** `dual_visual_review`, `closed_set_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `spatialsense`, `clevr`, `super_clevr(mathv360k)`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://openaccess.thecvf.com/content_ICCV_2019/html/Yang_SpatialSense_An_Adversarially_Crowdsourced_Benchmark_for_Spatial_Relation_Recognition_ICCV_2019_paper.html ; https://arxiv.org/abs/1612.06890 ; https://github.com/Lizw14/Super-CLEVR ; https://arxiv.org/abs/2406.17294
-
-### 11. attribute_comparison
-
-Compare the same directly observable attribute of two or more resolved objects, reporting relevant similarities or differences.
-
-**Required image capabilities:** `multiple_entities`, `comparable_attributes`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Resolve units, scale, attribute, period, and comparison scope before comparing.
-
-**Question example (only when its referenced objects and conditions are actually present):** How do the two bags differ in color and shape?
-
-**Do not infer:** Comparing real-world size from projected size, or unseen quality.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `mimic_cgd`, `mmra`, `vqav2`, `clevr`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://huggingface.co/datasets/pufanyi/MIMICIT ; https://arxiv.org/abs/2306.05425 ; https://arxiv.org/abs/2407.17379 ; https://arxiv.org/abs/1612.00837 ; https://arxiv.org/abs/1612.06890
-
-### 12. visual_correspondence
-
-Match targets using an explicit line, key, identifier, legend, or otherwise unambiguous visual association.
-
-**Required image capabilities:** `explicit_mapping`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. A visible association establishes the link; proximity alone is insufficient.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which picture is connected to label B?
-
-**Do not infer:** Assuming repetition, proximity, or alignment alone establishes a semantic mapping.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `CoSyn_400k_graphic`, `spatialsense`, `clevr`, `ai2d_merged`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846 ; https://openaccess.thecvf.com/content_ICCV_2019/html/Yang_SpatialSense_An_Adversarially_Crowdsourced_Benchmark_for_Spatial_Relation_Recognition_ICCV_2019_paper.html ; https://arxiv.org/abs/1612.06890 ; https://huggingface.co/datasets/andito/ai2d-merged ; https://arxiv.org/html/2510.17269v2
-
-### 13. entity_count
-
-Count every member satisfying the public predicates within a visible, closed scope; support verified zero as distinct from unreadable scope.
-
-**Required image capabilities:** `closed_scope`, `countable_entities`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Fix the unit and inclusion rules, then independently count all members.
-
-**Question example (only when its referenced objects and conditions are actually present):** How many red cups are visible on the table?
-
-**Do not infer:** Counting unseen instances or changing the unit from flowers to buds.
-
-**Verification contracts:** `dual_visual_review`, `closed_set_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `cocoqa`, `oodvqa`, `tallyqa`, `clevr`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/1505.02074 ; https://arxiv.org/abs/2311.16101 ; https://ojs.aaai.org/index.php/AAAI/article/view/4815 ; https://arxiv.org/abs/1612.06890
-
-### 14. predicate_selection
-
-Return the complete set satisfying declared attribute, text, or spatial predicates within a closed visible scope.
-
-**Required image capabilities:** `multiple_entities`, `interpretable_predicates`, `closed_scope`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Each selection predicate has a visible truth condition; retain AND/OR/NOT scope.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which objects are red and to the left of the bowl?
-
-**Do not infer:** Unspecified criteria, hidden membership, or omitted qualifying members.
-
-**Verification contracts:** `dual_visual_review`, `closed_set_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"boolean_operator": ["and", "or", "not"], "negation_scope": "explicit"}
-
-**FineVision inspirations:** `tallyqa`, `clevr`, `super_clevr(mathv360k)`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://ojs.aaai.org/index.php/AAAI/article/view/4815 ; https://arxiv.org/abs/1612.06890 ; https://github.com/Lizw14/Super-CLEVR ; https://arxiv.org/abs/2406.17294
-
-### 15. set_operation
-
-Apply a stated set operation to two publicly defined, image-grounded sets; resolve overlapping instances once.
-
-**Required image capabilities:** `multiple_entities`, `interpretable_predicates`, `closed_scope`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Each selection predicate has a visible truth condition; retain AND/OR/NOT scope.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which shapes are blue but not circles?
-
-**Do not infer:** A complement over an unbounded universe or double-counting the same instance.
-
-**Verification contracts:** `dual_visual_review`, `closed_set_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"operator": ["union", "intersection", "difference"]}
-
-**FineVision inspirations:** `clevr`, `clevr_math`, `super_clevr(mathv360k)`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/1612.06890 ; https://arxiv.org/abs/2208.05358 ; https://github.com/Lizw14/Super-CLEVR ; https://arxiv.org/abs/2406.17294
-
-### 16. attribute_grouping
-
-Partition a specified complete set by a visible key, associating every group with its members or count.
-
-**Required image capabilities:** `multiple_entities`, `visible_attribute`, `closed_scope`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Define the key, membership rule, and whether groups are mutually exclusive and exhaustive.
-
-**Question example (only when its referenced objects and conditions are actually present):** Group the buttons by color and give the count in each group.
-
-**Do not infer:** A list of category names without member associations or unsupported categories.
-
-**Verification contracts:** `dual_visual_review`, `closed_set_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"return": ["members", "counts"], "group_key": "visible and explicit"}
-
-**FineVision inspirations:** `coco_colors`, `tallyqa`, `clevr`, `super_clevr(mathv360k)`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://huggingface.co/datasets/hazal-karakus/mscoco-controlnet-canny-less-colors ; https://ojs.aaai.org/index.php/AAAI/article/view/4815 ; https://arxiv.org/abs/1612.06890 ; https://github.com/Lizw14/Super-CLEVR ; https://arxiv.org/abs/2406.17294
-
-### 17. set_cardinality_comparison
-
-Compare the sizes of two completely observable sets, without substituting area or visual density for counting.
-
-**Required image capabilities:** `closed_scope`, `countable_entities`, `interpretable_predicates`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Fix the unit and inclusion rules, then independently count all members.
-
-**Question example (only when its referenced objects and conditions are actually present):** Are there more cups than plates?
-
-**Do not infer:** Judging quantity from apparent occupied area.
-
-**Verification contracts:** `dual_visual_review`, `closed_set_check`, `exact_arithmetic_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `iconqa`, `tallyqa`, `clevr`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2110.13214 ; https://ojs.aaai.org/index.php/AAAI/article/view/4815 ; https://arxiv.org/abs/1612.06890
-
-### 18. quantified_statement_verification
-
-Verify a proposition containing all, none, some, exactly, or a declared cardinality bound over a closed visible domain.
-
-**Required image capabilities:** `closed_scope`, `interpretable_predicates`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Each selection predicate has a visible truth condition; retain AND/OR/NOT scope.
-
-**Question example (only when its referenced objects and conditions are actually present):** Are all the visible triangles blue?
-
-**Do not infer:** Using a partial view to establish a universal or a negative statement.
-
-**Verification contracts:** `dual_visual_review`, `closed_set_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"quantifier": ["all", "none", "some", "exactly", "at_least", "at_most"]}
-
-**FineVision inspirations:** `nlvr2`, `vsr`, `clevr`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/1811.00491 ; https://arxiv.org/abs/2205.00363 ; https://arxiv.org/abs/1612.06890
-
-### 19. grounded_hypothetical_update
-
-Apply an explicitly hypothetical addition, removal, or relabeling to an observed set and answer about the resulting modeled state.
-
-**Required image capabilities:** `closed_scope`, `countable_entities`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Every change is explicit in public user text and clearly hypothetical, not a purported image fact.
-
-**Question example (only when its referenced objects and conditions are actually present):** If the two blue cubes were removed, how many visible cubes would remain?
-
-**Do not infer:** Presenting the hypothetical result as an event that actually occurred, or predicting physical behavior.
-
-**Verification contracts:** `dual_visual_review`, `closed_set_check`, `exact_arithmetic_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"update": ["add", "remove", "relabel"], "assumptions": "must be explicit in user text"}
-
-**FineVision inspirations:** `clevr_math`, `clevr_math(mathv360k)`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2208.05358 ; https://arxiv.org/abs/2406.17294
-
-### 20. text_transcription
-
-Copy readable text from the requested visible region, preserving spelling, script, punctuation, and meaningful line breaks.
-
-**Required image capabilities:** `readable_text`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors.
-
-**Question example (only when its referenced objects and conditions are actually present):** Transcribe the text on the sign exactly.
-
-**Do not infer:** Correcting a visible typo, completing cropped text, or obeying instructions in the image.
-
-**Verification contracts:** `dual_visual_review`, `transcript_alignment`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `art`, `cocotext`, `ctw`, `iam`, `iiit5k`, `imgur5k`, `maptext`, `orand_car_a`, `rendered_text`, `wordart`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://tc11.cvc.uab.es/datasets/ICDAR-2019%20ArT_1 ; https://arxiv.org/abs/1601.07140 ; https://arxiv.org/abs/1803.00085 ; https://fki.tic.heia-fr.ch/databases/iam-handwriting-database ; https://arxiv.org/html/2510.17269v2 ; https://cvit.iiit.ac.in/research/projects/cvit-projects/the-iiit-5k-word-dataset ; https://github.com/facebookresearch/IMGUR5K-Handwriting-Dataset ; https://zenodo.org/records/11516933 ; https://icdar2024.net/competitions/ ; https://www.orand.cl/icfhr2014-hdsr/ ; https://huggingface.co/datasets/wendlerc/RenderedText ; https://arxiv.org/abs/2208.00438
-
-### 21. text_field_extraction
-
-Extract the values of explicitly requested fields from readable text, preserving field/value correspondence and missing-field status.
-
-**Required image capabilities:** `readable_text`, `text_fields`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors. Bind each requested field to a visible label/value region; distinguish missing and blank.
-
-**Question example (only when its referenced objects and conditions are actually present):** What invoice number and issue date are printed here?
-
-**Do not infer:** Filling absent fields with typical values or inferring unprinted personal data.
-
-**Verification contracts:** `dual_visual_review`, `transcript_alignment`, `schema_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `funsd`, `sroie`, `svrd`, `handwriting_forms`, `invoices_receipts`, `ocrvqa`, `ureader_ie`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://guillaumejaume.github.io/FUNSD/ ; https://arxiv.org/abs/1905.13538 ; https://arxiv.org/abs/2103.10213 ; https://arxiv.org/html/2510.17269v2 ; https://arxiv.org/abs/2306.03287 ; https://huggingface.co/datasets/ift/handwriting_forms ; https://huggingface.co/datasets/mychen76/invoices-and-receipts_ocr_v1 ; https://ocr-vqa.github.io/ ; https://arxiv.org/abs/2310.05126
-
-### 22. text_reading_order
-
-Order readable text regions according to supported page, column, or explicitly labeled sequence structure.
-
-**Required image capabilities:** `readable_text`, `reading_order`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors. Resolve columns and hierarchy; do not arbitrarily linearize an ambiguous layout.
-
-**Question example (only when its referenced objects and conditions are actually present):** Read the text blocks in their intended reading order.
-
-**Do not infer:** Guessing an order when equally valid layouts exist.
-
-**Verification contracts:** `dual_visual_review`, `transcript_alignment`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `synthdog`, `olmOCR-mix-0225-documents`, `olmOCR-mix-0225-books`, `DoclingMatix`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2111.15664 ; https://arxiv.org/abs/2502.18443 ; https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix ; https://arxiv.org/abs/2503.11576
-
-### 23. label_value_linking
-
-Recover explicit associations between readable labels and their values, including separated form fields and legends.
-
-**Required image capabilities:** `readable_text`, `explicit_mapping`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors. A visible association establishes the link; proximity alone is insufficient.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which value belongs to the label Net weight?
-
-**Do not infer:** Pairing nearby values with labels when the layout does not establish the link.
-
-**Verification contracts:** `dual_visual_review`, `transcript_alignment`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `funsd`, `sroie`, `svrd`, `handwriting_forms`, `ureader_ie`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://guillaumejaume.github.io/FUNSD/ ; https://arxiv.org/abs/1905.13538 ; https://arxiv.org/abs/2103.10213 ; https://arxiv.org/html/2510.17269v2 ; https://arxiv.org/abs/2306.03287 ; https://huggingface.co/datasets/ift/handwriting_forms ; https://arxiv.org/abs/2310.05126
-
-### 24. text_visual_binding
-
-Associate readable text with depicted objects or regions, or explain a directly visible agreement or contrast between text and depiction.
-
-**Required image capabilities:** `readable_text`, `text_object_alignment`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors. A visible association establishes the link; proximity alone is insufficient.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which displayed product is identified by the label Green tea?
-
-**Do not infer:** An inferred cultural joke, author intent, or unshown product-price association.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `textcaps`, `chinesememe`, `llavar_gpt4_20k`, `est_vqa`, `st_vqa`, `textocr(gpt4v)`, `textvqa`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2003.12462 ; https://huggingface.co/datasets/REILX/chinese-meme-description-dataset ; https://arxiv.org/abs/2306.17107 ; https://arxiv.org/abs/2002.10215 ; https://arxiv.org/abs/1905.13648 ; https://huggingface.co/datasets/jimmycarter/textocr-gpt4v ; https://arxiv.org/abs/1904.08920
-
-### 25. formula_transcription
-
-Convert a readable two-dimensional formula to a declared notation while preserving symbols, grouping, scripts, and structure; do not solve it.
-
-**Required image capabilities:** `readable_formula`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Declare the representation convention and preserve all visible structure.
-
-**Question example (only when its referenced objects and conditions are actually present):** Transcribe the displayed equation into LaTeX without solving it.
-
-**Do not infer:** Repairing a source equation or substituting an equivalent but differently written formula.
-
-**Verification contracts:** `dual_visual_review`, `formula_structure_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"notation": ["latex", "unicode_math"]}
-
-**FineVision inspirations:** `chrome_writting`, `hme100k`, `k12_printing`, `latex_handwritten`, `latexformulas`, `mathwriting-google`, `SynthFormulaNet`, `tal_ocr_eng`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/html/2510.17269v2 ; https://ieeexplore.ieee.org/document/6628849 ; https://ai.100tal.com/dataset ; https://huggingface.co/datasets/lmms-lab/LLaVA-OneVision-Data ; https://sujayr91.github.io/Im2Latex/ ; https://huggingface.co/datasets/OleehyO/latex-formulas ; https://arxiv.org/abs/2404.10690 ; https://arxiv.org/abs/2503.11576
-
-### 26. code_transcription
-
-Copy visible program text with its indentation, strings, punctuation, and line structure; retain visible errors.
-
-**Required image capabilities:** `readable_code`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors.
-
-**Question example (only when its referenced objects and conditions are actually present):** Transcribe the code in the image, preserving indentation.
-
-**Do not infer:** Executing code, silently fixing it, or adding hidden imports.
-
-**Verification contracts:** `dual_visual_review`, `transcript_alignment`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"execution": "forbidden", "source_errors": "preserve"}
-
-**FineVision inspirations:** `SynthCodeNet`, `DoclingMatix`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2503.11576 ; https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix
-
-### 27. document_extractive_qa
-
-Find and return text in the visible document that answers the question, preserving qualifiers and the requested scope.
-
-**Required image capabilities:** `readable_prose`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors. The visible document contains answer evidence; an unprovided page is not evidence.
-
-**Question example (only when its referenced objects and conditions are actually present):** According to this notice, when does registration close?
-
-**Do not infer:** Answering from world knowledge or from a page not in the image.
-
-**Verification contracts:** `dual_visual_review`, `transcript_alignment`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `hw_squad`, `bentham`, `docvqa`, `pdfvqa`, `screenqa`, `ureader_qa_processed`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://www.docvqa.org/datasets/benthamqa-and-hw-squad ; https://arxiv.org/html/2510.17269v2 ; https://arxiv.org/abs/2007.00398 ; https://arxiv.org/abs/2304.06447 ; https://arxiv.org/abs/2209.08199 ; https://arxiv.org/abs/2310.05126
-
-### 28. document_evidence_synthesis
-
-Combine at least two distinct visible text, table, or figure regions to answer one question whose required result is not a single copied span.
-
-**Required image capabilities:** `multiple_evidence_regions`, `readable_prose`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors. All indispensable panels, pages, labels, choices, and text are present in the one input image.
-
-**Question example (only when its referenced objects and conditions are actually present):** Using the table and the note below it, explain which entries are included in the total.
-
-**Do not infer:** Importing another page or causal claims not established by the visible document.
-
-**Verification contracts:** `dual_visual_review`, `evidence_binding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `finqa`, `multihiertt`, `tat_dqa`, `tat_qa`, `infographic_vqa`, `slidevqa`, `visualmrc`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2109.00122 ; https://arxiv.org/abs/2206.01347 ; https://nextplusplus.github.io/TAT-DQA/ ; https://arxiv.org/abs/2207.11871 ; https://arxiv.org/abs/2105.07624 ; https://arxiv.org/abs/2104.12756 ; https://arxiv.org/abs/2301.04883 ; https://arxiv.org/abs/2101.11272
-
-### 29. document_summary
-
-Summarize the important claims of a visible document in the requested scope, attributing claims to the document rather than asserting external truth.
-
-**Required image capabilities:** `readable_prose`, `multiple_facts`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors. Compression preserves source meaning and does not introduce an ungrounded fact.
-
-**Question example (only when its referenced objects and conditions are actually present):** Summarize the three main points of this notice.
-
-**Do not infer:** Fabricated background, omitted negation, or interpreting document claims as independently verified facts.
-
-**Verification contracts:** `dual_visual_review`, `evidence_binding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `DoclingMatix`, `sujet_finance`, `ureader_cap`, `ureader_kg_processed`, `visualmrc`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix ; https://arxiv.org/abs/2503.11576 ; https://huggingface.co/datasets/sujet-ai/Sujet-Finance-QA-Vision-100k ; https://arxiv.org/abs/2310.05126 ; https://arxiv.org/abs/2101.11272
-
-### 30. document_structure_reconstruction
-
-Serialize visible headings, paragraphs, lists, tables, formulas, and their hierarchy in a declared schema while retaining content and reading order.
-
-**Required image capabilities:** `document_layout`, `readable_text`, `reading_order`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors. Resolve columns and hierarchy; do not arbitrarily linearize an ambiguous layout. The required output structure is stated in the user instruction; private schema details must not leak.
-
-**Question example (only when its referenced objects and conditions are actually present):** Convert this visible page into structured Markdown, preserving headings, lists, and tables.
-
-**Do not infer:** Inventing off-page sections, unseen table cells, or unsupported document metadata.
-
-**Verification contracts:** `dual_visual_review`, `transcript_alignment`, `schema_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"format": ["markdown", "html_subset", "structured_json"], "scope": "visible page or explicit bounded region"}
-
-**FineVision inspirations:** `synthdog`, `olmOCR-mix-0225-documents`, `olmOCR-mix-0225-books`, `DoclingMatix`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2111.15664 ; https://arxiv.org/abs/2502.18443 ; https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix ; https://arxiv.org/abs/2503.11576
-
-### 31. cross_region_consistency_check
-
-Compare two explicitly linked statements or values within the same image and report whether they agree, preserving units, dates, and scope.
-
-**Required image capabilities:** `multiple_evidence_regions`, `explicit_cross_references`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. All indispensable panels, pages, labels, choices, and text are present in the one input image. Resolve units, scale, attribute, period, and comparison scope before comparing.
-
-**Question example (only when its referenced objects and conditions are actually present):** Does the total stated in the paragraph match the total labeled in the table?
-
-**Do not infer:** Equating unlike reporting periods or judging whether a financial claim is true outside the document.
-
-**Verification contracts:** `dual_visual_review`, `evidence_binding_check`, `exact_arithmetic_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `finqa`, `multihiertt`, `tat_dqa`, `tat_qa`, `infographic_vqa`, `sujet_finance`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2109.00122 ; https://arxiv.org/abs/2206.01347 ; https://nextplusplus.github.io/TAT-DQA/ ; https://arxiv.org/abs/2207.11871 ; https://arxiv.org/abs/2105.07624 ; https://arxiv.org/abs/2104.12756 ; https://huggingface.co/datasets/sujet-ai/Sujet-Finance-QA-Vision-100k
-
-### 32. document_layout_role
-
-Identify visible titles, section headings, captions, body paragraphs, table headers, lists, or footnotes from layout and content.
-
-**Required image capabilities:** `document_layout`, `readable_text`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors. Use layout and readable content jointly to assign a document role.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which text is the caption for the figure?
-
-**Do not infer:** Inferring hidden document structure or assigning a role based only on font size.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `olmOCR-mix-0225-documents`, `olmOCR-mix-0225-books`, `DoclingMatix`, `pdfvqa`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.18443 ; https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix ; https://arxiv.org/abs/2503.11576 ; https://arxiv.org/abs/2304.06447
-
-### 33. table_cell_lookup
-
-Resolve row and column paths, including multilevel headers, and retrieve the requested visible cell or cells without performing an aggregate.
-
-**Required image capabilities:** `readable_table`, `table_headers`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Resolve full row/column header paths, spans, units, and footnotes; preserve blanks separately from zero. Read at actual delivered resolution; preserve unknown/cropped text instead of completing it from priors.
-
-**Question example (only when its referenced objects and conditions are actually present):** What value is listed for Europe, 2024, under Revenue?
-
-**Do not infer:** Ignoring a parent header, unit, footnote, or merged-cell scope.
-
-**Verification contracts:** `dual_visual_review`, `table_structure_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `CoSyn_400k_table`, `hitab`, `robut_wikisql`, `robut_wtq`, `vqaonbd`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846 ; https://arxiv.org/abs/2108.06712 ; https://arxiv.org/abs/2306.14321 ; https://ilocr.iiit.ac.in/vqabd/dataset.html
-
-### 34. table_predicate_selection
-
-Select and optionally order complete table rows or columns according to explicit predicates and visible cells.
-
-**Required image capabilities:** `readable_table`, `table_headers`, `closed_scope`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Resolve full row/column header paths, spans, units, and footnotes; preserve blanks separately from zero. Each selection predicate has a visible truth condition; retain AND/OR/NOT scope.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which rows have quantity above 10? Return their names in descending quantity order.
-
-**Do not infer:** Filtering on a missing column or returning only some qualifying records.
-
-**Verification contracts:** `dual_visual_review`, `table_structure_check`, `closed_set_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `CoSyn_400k_table`, `hitab`, `robut_wikisql`, `robut_wtq`, `tabmwp`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846 ; https://arxiv.org/abs/2108.06712 ; https://arxiv.org/abs/2306.14321 ; https://arxiv.org/abs/2209.14610
-
-### 35. table_structure_reconstruction
-
-Recover the visible table cells, row/column alignment, header hierarchy, and spans in a declared structured representation.
-
-**Required image capabilities:** `readable_table`, `table_headers`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Resolve full row/column header paths, spans, units, and footnotes; preserve blanks separately from zero. The required output structure is stated in the user instruction; private schema details must not leak.
-
-**Question example (only when its referenced objects and conditions are actually present):** Convert the table to JSON while preserving its grouped column headings.
-
-**Do not infer:** Inventing cells, collapsing meaningful headers, or treating blank as zero.
-
-**Verification contracts:** `dual_visual_review`, `table_structure_check`, `schema_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"format": ["html_table", "structured_json", "markdown_simple_only"]}
-
-**FineVision inspirations:** `CoSyn_400k_table`, `hitab`, `vqaonbd`, `DoclingMatix`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846 ; https://arxiv.org/abs/2108.06712 ; https://ilocr.iiit.ac.in/vqabd/dataset.html ; https://huggingface.co/datasets/HuggingFaceM4/DoclingMatix ; https://arxiv.org/abs/2503.11576
-
-### 36. table_cross_reference
-
-Follow explicit shared keys between two or more tables visible in the same image to retrieve or assemble related records.
-
-**Required image capabilities:** `multiple_tables`, `table_join_keys`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. All indispensable panels, pages, labels, choices, and text are present in the one input image. Validate shared keys, multiplicity, and the join relation before joining.
-
-**Question example (only when its referenced objects and conditions are actually present):** Using the product IDs, match the items in the left table with their categories in the right table.
-
-**Do not infer:** Joining unrelated rows by proximity or relying on another missing page.
-
-**Verification contracts:** `dual_visual_review`, `table_structure_check`, `evidence_binding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `multihiertt`, `tat_dqa`, `vqaonbd`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2206.01347 ; https://nextplusplus.github.io/TAT-DQA/ ; https://arxiv.org/abs/2207.11871 ; https://ilocr.iiit.ac.in/vqabd/dataset.html
-
-### 37. chart_encoding_lookup
-
-Identify the meaning of an axis, legend color, symbol, map bin, or series label from an explicit readable encoding.
-
-**Required image capabilities:** `readable_chart`, `chart_encoding`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Check axes, legends, linear/log scales, zero baselines, units, and interval encodings.
-
-**Question example (only when its referenced objects and conditions are actually present):** What range does the darkest map color represent?
-
-**Do not infer:** Geographical or domain knowledge that is not provided by the labels or legend.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `dvqa`, `mmc_instruct`, `plotqa`, `mapqa`, `mapqa(mathv360k)`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/1801.08163 ; https://arxiv.org/abs/2311.10774 ; https://arxiv.org/abs/1909.00997 ; https://arxiv.org/abs/2211.08545 ; https://arxiv.org/abs/2406.17294
-
-### 38. chart_value_lookup
-
-Retrieve a displayed value or a declared-precision estimate from a resolved chart mark or thematic-map region.
-
-**Required image capabilities:** `readable_chart`, `chart_encoding`, `legible_values`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Check axes, legends, linear/log scales, zero baselines, units, and interval encodings. Use printed exact values or public approximation/rounding/interval rules; never invent precision.
-
-**Question example (only when its referenced objects and conditions are actually present):** What value is shown for series A in March?
-
-**Do not infer:** Fabricating exact decimals from pixels, ignoring logarithmic axes, or converting a color interval into an exact value.
-
-**Verification contracts:** `dual_visual_review`, `chart_encoding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"precision": ["explicit_label", "calibrated_estimate", "interval"]}
-
-**FineVision inspirations:** `chartqa`, `dvqa`, `plotqa`, `Unichart`, `mapqa`, `mapqa(mathv360k)`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2203.10244 ; https://arxiv.org/abs/1801.08163 ; https://arxiv.org/abs/1909.00997 ; https://arxiv.org/abs/2305.14761 ; https://arxiv.org/abs/2211.08545 ; https://arxiv.org/abs/2406.17294
-
-### 39. chart_comparison
-
-Compare explicitly specified values or categories in a shared compatible chart encoding, without inventing an exact difference.
-
-**Required image capabilities:** `readable_chart`, `comparable_series`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Check axes, legends, linear/log scales, zero baselines, units, and interval encodings. Resolve units, scale, attribute, period, and comparison scope before comparing.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which series is higher at the labeled year 2024?
-
-**Do not infer:** Comparing pixel height across incompatible axes.
-
-**Verification contracts:** `dual_visual_review`, `chart_encoding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `chartqa`, `figureqa`, `figureqa(mathv360k)`, `plotqa`, `Unichart`, `mapqa`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2203.10244 ; https://arxiv.org/abs/1710.07300 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/1909.00997 ; https://arxiv.org/abs/2305.14761 ; https://arxiv.org/abs/2211.08545
-
-### 40. chart_extremum_ranking
-
-Identify all minima, maxima, ties, or a requested order over a complete visible series or set of chart categories.
-
-**Required image capabilities:** `readable_chart`, `complete_series`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Check axes, legends, linear/log scales, zero baselines, units, and interval encodings.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which category has the maximum value? Include any ties.
-
-**Do not infer:** Selecting a local extremum as the global maximum when parts of the series are missing.
-
-**Verification contracts:** `dual_visual_review`, `chart_encoding_check`, `closed_set_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `chart2text`, `CoSyn_400k_chart`, `figureqa`, `figureqa(mathv360k)`, `vistext`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2203.06486 ; https://arxiv.org/abs/2502.14846 ; https://huggingface.co/datasets/HuggingFaceM4/FineVision ; https://arxiv.org/abs/1710.07300 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/2307.05356
-
-### 41. chart_trend_summary
-
-Describe visible rises, falls, plateaus, turning regions, or major comparisons over the declared axis range.
-
-**Required image capabilities:** `readable_chart`, `ordered_series`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Check axes, legends, linear/log scales, zero baselines, units, and interval encodings. Compression preserves source meaning and does not introduce an ungrounded fact.
-
-**Question example (only when its referenced objects and conditions are actually present):** Describe the trend across the displayed years without speculating about its cause.
-
-**Do not infer:** Forecasting outside the range or attributing a cause to correlation.
-
-**Verification contracts:** `dual_visual_review`, `chart_encoding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `chart2text`, `CoSyn_400k_chart`, `Unichart`, `vistext`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2203.06486 ; https://arxiv.org/abs/2502.14846 ; https://huggingface.co/datasets/HuggingFaceM4/FineVision ; https://arxiv.org/abs/2305.14761 ; https://arxiv.org/abs/2307.05356
-
-### 42. chart_series_relation
-
-Determine intersections, relative dominance, or visibly supported variation of complete series on comparable axes.
-
-**Required image capabilities:** `readable_chart`, `comparable_series`, `complete_series`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Check axes, legends, linear/log scales, zero baselines, units, and interval encodings. Resolve units, scale, attribute, period, and comparison scope before comparing. Use printed exact values or public approximation/rounding/interval rules; never invent precision.
-
-**Question example (only when its referenced objects and conditions are actually present):** Do the two curves cross within the displayed interval? Where approximately?
-
-**Do not infer:** Exact intersection coordinates or curve integrals not recoverable at the available precision.
-
-**Verification contracts:** `dual_visual_review`, `chart_encoding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"relation": ["intersection", "dominance", "variation"], "numeric_area": "route to grounded_arithmetic with verified samples and explicit integration rule"}
-
-**FineVision inspirations:** `figureqa`, `figureqa(mathv360k)`, `mmc_instruct`, `plotqa`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/1710.07300 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/2311.10774 ; https://arxiv.org/abs/1909.00997
-
-### 43. chart_data_reconstruction
-
-Recover visible category/series/value associations as a structured table, explicitly marking intervals or approximations where exact values are not legible.
-
-**Required image capabilities:** `readable_chart`, `chart_encoding`, `complete_series`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Check axes, legends, linear/log scales, zero baselines, units, and interval encodings. Use printed exact values or public approximation/rounding/interval rules; never invent precision. The required output structure is stated in the user instruction; private schema details must not leak.
-
-**Question example (only when its referenced objects and conditions are actually present):** Convert the labeled bars and their values into a table.
-
-**Do not infer:** Pretending an exact recovery of hidden source data from approximate graphics.
-
-**Verification contracts:** `dual_visual_review`, `chart_encoding_check`, `schema_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `mmc_instruct`, `SynthChartNet`, `Unichart`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2311.10774 ; https://arxiv.org/abs/2503.11576 ; https://arxiv.org/abs/2305.14761
-
-### 44. quantity_comparison
-
-Compare quantities extracted from visible sources after resolving units, signs, scales, dates, and the requested ordering.
-
-**Required image capabilities:** `typed_operands`, `explicit_units`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Each operand refers to a visible value or a verified image-derived public-history value. Resolve units, scale, attribute, period, and comparison scope before comparing.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which labeled package has the larger net weight?
-
-**Do not infer:** Comparing incomparable quantities, unlike periods, or currencies without a supplied exchange rule.
-
-**Verification contracts:** `dual_visual_review`, `exact_arithmetic_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"dimensionless_values": "allowed when explicitly identified as dimensionless"}
-
-**FineVision inspirations:** `chartqa`, `finqa`, `robut_wtq`, `vqaonbd`, `CoSyn_400k_nutrition`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2203.10244 ; https://arxiv.org/abs/2109.00122 ; https://arxiv.org/abs/2306.14321 ; https://ilocr.iiit.ac.in/vqabd/dataset.html ; https://arxiv.org/abs/2502.14846 ; https://arxiv.org/html/2510.17269v2
-
-### 45. grounded_arithmetic
-
-Compute a finite expression over image-grounded operands, with an explicit public question defining the operation, denominator, units, and rounding.
-
-**Required image capabilities:** `typed_operands`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Each operand refers to a visible value or a verified image-derived public-history value. The requested computation or reduction, operand order, denominator, and domain are explicit. Use printed exact values or public approximation/rounding/interval rules; never invent precision.
-
-**Question example (only when its referenced objects and conditions are actually present):** Using the two printed values, what is the percentage increase from the first to the second?
-
-**Do not infer:** Unseen prices or conversion rates, an implicit denominator, or unsupported intermediate values.
-
-**Verification contracts:** `dual_visual_review`, `exact_arithmetic_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"operators": ["add", "subtract", "multiply", "divide"], "derived_forms": ["ratio", "percentage", "percentage_change"], "division_by_zero": "not answerable"}
-
-**FineVision inspirations:** `chartqa`, `finqa`, `multihiertt`, `plotqa`, `tabmwp`, `tat_dqa`, `tat_qa`, `vqaonbd`, `CoSyn_400k_nutrition`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2203.10244 ; https://arxiv.org/abs/2109.00122 ; https://arxiv.org/abs/2206.01347 ; https://arxiv.org/abs/1909.00997 ; https://arxiv.org/abs/2209.14610 ; https://nextplusplus.github.io/TAT-DQA/ ; https://arxiv.org/abs/2207.11871 ; https://arxiv.org/abs/2105.07624 ; https://ilocr.iiit.ac.in/vqabd/dataset.html ; https://arxiv.org/abs/2502.14846 ; https://arxiv.org/html/2510.17269v2
-
-### 46. grounded_aggregation
-
-Compute a declared reduction over a complete image-grounded set of values, retaining selection criteria, units, and any visible weights.
-
-**Required image capabilities:** `typed_operands`, `closed_scope`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. Each operand refers to a visible value or a verified image-derived public-history value. The requested computation or reduction, operand order, denominator, and domain are explicit.
-
-**Question example (only when its referenced objects and conditions are actually present):** What is the mean of the values in the three labeled rows?
-
-**Do not infer:** Omitted rows, treating blanks as zero, or supplying unprinted weights.
-
-**Verification contracts:** `dual_visual_review`, `closed_set_check`, `exact_arithmetic_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"operator": ["sum", "mean", "median", "min", "max", "weighted_mean"], "weights": "all visible or explicitly supplied as hypothetical parameters"}
-
-**FineVision inspirations:** `CoSyn_400k_table`, `finqa`, `hitab`, `multihiertt`, `robut_wikisql`, `robut_wtq`, `tabmwp`, `vqaonbd`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846 ; https://arxiv.org/abs/2109.00122 ; https://arxiv.org/abs/2108.06712 ; https://arxiv.org/abs/2206.01347 ; https://arxiv.org/abs/2306.14321 ; https://arxiv.org/abs/2209.14610 ; https://ilocr.iiit.ac.in/vqabd/dataset.html
-
-### 47. unit_conversion
-
-Express a visible quantity in another unit using a versioned exact conversion rule or a conversion rule stated publicly in the question.
-
-**Required image capabilities:** `typed_operands`, `explicit_units`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Each operand refers to a visible value or a verified image-derived public-history value. Only use a versioned permitted conversion or a public hypothetical conversion; reject missing/live-world factors.
-
-**Question example (only when its referenced objects and conditions are actually present):** Convert the printed length of 2.5 m to centimeters.
-
-**Do not infer:** Exchange rates, serving sizes, density, calibration, or physical constants absent from the permitted rule set.
-
-**Verification contracts:** `dual_visual_review`, `exact_arithmetic_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"conversion_rule": "versioned allowlist; no live-world values"}
-
-**FineVision inspirations:** `tabmwp`, `vqaonbd`, `CoSyn_400k_nutrition`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2209.14610 ; https://ilocr.iiit.ac.in/vqabd/dataset.html ; https://arxiv.org/abs/2502.14846 ; https://arxiv.org/html/2510.17269v2
-
-### 48. measurement_reading
-
-Read a clock, ruler, gauge, or scale from unambiguous marks and pointers at the available precision.
-
-**Required image capabilities:** `calibrated_scale`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Resolve scale, pointer, origin, and units at the delivered resolution. Use printed exact values or public approximation/rounding/interval rules; never invent precision.
-
-**Question example (only when its referenced objects and conditions are actually present):** What time is shown on the analog clock?
-
-**Do not infer:** An exact physical measurement without calibration or pretending a value is more precise than the marks.
-
-**Verification contracts:** `dual_visual_review`, `scale_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"precision": "must follow ticks, labels, and visible resolution"}
-
-**FineVision inspirations:** `iconqa`, `iconqa(mathv360k)`, `spark`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2110.13214 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/2408.12114
-
-### 49. diagram_element_lookup
-
-Identify labeled components, geometric marks, nodes, or symbols using visible labels and a declared notation convention.
-
-**Required image capabilities:** `readable_diagram`, `notation_context`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Declare the representation convention and preserve all visible structure.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which component is labeled B in the diagram?
-
-**Do not infer:** Unlabeled specialist functions or an unprovided legend.
-
-**Verification contracts:** `dual_visual_review`, `graph_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `geo170k(align)`, `blockdiagramcomputerized`, `blockdiagramhandwritten`, `CoSyn_400k_diagram`, `ai2d_merged`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2312.11370 ; https://aclanthology.org/2022.findings-aacl.15/ ; https://arxiv.org/abs/2502.14846 ; https://huggingface.co/datasets/andito/ai2d-merged ; https://arxiv.org/html/2510.17269v2
-
-### 50. graph_connectivity
-
-Determine adjacency, incoming/outgoing connections, or a visible edge set from resolved nodes, arrows, and junction conventions.
-
-**Required image capabilities:** `graph_nodes_edges`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Verify endpoint identities, edge direction, junction/crossing conventions, and all traversed links.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which nodes are directly connected to A?
-
-**Do not infer:** Treating every line crossing as a junction or using proximity as an edge.
-
-**Verification contracts:** `dual_visual_review`, `graph_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `blockdiagramcomputerized`, `blockdiagramhandwritten`, `CoSyn_400k_diagram`, `diagram_image_to_text`, `ai2d_merged`, `CoSyn_400k_circuit`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://aclanthology.org/2022.findings-aacl.15/ ; https://arxiv.org/abs/2502.14846 ; https://huggingface.co/datasets/Kamizuru00/diagram_image_to_text ; https://huggingface.co/datasets/andito/ai2d-merged ; https://arxiv.org/html/2510.17269v2
-
-### 51. graph_path_tracing
-
-Follow one or more declared graph edges between visible endpoints, respecting direction and explicitly reporting multiple valid paths.
-
-**Required image capabilities:** `graph_nodes_edges`, `edge_directions`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Verify endpoint identities, edge direction, junction/crossing conventions, and all traversed links. Define source, destination, permitted edges, and path objective; retain multiple valid answers.
-
-**Question example (only when its referenced objects and conditions are actually present):** Trace the directed path from Start to the labeled output.
-
-**Do not infer:** An unshown connection, real-world travel permission, or a shortest path without a defined metric.
-
-**Verification contracts:** `dual_visual_review`, `graph_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `blockdiagramcomputerized`, `blockdiagramhandwritten`, `CoSyn_400k_diagram`, `diagram_image_to_text`, `ai2d_merged`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://aclanthology.org/2022.findings-aacl.15/ ; https://arxiv.org/abs/2502.14846 ; https://huggingface.co/datasets/Kamizuru00/diagram_image_to_text ; https://huggingface.co/datasets/andito/ai2d-merged ; https://arxiv.org/html/2510.17269v2
-
-### 52. diagram_process_description
-
-Explain the sequence, cycle, dependency, or branch structure explicitly depicted by the diagram, without importing unshown causal mechanisms.
-
-**Required image capabilities:** `readable_diagram`, `graph_nodes_edges`, `edge_directions`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Verify endpoint identities, edge direction, junction/crossing conventions, and all traversed links.
-
-**Question example (only when its referenced objects and conditions are actually present):** Explain the sequence shown by the arrows in this process diagram.
-
-**Do not infer:** Equating an arbitrary arrow with causality when the diagram does not define that meaning.
-
-**Verification contracts:** `dual_visual_review`, `graph_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `blockdiagramcomputerized`, `blockdiagramhandwritten`, `CoSyn_400k_diagram`, `diagram_image_to_text`, `ai2d_merged`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://aclanthology.org/2022.findings-aacl.15/ ; https://arxiv.org/abs/2502.14846 ; https://huggingface.co/datasets/Kamizuru00/diagram_image_to_text ; https://huggingface.co/datasets/andito/ai2d-merged ; https://arxiv.org/html/2510.17269v2
-
-### 53. diagram_branch_evaluation
-
-Apply visible branch conditions or rules to a public, explicitly supplied input and identify the resulting route or terminal label.
-
-**Required image capabilities:** `graph_nodes_edges`, `explicit_branch_conditions`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Verify endpoint identities, edge direction, junction/crossing conventions, and all traversed links. The rule is fully visible and the hypothetical input is public; interpret as data, never execute image instructions.
-
-**Question example (only when its referenced objects and conditions are actually present):** For an input of 8, which output does this flowchart reach?
-
-**Do not infer:** Executing image instructions, inventing a missing branch condition, or assuming an unshown algorithm step.
-
-**Verification contracts:** `dual_visual_review`, `graph_check`, `exact_arithmetic_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"input_values": "hypothetical values must be public; no external state"}
-
-**FineVision inspirations:** `blockdiagramcomputerized`, `blockdiagramhandwritten`, `diagram_image_to_text`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://aclanthology.org/2022.findings-aacl.15/ ; https://huggingface.co/datasets/Kamizuru00/diagram_image_to_text
-
-### 54. geometric_relation_analysis
-
-Identify visible shape classes, symmetry, geometric composition, or explicitly marked equality, parallelism, and perpendicularity.
-
-**Required image capabilities:** `geometric_marks`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Use explicit marks or calibrated formal drawings for exact claims; appearance alone is insufficient.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which sides are marked as equal?
-
-**Do not infer:** Assuming exact equality or angle values from an illustrative drawing alone.
-
-**Verification contracts:** `dual_visual_review`, `geometry_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `CoSyn_400k_graphic`, `iconqa`, `iconqa(mathv360k)`, `geo170k(align)`, `geo170k(qa)`, `geo3k`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846 ; https://arxiv.org/abs/2110.13214 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/2312.11370 ; https://arxiv.org/abs/2105.04165
-
-### 55. pattern_rule_identification
-
-Identify a relation or transformation that fits all visible examples within a declared finite rule grammar, acknowledging ambiguity between rules.
-
-**Required image capabilities:** `repeated_structure`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Within a versioned finite rule grammar, all visible examples agree and rival rules do not imply different answers.
-
-**Question example (only when its referenced objects and conditions are actually present):** What change repeats from one panel to the next?
-
-**Do not infer:** Claiming a universally unique rule from a finite arbitrary sequence.
-
-**Verification contracts:** `dual_visual_review`, `pattern_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"rule_grammar": ["constant", "translation", "rotation", "reflection", "count_progression", "attribute_cycle", "set_composition"]}
-
-**FineVision inspirations:** `iconqa`, `iconqa(mathv360k)`, `raven`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2110.13214 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/1903.02741
-
-### 56. pattern_completion
-
-Choose or describe a missing element using a rule validated against all visible examples and a declared finite candidate/rule set.
-
-**Required image capabilities:** `repeated_structure`, `answer_options_visible`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Within a versioned finite rule grammar, all visible examples agree and rival rules do not imply different answers. All completion alternatives used in the answer are visible or explicitly defined in the public instruction.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which of the visible options completes the matrix?
-
-**Do not infer:** Using a hidden answer key or accepting one option while another fits equally well.
-
-**Verification contracts:** `dual_visual_review`, `pattern_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `iconqa`, `iconqa(mathv360k)`, `raven`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2110.13214 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/1903.02741
-
-### 57. rule_based_exception
-
-Identify the element that violates a visible or publicly stated rule within a complete comparison set.
-
-**Required image capabilities:** `repeated_structure`, `closed_scope`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Determine the closed universe and ensure no relevant area is cropped, hidden, or unreadable. Unknown is not empty. State or uniquely establish the rule before choosing an exception; no subjective odd-one-out.
-
-**Question example (only when its referenced objects and conditions are actually present):** Under the displayed color-alternation rule, which panel breaks the pattern?
-
-**Do not infer:** Subjective odd-one-out choices without an agreed rule or invented abnormalities.
-
-**Verification contracts:** `dual_visual_review`, `pattern_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `iconqa`, `iconqa(mathv360k)`, `raven`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2110.13214 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/1903.02741
-
-### 58. ui_element_grounding
-
-Identify a visible control that matches a public referring expression or locally supported goal; return a textual location by default.
-
-**Required image capabilities:** `ui_controls`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Verify that the public reference identifies one target; if multiple match, revise the question or use an ambiguity profile. The target is on-screen and tied to a public local request.
-
-**Question example (only when its referenced objects and conditions are actually present):** Where is the search box in this screenshot?
-
-**Do not infer:** An off-screen control, hidden DOM state, or a claim that an action was executed.
-
-**Verification contracts:** `dual_visual_review`, `ui_grounding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"representation": "textual_reference", "coordinate_output": "use ui_action_specification with a coordinate validator"}
-
-**FineVision inspirations:** `aguvis-stage-1`, `groundui`, `screenqa`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2412.04454 ; https://arxiv.org/html/2510.17269v2 ; https://arxiv.org/abs/2403.17918 ; https://arxiv.org/abs/2209.08199
-
-### 59. ui_state_reading
-
-Report the visibly indicated selected tab, checked option, displayed error, or control state using the screenshot only.
-
-**Required image capabilities:** `ui_controls`, `ui_state_indicators`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. A state indication is explicit enough; gray/color alone does not prove backend enablement.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which tab is currently selected?
-
-**Do not infer:** Backend state, user permissions, or disabled/enabled status inferred from color alone.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `aguvis-stage-1`, `groundui`, `screenqa`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2412.04454 ; https://arxiv.org/html/2510.17269v2 ; https://arxiv.org/abs/2403.17918 ; https://arxiv.org/abs/2209.08199
-
-### 60. screen_summary
-
-Summarize the main visible content and apparent interface function from explicit controls, headings, and text.
-
-**Required image capabilities:** `ui_controls`, `scene_context`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Compression preserves source meaning and does not introduce an ungrounded fact.
-
-**Question example (only when its referenced objects and conditions are actually present):** What information and controls are shown on this screen?
-
-**Do not infer:** Hidden app features, the user goal, or a workflow not shown.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `websight`, `screen2words`, `screenqa`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2403.09029 ; https://arxiv.org/abs/2108.03353 ; https://arxiv.org/abs/2209.08199
-
-### 61. panel_comparison
-
-Describe visible similarities and differences between two or more explicitly resolved panels of the same input canvas.
-
-**Required image capabilities:** `panels_resolvable`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. All indispensable panels, pages, labels, choices, and text are present in the one input image. Identify existing panels by labels or unambiguous layout; do not create unseen comparison images.
-
-**Question example (only when its referenced objects and conditions are actually present):** What differs between the left and right panels?
-
-**Do not infer:** Inventing a second image or presenting unrelated crops as before/after evidence.
-
-**Verification contracts:** `dual_visual_review`, `panel_comparison_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"canvas_policy": "existing panels only; no implicit multi-image support"}
-
-**FineVision inspirations:** `mimic_cgd`, `mmra`, `nlvr2`, `spot_the_diff`, `yesbut`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://huggingface.co/datasets/pufanyi/MIMICIT ; https://arxiv.org/abs/2306.05425 ; https://arxiv.org/abs/2407.17379 ; https://arxiv.org/abs/1811.00491 ; https://arxiv.org/abs/1808.10584 ; https://arxiv.org/abs/2409.13592
-
-### 62. visible_sequence_description
-
-Describe the depicted changes across panels whose order is explicitly labeled or unambiguously encoded, without filling in unseen events.
-
-**Required image capabilities:** `panels_resolvable`, `visible_sequence_order`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. All indispensable panels, pages, labels, choices, and text are present in the one input image. Require visible numbering, arrows, timestamps, or an explicit sequence convention.
-
-**Question example (only when its referenced objects and conditions are actually present):** Describe what changes from panel 1 to panel 3.
-
-**Do not infer:** Inferring chronology from unlabeled juxtaposition, hidden intermediate actions, or a causal story.
-
-**Verification contracts:** `dual_visual_review`, `panel_comparison_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {}
-
-**FineVision inspirations:** `spot_the_diff`, `yesbut`, `ai2d_merged`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/1808.10584 ; https://arxiv.org/abs/2409.13592 ; https://huggingface.co/datasets/andito/ai2d-merged ; https://arxiv.org/html/2510.17269v2
-
-### 63. visual_claim_verification
-
-Determine whether a public claim is supported, contradicted, or not decidable from the image, and name the relevant visible evidence when requested.
-
-**Required image capabilities:** `resolvable_region`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. The proposition is public and relates to visible targets; it is not a hidden desired answer.
-
-**Question example (only when its referenced objects and conditions are actually present):** Is the statement "the box is left of the chair" consistent with the image?
-
-**Do not infer:** A forced binary label when evidence is missing, or guessing unseen facts.
-
-**Verification contracts:** `dual_visual_review`, `evidence_binding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"verdicts": ["supported", "contradicted", "not_determined"]}
-
-**FineVision inspirations:** `idk`, `lnqa`, `lrv_normal(filtered)`, `nlvr2`, `spatialsense`, `vsr`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2402.09717 ; https://vikhyat.net/posts/2024-08-17-lnqa.html ; https://arxiv.org/abs/2306.14565 ; https://arxiv.org/abs/1811.00491 ; https://openaccess.thecvf.com/content_ICCV_2019/html/Yang_SpatialSense_An_Adversarially_Crowdsourced_Benchmark_for_Spatial_Relation_Recognition_ICCV_2019_paper.html ; https://arxiv.org/abs/2205.00363
-
-### 64. evidence_localization
-
-Identify the visible region, label, sentence, or connected elements that support an already public question or proposition.
-
-**Required image capabilities:** `resolvable_region`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. The proposition is public and relates to visible targets; it is not a hidden desired answer.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which part of the image shows the closing time?
-
-**Do not infer:** Private evidence IDs, an invented source, or a location without the claimed evidence.
-
-**Verification contracts:** `dual_visual_review`, `evidence_binding_check`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"default_output": "natural-language region description or exact visible quote"}
-
-**FineVision inspirations:** `est_vqa`, `infographic_vqa`, `pdfvqa`, `slidevqa`, `visualmrc`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2002.10215 ; https://arxiv.org/abs/2104.12756 ; https://arxiv.org/abs/2304.06447 ; https://arxiv.org/abs/2301.04883 ; https://arxiv.org/abs/2101.11272
-
-### 65. answerability_assessment
-
-Determine whether a specific locally anchored question can be answered from the image and identify missing, unreadable, cropped, or ambiguous evidence.
-
-**Required image capabilities:** `resolvable_region`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. The question concerns a visible object/field; the limitation can be locally grounded.
-
-**Question example (only when its referenced objects and conditions are actually present):** Can the exact price be read from this cropped label? Explain the visible limitation.
-
-**Do not infer:** Generic refusal to any unrelated question or using unreadable evidence as a negative fact.
-
-**Verification contracts:** `dual_visual_review`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"verdicts": ["answerable", "unreadable", "cropped", "ambiguous", "not_present"]}
-
-**FineVision inspirations:** `idk`, `vizwiz(mathv360k)`, `screenqa`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2402.09717 ; https://arxiv.org/abs/1802.08218 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/2209.08199
-
-### 66. geometric_constraint_solving
-
-Solve a numerical or logical geometry question using only visibly stated or marked constraints and a versioned theorem/rule set.
-
-**Required image capabilities:** `geometric_marks`, `readable_formula`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Use explicit marks or calibrated formal drawings for exact claims; appearance alone is insufficient. A versioned formal rule set and qualified validator cover the exact problem type. All visible premises jointly determine the requested solution under the permitted rule set.
-
-**Question example (only when its referenced objects and conditions are actually present):** Using the marked right angle and printed side lengths, find the requested length.
-
-**Do not infer:** Reading exact measurements from an uncalibrated drawing or adding unstated geometric assumptions.
-
-**Verification contracts:** `dual_visual_review`, `formal_geometry_validator`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"enabled_by_default": false}
-
-**FineVision inspirations:** `CoSyn_400k_math`, `geo170k(qa)`, `geo3k`, `geometry3k(mathv360k)`, `geomverse`, `geoqa+(mathv360k)`, `geos(mathv360k)`, `intergps`, `mavis_math_metagen`, `mavis_math_rule_geo`, `unigeo(mathv360k)`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846 ; https://arxiv.org/abs/2312.11370 ; https://arxiv.org/abs/2105.04165 ; https://arxiv.org/abs/2406.17294 ; https://arxiv.org/abs/2312.12241 ; https://aclanthology.org/2022.coling-1.130/ ; https://aclanthology.org/D15-1171/ ; https://arxiv.org/abs/2407.08739 ; https://arxiv.org/abs/2212.02746
-
-### 67. diagram_to_code
-
-Generate sandbox-renderable TikZ or SVG that reproduces the specified visible diagram, accepting equivalent code instead of requiring the hidden original.
-
-**Required image capabilities:** `readable_diagram`, `rendered_layout`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. A sandboxed renderer, asset/font policy, syntax allowlist, and output comparison procedure are configured.
-
-**Question example (only when its referenced objects and conditions are actually present):** Recreate this diagram in SVG, including the visible labels and arrows.
-
-**Do not infer:** Claiming recovery of the original source code, external assets, or arbitrary file/network access.
-
-**Verification contracts:** `dual_visual_review`, `sandbox_render_validator`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"enabled_by_default": false, "code_languages": ["svg", "tikz_subset"]}
-
-**FineVision inspirations:** `datik`, `datikz`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2310.00367 ; https://huggingface.co/datasets/nllg/datikz ; https://huggingface.co/datasets/HuggingFaceM4/datikz
-
-### 68. screen_to_code
-
-Generate sandbox-renderable static HTML/CSS that reproduces the visible layout under declared font, asset, viewport, and approximation rules.
-
-**Required image capabilities:** `ui_controls`, `rendered_layout`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. A sandboxed renderer, asset/font policy, syntax allowlist, and output comparison procedure are configured.
-
-**Question example (only when its referenced objects and conditions are actually present):** Recreate the visible layout as static HTML and CSS.
-
-**Do not infer:** Inferring hidden JavaScript, app behavior, original DOM, credentials, or network assets.
-
-**Verification contracts:** `dual_visual_review`, `sandbox_render_validator`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"enabled_by_default": false, "javascript": "disabled", "asset_policy": "local allowlist or explicit placeholders"}
-
-**FineVision inspirations:** `websight`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2403.09029
-
-### 69. music_notation_reading
-
-Read pitch, duration, rests, or note order from a score with visible clef, key, meter, and accidental context, using a declared notation schema.
-
-**Required image capabilities:** `notation_context`, `readable_diagram`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Required clef, key, meter, accidentals, and bar context are available and supported by the verifier.
-
-**Question example (only when its referenced objects and conditions are actually present):** What are the pitches of the notes in the first complete bar?
-
-**Do not infer:** Guessing an omitted clef or accidental context, audio properties, or musical intent.
-
-**Verification contracts:** `dual_visual_review`, `music_notation_validator`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"enabled_by_default": false}
-
-**FineVision inspirations:** `CoSyn_400k_music`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846
-
-### 70. chemical_structure_reading
-
-Recover visible atom, bond, ring, or explicitly defined substructure information using a declared chemical notation convention.
-
-**Required image capabilities:** `notation_context`, `readable_diagram`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Bond, atom, implicit-hydrogen, and stereochemical conventions are covered by the chosen validator.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which atoms are connected by the marked double bond?
-
-**Do not infer:** Reaction conditions, synthesis instructions, biological effects, or unresolvable stereochemistry.
-
-**Verification contracts:** `dual_visual_review`, `chemical_graph_validator`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"enabled_by_default": false}
-
-**FineVision inspirations:** `CoSyn_400k_chemical`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846
-
-### 71. circuit_structure_reading
-
-Identify circuit symbols and explicit electrical connections using known junction, crossover, and component conventions.
-
-**Required image capabilities:** `notation_context`, `graph_nodes_edges`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. All symbol and junction conventions needed for the topology are supported by the verifier.
-
-**Question example (only when its referenced objects and conditions are actually present):** Which components are connected in parallel in the shown circuit?
-
-**Do not infer:** Electrical performance from missing values or connections, or unshown safety conditions.
-
-**Verification contracts:** `dual_visual_review`, `circuit_graph_validator`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"enabled_by_default": false}
-
-**FineVision inspirations:** `CoSyn_400k_circuit`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2502.14846
-
-### 72. ui_action_specification
-
-Produce a single action-schema record targeting a visible control for an explicit public local goal, without executing it or claiming a result.
-
-**Required image capabilities:** `ui_controls`.
-
-**Eligibility:** Bind a public region/target expression to this image; reject nonexistent markers or unbound targets. Verify that the public reference identifies one target; if multiple match, revise the question or use an ambiguity profile. The goal is explicit and achievable as a single target specification on the visible screen; no outcome claim. An explicit allowlisted action and coordinate schema is configured; this is a data-generation task only. Coordinates use the delivered view dimensions and a verified target region; arbitrary points cannot pass.
-
-**Question example (only when its referenced objects and conditions are actually present):** To focus the visible search field, specify one click target in normalized coordinates.
-
-**Do not infer:** Multi-step planning through unseen screens, assumed action outcomes, or actual tool execution.
-
-**Verification contracts:** `dual_visual_review`, `ui_action_validator`. These are requirements, not provided runtime implementations.
-
-**Parameters:** {"enabled_by_default": false, "action_scope": "single locally grounded action; no execution"}
-
-**FineVision inspirations:** `aguvis-stage-1`, `groundui`. These are abstractions/projections, not claims of identical supervision.
-
-**Sources:** https://arxiv.org/abs/2412.04454 ; https://arxiv.org/html/2510.17269v2 ; https://arxiv.org/abs/2403.17918
-
-## Facets, not extra task IDs
-
-### input_domain
-photo, sketch, document, table, chart, thematic_map, diagram, ui, math_notation, code_listing, score, chemical_diagram, circuit
-
-Infer from image only. Domain is not a new semantic operation and must not enable an unsupported task.
-
-### source_appearance
-printed, handwritten, stylized, rotated, low_contrast, dense_layout
-
-Difficulty tags, not separate task IDs. Never degrade legibility to manufacture diversity.
-
-### output_form
-short_answer, sentence, list, table, json, markdown, latex, static_code
-
-Require only public output constraints. Code, coordinates, and specialized schemas have additional validators.
-
-### answer_language
-en, ja, zh-Hans
-
-Retain source script for verbatim OCR; target language applies to generated explanation. A requested translation is an optional transformation, not an OCR correction.
-
-### scope
-single_target, bounded_region, whole_canvas, existing_panels
-
-Binding and closure are region-specific; multi-page/multi-image context is not silently supplied.
-
-### composition
-direct, filter_then_lookup, relational_chain, multi_region_synthesis, verified_derived_value
-
-Label the requested final semantic operation; multiple independent operations require explicit subtasks instead of ambiguous single labels.
-
-### dialogue_relation
-new_observation, refinement, reference_to_prior, regroup, reformat, verify, explicit_hypothetical_update
-
-Use exact committed public history. A later turn alone does not prove dependency. Reformats are modifiers, not new visual tasks.
-
-### answerability_profile
-normal, limitation, false_premise
-
-A response behavior orthogonal to task ID. Alternative profile guards below replace, not blindly reuse, normal answerability prerequisites.
-
-## Verification limits
-
-Only catalog structure, cross-references and source-table preservation are checked by the bundled validation tests. No Pixelogue runtime integration, model call, image test, expert-domain validation, or SFT improvement measurement is included. See INTEGRATION.md for the implementation handoff.
-
-## Conditional verification and routing
-
-Verification contracts are conditional on the actual requested operation and public parameters. For example, a textual consistency check does not automatically trigger arithmetic, and a schema check applies only when a public output format requires it. Applicability is controller-owned; missing applicable validators block admission.
-
-### Routing precedence
-
-- Use formula_transcription or code_transcription for structural transcription of formulas/code, not generic text_transcription.
-- Use table_cell_lookup for row/column/header-path cell addressing, and chart_encoding_lookup/chart_value_lookup for chart addressing.
-- Use ui_element_grounding for UI targets and diagram_element_lookup for labeled diagram elements.
-- Use grounded_aggregation for a closed-set reduction, grounded_arithmetic for an explicit expression, and entity_count for member enumeration.
-- Use quantified_statement_verification for quantified propositions; visual_claim_verification is for other visible propositions.
-- Use panel_comparison for corresponding regions in explicitly distinguishable panels; attribute_comparison compares resolved objects.
-- Use graph_path_tracing for paths, graph_connectivity for adjacency/reachability, and diagram_process_description for a process summary.
-- Bind the requested final operation, not the answer format; genuinely independent subtasks need explicit composition.
-- If the operation is still ambiguous, mark UNRESOLVED rather than silently substituting an easier neighboring task.
-
-### Runtime feasibility
-
-- The expected output must fit the configured response and context budget. Otherwise choose a publicly explicit bounded region, allocate a reviewed larger budget, or skip. Never truncate and certify completeness.
-- Check eligibility using the actual model/student image resolution and record any view transformation. Coordinate checks must use the same view.
-- An unavailable applicable validator blocks admission; a registry entry in this proposal is not a running implementation.
-- Pattern uniqueness is relative to an explicitly versioned finite rule grammar, made public when it changes the task interpretation. Competing reasonable answers require abstention.
+- **Status.** core; structured verification.
+- **Example question.** Which shapes are blue but not circles?
+- **Do not infer.** Conditions that cannot be checked by looking, or a partial list when the area is not fully visible.
+- **Required capabilities.** `multiple_entities`, `interpretable_predicates`, `closed_scope`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `predicates_observable`.
+- **Verification contracts.** `dual_visual_review`, `closed_set_check`.
+- **Related FineVision subsets.** `tallyqa`, `clevr`, `clevr_math`, `super_clevr(mathv360k)`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `conditions` | yes | text | The visible conditions an object must meet, combined with and, or, not, for example 'red and not round'. |
+
+#### `group_by_attribute`: Group objects by an attribute
+
+The user asks to group all objects of a stated kind by one visible attribute, such as color; the answer names every group together with its members or its count.
+
+- **Status.** core; structured verification.
+- **Example question.** Group the buttons by color and give the number of buttons in each group.
+- **Do not infer.** Group names without saying which objects belong to them, or groups based on properties that are not visible.
+- **Required capabilities.** `multiple_entities`, `visible_attribute`, `closed_scope`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `grouping_key_defined`.
+- **Verification contracts.** `dual_visual_review`, `closed_set_check`.
+- **Related FineVision subsets.** `coco_colors`, `tallyqa`, `clevr`, `super_clevr(mathv360k)`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `group_key` | yes | text | The visible attribute that defines the groups, such as 'color' or 'shape'. |
+| `return` | yes | one of `members`, `counts` | Whether each group lists its members or only how many members it has. |
+
+#### `count_comparison`: Compare two counts
+
+The user asks whether there are more, fewer or equally many objects of one kind than of another; the answer compares the two exact counts, not the space the objects take up.
+
+- **Status.** core; structured verification.
+- **Example question.** Are there more cups than plates on the table?
+- **Do not infer.** A comparison based on area or density instead of counting.
+- **Required capabilities.** `closed_scope`, `countable_entities`, `interpretable_predicates`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `count_unit_defined`.
+- **Verification contracts.** `dual_visual_review`, `closed_set_check`, `exact_arithmetic_check`.
+- **Related FineVision subsets.** `iconqa`, `tallyqa`, `clevr`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `count_unit` | yes | text | What counts as one item in each group, such as 'each cup' and 'each plate'. |
+
+#### `quantified_claim_verification`: Check an all, none or some claim
+
+The user asks whether a statement using all, none, some, exactly, at least or at most holds for a fully visible group of objects; the answer says whether it holds and gives the counts behind it. Use visual_claim_verification for other statements.
+
+- **Status.** core; structured verification.
+- **Example question.** Are all of the visible triangles blue?
+- **Do not infer.** A universal or negative answer from a partial view.
+- **Required capabilities.** `closed_scope`, `interpretable_predicates`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `predicates_observable`.
+- **Verification contracts.** `dual_visual_review`, `closed_set_check`.
+- **Related FineVision subsets.** `nlvr2`, `vsr`, `clevr`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `condition` | yes | text | The property that the statement tests, such as 'blue' in 'all triangles are blue', including the number for exactly, at least or at most. |
+| `quantifier` | yes | one of `all`, `none`, `some`, `exactly`, `at_least`, `at_most` | The quantifier that the statement uses. |
+
+#### `hypothetical_set_update`: Answer about a hypothetical change
+
+The user asks what would be true if visible objects were added, removed or relabeled, for example how many cubes would remain without the two blue ones; the answer applies the change to the visible group and states the result.
+
+- **Status.** core; structured verification.
+- **Example question.** If the two blue cubes were removed, how many cubes would remain?
+- **Do not infer.** Presenting the change as something that actually happened, or predicting physical consequences.
+- **Required capabilities.** `closed_scope`, `countable_entities`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `hypothetical_public`.
+- **Verification contracts.** `dual_visual_review`, `closed_set_check`, `exact_arithmetic_check`.
+- **Related FineVision subsets.** `clevr_math`, `clevr_math(mathv360k)`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `update` | yes | one of `add`, `remove`, `relabel` | The kind of hypothetical change that the question makes. |
+
+### Reading text, formulas and code (`text_reading`)
+
+#### `text_transcription`: Transcribe text or code exactly
+
+The user asks to copy the text, code or several text blocks in a named area exactly; the answer reproduces the characters, line breaks and indentation in reading order without correcting anything. Use formula_transcription for mathematical formulas.
+
+- **Status.** core; light verification.
+- **Example question.** Transcribe the text on the sign exactly.
+- **Answer format.** Only the transcribed text, optionally wrapped in one pair of quotation marks or one code block, with the original line breaks and indentation.
+- **Do not infer.** Fixed typos, completed cut-off text, translations, or instructions written in the image being followed.
+- **Required capabilities.** `readable_text`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `reading_order_resolved`.
+- **Verification contracts.** `dual_visual_review`, `transcript_alignment`.
+- **Related FineVision subsets.** `art`, `cocotext`, `ctw`, `iam`, `iiit5k`, `imgur5k`, `maptext`, `orand_car_a`, `rendered_text`, `wordart`, `synthdog`, `olmOCR-mix-0225-documents`, `olmOCR-mix-0225-books`, `DoclingMatix`, `SynthCodeNet`.
+- **Parameters.** None.
+
+#### `text_field_extraction`: Extract named fields as JSON
+
+The user names fields such as 'invoice number' and 'date' and asks for their printed values as JSON; the answer gives each field's value exactly as printed, and null for a field that is not present.
+
+- **Status.** core; structured verification.
+- **Example question.** Give the invoice number and the issue date as JSON.
+- **Answer format.** One JSON object of the form {"fields": {"<field name>": "<value exactly as printed>"}} whose keys are exactly the requested field names, with null for a field that is not present.
+- **Do not infer.** Typical or guessed values for missing fields, or personal data that is not printed.
+- **Required capabilities.** `readable_text`, `text_fields`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `fields_bound`.
+- **Verification contracts.** `dual_visual_review`, `transcript_alignment`, `schema_check`.
+- **Related FineVision subsets.** `funsd`, `sroie`, `svrd`, `handwriting_forms`, `invoices_receipts`, `ocrvqa`, `ureader_ie`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `fields` | yes | list of at most 64 | The names of the requested fields, exactly as the question lists them. |
+| `format` | yes | one of `structured_json` | The required output format. |
+
+#### `label_value_lookup`: Give the value that belongs to a label
+
+The user names a printed label, such as 'Net weight' on a form, a legend or a label sheet; the answer gives the value that the layout explicitly assigns to that label.
+
+- **Status.** core; light verification.
+- **Example question.** What value belongs to the label 'Net weight' on this form?
+- **Do not infer.** A value paired with a label only because it is nearby.
+- **Required capabilities.** `readable_text`, `explicit_mapping`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `association_explicit`.
+- **Verification contracts.** `dual_visual_review`, `transcript_alignment`.
+- **Related FineVision subsets.** `funsd`, `sroie`, `svrd`, `handwriting_forms`, `ureader_ie`.
+- **Parameters.** None.
+
+#### `text_object_binding`: Relate text to what it labels
+
+The user asks which pictured object a piece of text names or describes, or whether the text agrees with the picture; the answer links the text to the object or region using visible evidence.
+
+- **Status.** core; light verification.
+- **Example question.** Which product on the shelf carries the label 'Green tea'?
+- **Do not infer.** Jokes, the author's intentions, or links between text and objects that the layout does not show.
+- **Required capabilities.** `readable_text`, `text_object_alignment`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `association_explicit`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `textcaps`, `chinesememe`, `llavar_gpt4_20k`, `est_vqa`, `st_vqa`, `textocr(gpt4v)`, `textvqa`.
+- **Parameters.** None.
+
+#### `formula_transcription`: Transcribe a formula
+
+The user asks to write a visible mathematical formula in LaTeX or Unicode math; the answer copies its symbols, grouping, fractions, roots and sub- and superscripts exactly, without solving or simplifying it.
+
+- **Status.** core; structured verification.
+- **Example question.** Write the displayed equation in LaTeX without solving it.
+- **Answer format.** Use only symbols, numbers, grouping, arithmetic, equality, sub- and superscripts, fractions and square roots; LaTeX display delimiters around the whole formula are allowed. Matrices, chemical diagrams and other commands are not supported, so choose another operation for them.
+- **Do not infer.** A corrected formula, or an equivalent formula written differently.
+- **Required capabilities.** `readable_formula`.
+- **Eligibility checks.** `scope_resolved`, `notation_resolved`.
+- **Verification contracts.** `dual_visual_review`, `formula_structure_check`.
+- **Related FineVision subsets.** `chrome_writting`, `hme100k`, `k12_printing`, `latex_handwritten`, `latexformulas`, `mathwriting-google`, `SynthFormulaNet`, `tal_ocr_eng`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `notation` | yes | one of `latex`, `unicode_math` | The notation that the answer must use. |
+
+### Documents (`document_understanding`)
+
+#### `document_extractive_qa`: Answer with the exact text from a document
+
+The user asks a question that a visible document answers directly; the answer quotes the shortest complete passage that answers it, in the document's language, keeping its qualifiers and negations.
+
+- **Status.** core; light verification.
+- **Example question.** According to this notice, when does registration close?
+- **Answer format.** The exact passage from the document, in its language; only the case of the first letter and a final period may differ. No translation, paraphrase or added claims.
+- **Do not infer.** Answers from outside knowledge or from pages that are not shown.
+- **Required capabilities.** `readable_prose`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `answer_evidence_present`.
+- **Verification contracts.** `dual_visual_review`, `transcript_alignment`.
+- **Related FineVision subsets.** `hw_squad`, `bentham`, `docvqa`, `pdfvqa`, `screenqa`, `ureader_qa_processed`.
+- **Parameters.** None.
+
+#### `document_evidence_synthesis`: Answer by combining parts of a document
+
+The user asks a question whose answer needs two or more separate parts of the same document, such as a table and a note below it; the answer combines them instead of copying one passage.
+
+- **Status.** core; light verification.
+- **Example question.** Using the table and the note below it, which entries are included in the total?
+- **Do not infer.** Facts from other pages, or causes and conclusions that the document does not state.
+- **Required capabilities.** `multiple_evidence_regions`, `readable_prose`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `all_evidence_on_canvas`.
+- **Verification contracts.** `dual_visual_review`, `evidence_binding_check`.
+- **Related FineVision subsets.** `finqa`, `multihiertt`, `tat_dqa`, `tat_qa`, `infographic_vqa`, `slidevqa`, `visualmrc`.
+- **Parameters.** None.
+
+#### `document_summary`: Summarize a document
+
+The user asks for the main points of a visible document or of one of its sections; the answer summarizes what the document says, attributing the claims to the document.
+
+- **Status.** core; light verification.
+- **Example question.** Summarize the three main points of this notice.
+- **Do not infer.** Background that the document does not give, dropped negations, or the document's claims treated as verified facts.
+- **Required capabilities.** `readable_prose`, `multiple_facts`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `summary_entails_evidence`.
+- **Verification contracts.** `dual_visual_review`, `evidence_binding_check`.
+- **Related FineVision subsets.** `DoclingMatix`, `sujet_finance`, `ureader_cap`, `ureader_kg_processed`, `visualmrc`.
+- **Parameters.** None.
+
+#### `document_structure_reconstruction`: Convert a document page to structured JSON
+
+The user asks to convert a visible page, or a named part of it, into a JSON outline of its headings, paragraphs, lists, tables, formulas, captions and footnotes in reading order; the answer keeps the text and the hierarchy.
+
+- **Status.** core; structured verification.
+- **Example question.** Convert this page into a JSON outline of its headings, paragraphs and lists in reading order.
+- **Answer format.** One JSON object of the form {"nodes": [{"node_id": "n1", "kind": "heading", "text": "...", "parent_id": null, "order": 0}]}. kind is one of heading, paragraph, list, list_item, table, table_row, table_cell, formula, caption or footnote; order is the reading position as a unique integer; parent_id is null or names a node that comes earlier.
+- **Do not infer.** Sections that are not on the page, unseen table cells, or document metadata.
+- **Required capabilities.** `document_layout`, `readable_text`, `reading_order`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `reading_order_resolved`, `schema_public`.
+- **Verification contracts.** `dual_visual_review`, `transcript_alignment`, `schema_check`.
+- **Related FineVision subsets.** `synthdog`, `olmOCR-mix-0225-documents`, `olmOCR-mix-0225-books`, `DoclingMatix`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `format` | yes | one of `structured_json` | The required output format. |
+
+#### `stated_value_consistency`: Check whether two stated values agree
+
+The user points to two places in the same image that state the same quantity or fact, such as a total in a paragraph and in a table; the answer says whether they agree, keeping units, dates and scope.
+
+- **Status.** core; structured verification.
+- **Example question.** Does the total in the paragraph match the total in the table?
+- **Do not infer.** Different periods or units treated as the same, or a judgment of whether a claim is true in the real world.
+- **Required capabilities.** `multiple_evidence_regions`, `explicit_cross_references`.
+- **Eligibility checks.** `scope_resolved`, `all_evidence_on_canvas`, `comparable_basis`.
+- **Verification contracts.** `dual_visual_review`, `evidence_binding_check`, `exact_arithmetic_check`.
+- **Related FineVision subsets.** `finqa`, `multihiertt`, `tat_dqa`, `tat_qa`, `infographic_vqa`, `sujet_finance`.
+- **Parameters.** None.
+
+#### `document_element_role`: Identify the role of a document element
+
+The user asks what role a part of a document plays, or which part has a given role, such as title, heading, caption, footnote or table header; the answer decides from the layout and the text together.
+
+- **Status.** core; light verification.
+- **Example question.** Which text is the caption of the figure?
+- **Do not infer.** A role based on font size alone, or document structure that is not visible.
+- **Required capabilities.** `document_layout`, `readable_text`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `role_visually_supported`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `olmOCR-mix-0225-documents`, `olmOCR-mix-0225-books`, `DoclingMatix`, `pdfvqa`.
+- **Parameters.** None.
+
+### Tables (`table_understanding`)
+
+#### `table_cell_lookup`: Look up a table cell
+
+The user names a row and a column of a visible table, including group headers when present; the answer gives the cell's value exactly as printed, with its unit, without calculating anything.
+
+- **Status.** core; structured verification.
+- **Example question.** What value is listed for Europe in 2024 under Revenue?
+- **Do not infer.** An ignored parent header, unit, footnote or merged cell.
+- **Required capabilities.** `readable_table`, `table_headers`.
+- **Eligibility checks.** `scope_resolved`, `table_headers_bound`, `text_legible`.
+- **Verification contracts.** `dual_visual_review`, `table_structure_check`.
+- **Related FineVision subsets.** `CoSyn_400k_table`, `hitab`, `robut_wikisql`, `robut_wtq`, `vqaonbd`.
+- **Parameters.** None.
+
+#### `table_row_selection`: Select table rows by conditions
+
+The user states conditions on the columns of a visible table, optionally with a sort order; the answer lists every row that meets them, in that order.
+
+- **Status.** core; structured verification.
+- **Example question.** Which rows have a quantity above 10? List their names from the largest to the smallest quantity.
+- **Answer format.** The labels of the selected rows, in the requested order.
+- **Do not infer.** Conditions on columns that the table does not have, or only some of the matching rows.
+- **Required capabilities.** `readable_table`, `table_headers`, `closed_scope`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `table_headers_bound`, `predicates_observable`.
+- **Verification contracts.** `dual_visual_review`, `table_structure_check`, `closed_set_check`.
+- **Related FineVision subsets.** `CoSyn_400k_table`, `hitab`, `robut_wikisql`, `robut_wtq`, `tabmwp`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `conditions` | yes | text | The column conditions and any requested order, for example 'quantity above 10, largest quantity first'. |
+
+#### `table_reconstruction`: Convert a table to HTML, JSON or Markdown
+
+The user asks to convert a visible table into HTML, JSON or simple Markdown; the answer reproduces every cell, header level, merged cell and blank cell.
+
+- **Status.** core; structured verification.
+- **Example question.** Convert this table to HTML, keeping its grouped column headings.
+- **Answer format.** For html_table, one static table using only table, thead, tbody, tfoot, tr, th and td tags, with rowspan and colspan, br for line breaks inside a cell, scope on th (row, col, rowgroup or colgroup), numeric border, cellpadding and cellspacing on table, and only these styles: border-collapse (collapse or separate), text-align (left, right, center, start, end or justify) and vertical-align (top, middle or bottom); no scripts, event handlers, external assets or other tags. For structured_json, one object {"table_id", "rows", "cols", "cells", "data_rows", "closed"} whose cells each have "row", "col", "rowspan", "colspan", "text" and "kind" ("header" or "data"). Keep blank cells, header and data roles, and merged-cell spans.
+- **Do not infer.** Invented cells, collapsed group headers, or blank cells turned into zeros.
+- **Required capabilities.** `readable_table`, `table_headers`.
+- **Eligibility checks.** `scope_resolved`, `table_headers_bound`, `schema_public`.
+- **Verification contracts.** `dual_visual_review`, `table_structure_check`, `schema_check`.
+- **Related FineVision subsets.** `CoSyn_400k_table`, `hitab`, `vqaonbd`, `DoclingMatix`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `format` | yes | one of `html_table`, `structured_json`, `markdown_simple_only` | The output format; markdown_simple_only is only for tables without merged cells and with one header row. |
+
+#### `table_join`: Join two tables by a shared key
+
+The user asks to match the rows of two or more tables in the same image through a shared identifier, such as a product ID; the answer pairs the matching records.
+
+- **Status.** core; structured verification.
+- **Example question.** Using the product IDs, which category in the right table belongs to each item in the left table?
+- **Answer format.** The matched pairs, each naming a row of one table and the matching row or value of the other.
+- **Do not infer.** Rows matched by position, or a table that is not shown.
+- **Required capabilities.** `multiple_tables`, `table_join_keys`.
+- **Eligibility checks.** `scope_resolved`, `all_evidence_on_canvas`, `join_keys_unique`.
+- **Verification contracts.** `dual_visual_review`, `table_structure_check`, `evidence_binding_check`.
+- **Related FineVision subsets.** `multihiertt`, `tat_dqa`, `vqaonbd`.
+- **Parameters.** None.
+
+### Charts and maps (`charts_and_maps`)
+
+#### `chart_encoding_lookup`: Explain an axis, legend or map key
+
+The user asks what an axis, legend color, symbol, map shade or series label stands for; the answer reads it from the chart's own labels and legend.
+
+- **Status.** core; light verification.
+- **Example question.** What range does the darkest color on the map represent?
+- **Do not infer.** Geographic or subject knowledge that the chart's labels and legend do not give.
+- **Required capabilities.** `readable_chart`, `chart_encoding`.
+- **Eligibility checks.** `scope_resolved`, `encoding_resolved`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `dvqa`, `mmc_instruct`, `plotqa`, `mapqa`, `mapqa(mathv360k)`.
+- **Parameters.** None.
+
+#### `chart_value_lookup`: Read a value from a chart
+
+The user asks for the value of one bar, point, slice or map region; the answer gives the printed value, or an estimate at the stated precision.
+
+- **Status.** core; structured verification.
+- **Example question.** What value does the chart show for series A in March?
+- **Do not infer.** Exact decimals made up from pixel positions, ignored log axes, or exact values from a color range.
+- **Required capabilities.** `readable_chart`, `chart_encoding`, `legible_values`.
+- **Eligibility checks.** `scope_resolved`, `encoding_resolved`, `precision_declared`.
+- **Verification contracts.** `dual_visual_review`, `chart_encoding_check`.
+- **Related FineVision subsets.** `chartqa`, `dvqa`, `plotqa`, `Unichart`, `mapqa`, `mapqa(mathv360k)`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `precision` | yes | one of `explicit_label`, `calibrated_estimate`, `interval` | explicit_label means a value printed on the chart; calibrated_estimate means a value read against labeled axis ticks; interval means a range such as 'between 20 and 30'. |
+
+#### `chart_comparison`: Compare chart values
+
+The user asks which of two or more named bars, points or categories is larger or smaller on the same chart; the answer compares them without inventing an exact difference.
+
+- **Status.** core; structured verification.
+- **Example question.** Which series is higher in 2024?
+- **Do not infer.** Heights compared across different axes or scales.
+- **Required capabilities.** `readable_chart`, `comparable_series`.
+- **Eligibility checks.** `scope_resolved`, `encoding_resolved`, `comparable_basis`.
+- **Verification contracts.** `dual_visual_review`, `chart_encoding_check`.
+- **Related FineVision subsets.** `chartqa`, `figureqa`, `figureqa(mathv360k)`, `plotqa`, `Unichart`, `mapqa`.
+- **Parameters.** None.
+
+#### `chart_extremum_ranking`: Find the largest, smallest or ranked entries
+
+The user asks for the highest or the lowest entry, both, or a full ranking of all entries of a chart; the answer names them and includes any ties.
+
+- **Status.** core; structured verification.
+- **Example question.** Which category has the highest value? Include any ties.
+- **Answer format.** Name the entries in the requested order and include every tie; for max_min give only the largest and then the smallest.
+- **Do not infer.** A largest value taken from a partial view of the series.
+- **Required capabilities.** `readable_chart`, `complete_series`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `encoding_resolved`.
+- **Verification contracts.** `dual_visual_review`, `chart_encoding_check`, `closed_set_check`.
+- **Related FineVision subsets.** `chart2text`, `CoSyn_400k_chart`, `figureqa`, `figureqa(mathv360k)`, `vistext`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `rank_mode` | yes | one of `all`, `max`, `min`, `max_min` | max asks for the largest entry or entries, min for the smallest, max_min for both (largest first), and all for the complete order. |
+| `rank_order` | yes | one of `descending`, `ascending` | The order of the answer when rank_mode is all. |
+
+#### `chart_trend_summary`: Describe a trend
+
+The user asks how a series changes over the chart's range, such as rises, falls, plateaus and turning points; the answer describes the visible trend.
+
+- **Status.** core; structured verification.
+- **Example question.** Describe how the values change across the displayed years.
+- **Do not infer.** Forecasts beyond the shown range, or causes of the trend.
+- **Required capabilities.** `readable_chart`, `ordered_series`.
+- **Eligibility checks.** `scope_resolved`, `encoding_resolved`, `summary_entails_evidence`.
+- **Verification contracts.** `dual_visual_review`, `chart_encoding_check`.
+- **Related FineVision subsets.** `chart2text`, `CoSyn_400k_chart`, `Unichart`, `vistext`.
+- **Parameters.** None.
+
+#### `chart_series_relation`: Describe how two series relate
+
+The user asks whether two or more series on the same axes cross, which one stays higher, or how their variation compares; the answer states the relation at the precision the chart allows.
+
+- **Status.** core; structured verification.
+- **Example question.** Do the two lines cross within the displayed years? If so, approximately where?
+- **Do not infer.** Exact crossing coordinates or areas that the chart's precision does not support.
+- **Required capabilities.** `readable_chart`, `comparable_series`, `complete_series`.
+- **Eligibility checks.** `scope_resolved`, `encoding_resolved`, `comparable_basis`, `precision_declared`.
+- **Verification contracts.** `dual_visual_review`, `chart_encoding_check`.
+- **Related FineVision subsets.** `figureqa`, `figureqa(mathv360k)`, `mmc_instruct`, `plotqa`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `precision` | yes | one of `explicit_label`, `calibrated_estimate`, `interval` | explicit_label means printed values; calibrated_estimate means values read against labeled axis ticks; interval means ranges. |
+| `relation` | yes | one of `intersection`, `dominance`, `variation` | intersection asks whether and where the series cross; dominance asks which stays higher; variation asks which changes more. |
+
+#### `chart_data_reconstruction`: Convert a chart to JSON data
+
+The user asks to turn a chart's categories, series and values into JSON; the answer lists every visible value, marking estimates or ranges where exact values are not printed.
+
+- **Status.** core; structured verification.
+- **Example question.** Convert the labeled bars and their values into JSON.
+- **Answer format.** One JSON object of the form {"unit": "<axis unit or null>", "marks": [{"series": "...", "category": "...", "lower": "12.5", "upper": "12.5", "precision": "explicit_label"}]} with one entry per visible mark. lower and upper are plain decimal strings; they are equal for a printed value (explicit_label) and give the lowest and highest possible reading for calibrated_estimate or interval.
+- **Do not infer.** An exact recovery of source data from an approximate graphic.
+- **Required capabilities.** `readable_chart`, `chart_encoding`, `complete_series`.
+- **Eligibility checks.** `scope_resolved`, `encoding_resolved`, `precision_declared`, `schema_public`.
+- **Verification contracts.** `dual_visual_review`, `chart_encoding_check`, `schema_check`.
+- **Related FineVision subsets.** `mmc_instruct`, `SynthChartNet`, `Unichart`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `format` | yes | one of `structured_json` | The required output format. |
+| `precision` | yes | one of `explicit_label`, `calibrated_estimate`, `interval` | explicit_label means printed values; calibrated_estimate means values read against labeled axis ticks; interval means ranges. |
+
+### Numbers and measurements (`quantitative_reasoning`)
+
+#### `quantity_comparison`: Compare printed quantities
+
+The user asks which of two or more quantities printed in the image is larger, smaller or equal, such as the weights on two labels; the answer compares them after matching units, signs and dates.
+
+- **Status.** core; structured verification.
+- **Example question.** Which package has the larger net weight?
+- **Do not infer.** Comparisons across different units, currencies or periods without a conversion given in the question.
+- **Required capabilities.** `typed_operands`, `explicit_units`.
+- **Eligibility checks.** `scope_resolved`, `operands_grounded`, `comparable_basis`.
+- **Verification contracts.** `dual_visual_review`, `exact_arithmetic_check`.
+- **Related FineVision subsets.** `chartqa`, `finqa`, `robut_wtq`, `vqaonbd`, `CoSyn_400k_nutrition`.
+- **Parameters.** None.
+
+#### `grounded_arithmetic`: Compute with printed numbers
+
+The user asks for the result of one addition, subtraction, multiplication or division of numbers printed in the image, such as the total price of two items; the answer gives the exact result with the requested number of decimal places.
+
+- **Status.** core; structured verification.
+- **Example question.** What is the total price of the two drinks printed on the menu?
+- **Answer format.** One exact number from a single add, subtract, multiply or divide step, rounded only as the question states; no percentages or other derived forms, and units that allow the operation.
+- **Do not infer.** Prices or rates that are not printed, an implied denominator, or unstated intermediate values.
+- **Required capabilities.** `typed_operands`.
+- **Eligibility checks.** `scope_resolved`, `operands_grounded`, `expression_defined`, `precision_declared`.
+- **Verification contracts.** `dual_visual_review`, `exact_arithmetic_check`.
+- **Related FineVision subsets.** `chartqa`, `finqa`, `multihiertt`, `plotqa`, `tabmwp`, `tat_dqa`, `tat_qa`, `vqaonbd`, `CoSyn_400k_nutrition`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `operators` | yes | one of `add`, `subtract`, `multiply`, `divide` | The single operation that the question asks for. |
+| `precision` | yes | integer | The number of decimal places that the answer must use, such as 0 or 2. |
+
+#### `value_aggregation`: Sum or average a complete set of values
+
+The user asks for the sum, mean, median, minimum, maximum or weighted mean of a complete set of printed values, such as all rows of a column; the answer computes it over every value in the set.
+
+- **Status.** core; structured verification.
+- **Example question.** What is the mean of the values in the three labeled rows?
+- **Do not infer.** Skipped rows, blank cells counted as zero, or weights that are not given.
+- **Required capabilities.** `typed_operands`, `closed_scope`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `operands_grounded`, `expression_defined`.
+- **Verification contracts.** `dual_visual_review`, `closed_set_check`, `exact_arithmetic_check`.
+- **Related FineVision subsets.** `CoSyn_400k_table`, `finqa`, `hitab`, `multihiertt`, `robut_wikisql`, `robut_wtq`, `tabmwp`, `vqaonbd`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `operator` | yes | one of `sum`, `mean`, `median`, `min`, `max`, `weighted_mean` | The reduction that the question asks for. |
+| `weights` | no | text | Only for weighted_mean: where the weights are printed, or the weights that the question states. |
+
+#### `unit_conversion`: Convert a printed unit
+
+The user asks to express a printed quantity in another unit, using a standard exact conversion such as meters to centimeters or a conversion stated in the question; the answer gives the converted value.
+
+- **Status.** core; structured verification.
+- **Example question.** Convert the printed length of 2.5 m to centimeters.
+- **Do not infer.** Exchange rates, densities, serving sizes or other conversion factors that are not standard or stated.
+- **Required capabilities.** `typed_operands`, `explicit_units`.
+- **Eligibility checks.** `scope_resolved`, `operands_grounded`, `unit_rule_available`.
+- **Verification contracts.** `dual_visual_review`, `exact_arithmetic_check`.
+- **Related FineVision subsets.** `tabmwp`, `vqaonbd`, `CoSyn_400k_nutrition`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `target_unit` | yes | text | The unit to convert into, such as 'cm'. |
+
+#### `measurement_reading`: Read a scale, gauge or clock
+
+The user asks for the reading of a visible ruler, gauge, scale or analog clock; the answer reads it from the marks and the pointer at the precision that the marks allow.
+
+- **Status.** core; structured verification.
+- **Example question.** What time does the analog clock show, to the nearest minute?
+- **Do not infer.** A precision finer than the marks allow, or a measurement without a printed scale.
+- **Required capabilities.** `calibrated_scale`.
+- **Eligibility checks.** `scope_resolved`, `scale_and_pointer_resolved`, `precision_declared`.
+- **Verification contracts.** `dual_visual_review`, `scale_check`.
+- **Related FineVision subsets.** `iconqa`, `iconqa(mathv360k)`, `spark`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `precision` | yes | text | The precision that the question asks for, following the marks, such as 'to the nearest 0.5 cm' or 'to the nearest minute'. |
+
+### Diagrams and flowcharts (`diagrams`)
+
+#### `diagram_element_lookup`: Identify a labeled diagram element
+
+The user asks which part of a diagram carries a given label or symbol, or what a labeled part is; the answer reads it from the diagram's labels and its key or notation.
+
+- **Status.** core; light verification.
+- **Example question.** Which component is labeled B in the diagram?
+- **Do not infer.** Functions or names that the diagram does not label or define.
+- **Required capabilities.** `readable_diagram`, `notation_context`.
+- **Eligibility checks.** `scope_resolved`, `notation_resolved`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `geo170k(align)`, `blockdiagramcomputerized`, `blockdiagramhandwritten`, `CoSyn_400k_diagram`, `ai2d_merged`.
+- **Parameters.** None.
+
+#### `diagram_connectivity`: List what connects to a diagram element
+
+The user asks which elements of a diagram or network connect directly to a named element, or which connections go into or out of it; the answer follows the drawn lines and arrows.
+
+- **Status.** core; structured verification.
+- **Example question.** Which nodes are directly connected to node A?
+- **Do not infer.** A connection at every line crossing, or a link inferred from closeness alone.
+- **Required capabilities.** `graph_nodes_edges`.
+- **Eligibility checks.** `scope_resolved`, `edges_resolved`.
+- **Verification contracts.** `dual_visual_review`, `graph_check`.
+- **Related FineVision subsets.** `blockdiagramcomputerized`, `blockdiagramhandwritten`, `CoSyn_400k_diagram`, `diagram_image_to_text`, `ai2d_merged`, `CoSyn_400k_circuit`.
+- **Parameters.** None.
+
+#### `diagram_path_tracing`: Trace a path through a diagram
+
+The user asks for the route from one named element to another along the drawn connections; the answer lists the elements in order, respecting arrow directions, and gives every valid path when there are several.
+
+- **Status.** core; structured verification.
+- **Example question.** Trace the directed path from Start to the output labeled C.
+- **Do not infer.** Connections that are not drawn, or a shortest path when no distance is defined.
+- **Required capabilities.** `graph_nodes_edges`, `edge_directions`.
+- **Eligibility checks.** `scope_resolved`, `edges_resolved`, `path_objective_defined`.
+- **Verification contracts.** `dual_visual_review`, `graph_check`.
+- **Related FineVision subsets.** `blockdiagramcomputerized`, `blockdiagramhandwritten`, `CoSyn_400k_diagram`, `diagram_image_to_text`, `ai2d_merged`.
+- **Parameters.** None.
+
+#### `diagram_process_description`: Explain the process a diagram shows
+
+The user asks what sequence, cycle or branching process a diagram's arrows show; the answer explains the steps as they are drawn.
+
+- **Status.** core; structured verification.
+- **Example question.** Explain the sequence of steps shown by the arrows in this diagram.
+- **Do not infer.** Causes or mechanisms that the diagram does not show, or every arrow read as causation.
+- **Required capabilities.** `readable_diagram`, `graph_nodes_edges`, `edge_directions`.
+- **Eligibility checks.** `scope_resolved`, `edges_resolved`.
+- **Verification contracts.** `dual_visual_review`, `graph_check`.
+- **Related FineVision subsets.** `blockdiagramcomputerized`, `blockdiagramhandwritten`, `CoSyn_400k_diagram`, `diagram_image_to_text`, `ai2d_merged`.
+- **Parameters.** None.
+
+#### `flowchart_evaluation`: Follow a flowchart for a given input
+
+The user gives an input value and asks which outcome a visible flowchart or decision diagram reaches; the answer applies the printed conditions step by step and names the end point.
+
+- **Status.** core; structured verification.
+- **Example question.** For an input of 8, which output does this flowchart reach?
+- **Do not infer.** Instructions written in the image being followed, invented missing conditions, or steps that are not shown.
+- **Required capabilities.** `graph_nodes_edges`, `explicit_branch_conditions`.
+- **Eligibility checks.** `scope_resolved`, `edges_resolved`, `public_rule_input_defined`.
+- **Verification contracts.** `dual_visual_review`, `graph_check`, `exact_arithmetic_check`.
+- **Related FineVision subsets.** `blockdiagramcomputerized`, `blockdiagramhandwritten`, `diagram_image_to_text`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `input_values` | yes | list of exactly 1 | The single input value that the question gives, for example ['8']. |
+
+#### `diagram_to_code`: Recreate a diagram as SVG or TikZ
+
+The user asks for SVG or TikZ code that redraws a visible diagram; the answer gives code that renders the same shapes, labels and arrows in a sandbox.
+
+- **Status.** extension; structured verification.
+- **Example question.** Recreate this diagram in SVG, including its labels and arrows.
+- **Do not infer.** The original source code, external images or fonts, or any file or network access.
+- **Required capabilities.** `readable_diagram`, `rendered_layout`.
+- **Eligibility checks.** `scope_resolved`, `rendering_contract_available`.
+- **Verification contracts.** `dual_visual_review`, `sandbox_render_validator`.
+- **Related FineVision subsets.** `datik`, `datikz`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `format` | yes | one of `svg`, `tikz_subset` | The code language of the answer. |
+
+### Patterns and geometry (`patterns_and_geometry`)
+
+#### `geometric_relations`: Read marked geometric relations
+
+The user asks about a shape's type or symmetry, or which sides, angles or lines are marked as equal, parallel or perpendicular; the answer relies only on drawn marks, labels and clear shape structure.
+
+- **Status.** core; structured verification.
+- **Example question.** Which sides of the triangle are marked as equal?
+- **Do not infer.** Exact equality, angles or lengths judged from how the drawing looks.
+- **Required capabilities.** `geometric_marks`.
+- **Eligibility checks.** `scope_resolved`, `geometry_evidence_sufficient`.
+- **Verification contracts.** `dual_visual_review`, `geometry_check`.
+- **Related FineVision subsets.** `CoSyn_400k_graphic`, `iconqa`, `iconqa(mathv360k)`, `geo170k(align)`, `geo170k(qa)`, `geo3k`.
+- **Parameters.** None.
+
+#### `pattern_rule`: State the rule of a visual pattern
+
+The user asks what change repeats across a sequence or grid of panels; the answer names the one rule that fits every example: constant, translation, rotation, reflection, count progression, attribute cycle or set composition.
+
+- **Status.** core; structured verification.
+- **Example question.** What change repeats from one panel to the next?
+- **Answer format.** Name one rule type (constant, translation, rotation, reflection, count progression, attribute cycle or set composition) and say what it changes.
+- **Do not infer.** A rule chosen while another rule fits the examples equally well.
+- **Required capabilities.** `repeated_structure`.
+- **Eligibility checks.** `scope_resolved`, `pattern_rule_unique`.
+- **Verification contracts.** `dual_visual_review`, `pattern_check`.
+- **Related FineVision subsets.** `iconqa`, `iconqa(mathv360k)`, `raven`.
+- **Parameters.** None.
+
+#### `pattern_completion`: Complete a visual pattern
+
+The user asks which of the visible answer options completes a pattern or matrix; the answer picks the one option that follows the rule shown by all of the examples.
+
+- **Status.** core; structured verification.
+- **Example question.** Which of the visible options completes the matrix?
+- **Do not infer.** A hidden answer key, or one option chosen while another fits equally well.
+- **Required capabilities.** `repeated_structure`, `answer_options_visible`.
+- **Eligibility checks.** `scope_resolved`, `pattern_rule_unique`, `candidate_options_public`.
+- **Verification contracts.** `dual_visual_review`, `pattern_check`.
+- **Related FineVision subsets.** `iconqa`, `iconqa(mathv360k)`, `raven`.
+- **Parameters.** None.
+
+#### `pattern_exception`: Find the element that breaks a rule
+
+The user states or points to a rule that a complete set of elements follows and asks which element breaks it; the answer names that element.
+
+- **Status.** core; structured verification.
+- **Example question.** Under the color-alternation rule, which panel breaks the pattern?
+- **Do not infer.** An odd-one-out choice without a clear rule, or invented defects.
+- **Required capabilities.** `repeated_structure`, `closed_scope`.
+- **Eligibility checks.** `scope_resolved`, `complete_scope`, `exception_rule_defined`.
+- **Verification contracts.** `dual_visual_review`, `pattern_check`.
+- **Related FineVision subsets.** `iconqa`, `iconqa(mathv360k)`, `raven`.
+- **Parameters.** None.
+
+#### `geometric_constraint_solving`: Solve a geometry problem from marked facts
+
+The user asks for a length, an angle or another value in a geometry figure; the answer derives it only from printed values, drawn marks and an allowed set of theorems.
+
+- **Status.** extension; structured verification.
+- **Example question.** Using the marked right angle and the printed side lengths, how long is side AC?
+- **Do not infer.** Measurements read from an unscaled drawing, or assumptions that are not marked.
+- **Required capabilities.** `geometric_marks`, `readable_formula`.
+- **Eligibility checks.** `scope_resolved`, `geometry_evidence_sufficient`, `formal_rules_available`, `unique_solution`.
+- **Verification contracts.** `dual_visual_review`, `formal_geometry_validator`.
+- **Related FineVision subsets.** `CoSyn_400k_math`, `geo170k(qa)`, `geo3k`, `geometry3k(mathv360k)`, `geomverse`, `geoqa+(mathv360k)`, `geos(mathv360k)`, `intergps`, `mavis_math_metagen`, `mavis_math_rule_geo`, `unigeo(mathv360k)`.
+- **Parameters.** None.
+
+### Screens and user interfaces (`screen_ui`)
+
+#### `ui_element_location`: Locate a control on a screen
+
+The user asks where a visible button, field, link or other control is on a screenshot; the answer identifies it and describes its location in words.
+
+- **Status.** core; structured verification.
+- **Example question.** Where is the search box on this screen?
+- **Do not infer.** Controls that are off screen or hidden, or claims that an action was performed.
+- **Required capabilities.** `ui_controls`.
+- **Eligibility checks.** `scope_resolved`, `unique_referent`, `ui_target_visible`.
+- **Verification contracts.** `dual_visual_review`, `ui_grounding_check`.
+- **Related FineVision subsets.** `aguvis-stage-1`, `groundui`, `screenqa`.
+- **Parameters.** None.
+
+#### `ui_state_reading`: Read the state of a control
+
+The user asks about the visible state of an interface, such as which tab is selected, whether a box is checked, or which error is shown; the answer reads it from the screenshot.
+
+- **Status.** core; light verification.
+- **Example question.** Which tab is currently selected?
+- **Do not infer.** Server state, permissions, or an enabled state judged from color alone.
+- **Required capabilities.** `ui_controls`, `ui_state_indicators`.
+- **Eligibility checks.** `scope_resolved`, `ui_state_explicit`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `aguvis-stage-1`, `groundui`, `screenqa`.
+- **Parameters.** None.
+
+#### `screen_to_code`: Recreate a screenshot as HTML and CSS
+
+The user asks for static HTML and CSS that reproduce a visible screen layout; the answer gives markup that renders the same layout in a sandbox under the stated font and asset rules.
+
+- **Status.** extension; structured verification.
+- **Example question.** Recreate the visible layout as static HTML and CSS.
+- **Do not infer.** Hidden scripts, app behavior, the original page source, credentials or network assets.
+- **Required capabilities.** `ui_controls`, `rendered_layout`.
+- **Eligibility checks.** `scope_resolved`, `rendering_contract_available`.
+- **Verification contracts.** `dual_visual_review`, `sandbox_render_validator`.
+- **Related FineVision subsets.** `websight`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `format` | yes | one of `html_css` | The code language of the answer. |
+
+#### `ui_action_specification`: Specify one action on a screen
+
+The user states a goal on the visible screen and asks for one click, focus or text input that starts it; the answer gives the action and the target's coordinates in the image, without performing it.
+
+- **Status.** extension; structured verification.
+- **Example question.** To focus the search field, where should one click? Give normalized coordinates.
+- **Do not infer.** Several steps through unseen screens, assumed results, or performing the action.
+- **Required capabilities.** `ui_controls`.
+- **Eligibility checks.** `scope_resolved`, `unique_referent`, `local_goal_public`, `action_schema_available`, `coordinates_verifiable`.
+- **Verification contracts.** `dual_visual_review`, `ui_action_validator`.
+- **Related FineVision subsets.** `aguvis-stage-1`, `groundui`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `action` | yes | one of `click`, `focus`, `input` | The single action that the answer specifies. |
+| `input_text` | no | text | For the input action only, the exact text to type. |
+
+### Multi-panel images (`multi_panel`)
+
+#### `panel_comparison`: Compare panels
+
+The user asks how two or more panels of the same image differ or agree, such as the left and right halves of a comparison figure; the answer states the differences and similarities seen in those panels.
+
+- **Status.** core; structured verification.
+- **Example question.** What differs between the left and the right panel?
+- **Do not infer.** A second image, or before-and-after claims for panels that are not presented that way.
+- **Required capabilities.** `panels_resolvable`.
+- **Eligibility checks.** `scope_resolved`, `all_evidence_on_canvas`, `panels_publicly_identified`.
+- **Verification contracts.** `dual_visual_review`, `panel_comparison_check`.
+- **Related FineVision subsets.** `mimic_cgd`, `mmra`, `nlvr2`, `spot_the_diff`, `yesbut`.
+- **Parameters.** None.
+
+#### `panel_sequence_description`: Describe an ordered panel sequence
+
+The user asks what changes across panels whose order is numbered or shown by arrows, such as a comic strip or a life cycle; the answer describes the changes in that order.
+
+- **Status.** core; structured verification.
+- **Example question.** What changes from panel 1 to panel 3?
+- **Do not infer.** An order taken from unlabeled placement, events between panels, or causes.
+- **Required capabilities.** `panels_resolvable`, `visible_sequence_order`.
+- **Eligibility checks.** `scope_resolved`, `all_evidence_on_canvas`, `sequence_order_supported`.
+- **Verification contracts.** `dual_visual_review`, `panel_comparison_check`.
+- **Related FineVision subsets.** `spot_the_diff`, `yesbut`, `ai2d_merged`.
+- **Parameters.** None.
+
+### Claims and answerability (`evidence_verification`)
+
+#### `visual_claim_verification`: Verify a claim against the image
+
+The user states a claim about the image and asks whether it holds, or where the image supports it; the answer says supported, contradicted or cannot be determined and points to the visible evidence. Use quantified_claim_verification for claims with all, none or some.
+
+- **Status.** core; light verification.
+- **Example question.** Is the statement 'the box is to the left of the chair' true for this image? Point to the evidence.
+- **Answer format.** Supported, contradicted or cannot be determined, followed by the visible evidence: a region, a label or a quoted text.
+- **Do not infer.** A yes-or-no verdict when the evidence is missing, or facts that are not visible.
+- **Required capabilities.** `resolvable_region`.
+- **Eligibility checks.** `scope_resolved`, `claim_public_and_local`.
+- **Verification contracts.** `dual_visual_review`, `evidence_binding_check`.
+- **Related FineVision subsets.** `idk`, `lnqa`, `lrv_normal(filtered)`, `nlvr2`, `spatialsense`, `vsr`, `est_vqa`, `infographic_vqa`, `pdfvqa`, `slidevqa`, `visualmrc`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `claim` | yes | text | The statement being checked, as the question quotes it. |
+
+#### `answerability_assessment`: Say whether a question can be answered from the image
+
+The user asks whether a specific question about a visible object or field can be answered from the image; the answer says whether it can and, if not, what is missing, unreadable, cut off or ambiguous.
+
+- **Status.** core; light verification.
+- **Example question.** Can the exact price be read on this cropped label? Explain what limits it.
+- **Answer format.** One of answerable, unreadable, cropped, ambiguous or not present, followed by the visible reason.
+- **Do not infer.** A refusal of an answerable question, or unreadable text treated as evidence that something is absent.
+- **Required capabilities.** `resolvable_region`.
+- **Eligibility checks.** `scope_resolved`, `local_question_supported`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `idk`, `vizwiz(mathv360k)`, `screenqa`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `local_question` | yes | text | The question whose answerability is judged, as the user asks it. |
+
+### Music, chemistry and circuit notation (`specialist_notation`)
+
+#### `music_notation_reading`: Read music notation
+
+The user asks for the pitches, durations, rests or note order in named complete measures of a single-voice score with a visible clef, key and meter; the answer reads them in a structured form.
+
+- **Status.** extension; structured verification.
+- **Example question.** What are the pitches of the notes in the first complete measure?
+- **Do not infer.** A missing clef or accidental, how the music sounds, or the composer's intent.
+- **Required capabilities.** `notation_context`, `readable_diagram`.
+- **Eligibility checks.** `scope_resolved`, `music_context_complete`.
+- **Verification contracts.** `dual_visual_review`, `music_notation_validator`.
+- **Related FineVision subsets.** `CoSyn_400k_music`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `bar_range` | yes | text | The complete measures asked about, such as '1-2'. |
+
+#### `chemical_structure_reading`: Read a chemical structure
+
+The user asks about the atoms, bonds, rings or a marked part of a drawn molecule; the answer reads them using non-stereo SMILES conventions.
+
+- **Status.** extension; structured verification.
+- **Example question.** Which atoms does the marked double bond connect?
+- **Do not infer.** Reactions, synthesis instructions, biological effects, or stereochemistry that is not drawn.
+- **Required capabilities.** `notation_context`, `readable_diagram`.
+- **Eligibility checks.** `scope_resolved`, `chemical_notation_resolved`.
+- **Verification contracts.** `dual_visual_review`, `chemical_graph_validator`.
+- **Related FineVision subsets.** `CoSyn_400k_chemical`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `notation` | yes | one of `nonstereo_smiles` | The chemical notation that the answer uses. |
+
+#### `circuit_structure_reading`: Read a circuit diagram
+
+The user asks which components of a drawn circuit are connected, in series or in parallel, or for its netlist; the answer follows the drawn wires, junction dots and symbols. In a netlist, pin a of each two-terminal part is its left end (its upper end when vertical) and pin b the other end; a netlist question states this convention.
+
+- **Status.** extension; structured verification.
+- **Example question.** Which components are connected in parallel in this circuit?
+- **Do not infer.** Electrical behavior from missing values or wires, or safety conditions that are not shown.
+- **Required capabilities.** `notation_context`, `graph_nodes_edges`.
+- **Eligibility checks.** `scope_resolved`, `circuit_notation_resolved`.
+- **Verification contracts.** `dual_visual_review`, `circuit_graph_validator`.
+- **Related FineVision subsets.** `CoSyn_400k_circuit`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `notation` | yes | one of `two_terminal_netlist` | The circuit notation that the answer uses. |
+| `operation` | yes | one of `netlist`, `parallel_pairs`, `series_pairs` | What the answer reports. |
+
+## Capabilities
+
+A capability is something the image must show for a task to apply.
+
+| Capability | Meaning |
+|---|---|
+| `answer_options_visible` | All answer options for the pattern are visible. |
+| `calibrated_scale` | The scale's labels, tick spacing, units and pointer are visible. |
+| `chart_encoding` | The needed axes, legend, scale type and units are visible. |
+| `closed_scope` | Every member of the group asked about is fully visible, so a complete list or count is possible. |
+| `comparable_attributes` | The same visible property can be seen on every compared object. |
+| `comparable_series` | The series can be compared on a shared scale. |
+| `complete_series` | The whole series or set of categories asked about is visible. |
+| `countable_entities` | Every relevant object can be counted under one clear counting unit. |
+| `discriminating_attributes` | Visible features or relations single out the intended object among similar ones. |
+| `document_layout` | Document elements and their boundaries are visible. |
+| `edge_directions` | Arrow directions, or the absence of direction, can be seen. |
+| `explicit_branch_conditions` | The condition on each branch is printed. |
+| `explicit_cross_references` | Labels, keys or wording link the parts being compared. |
+| `explicit_mapping` | A visible line, key, label or legend links the items. |
+| `explicit_units` | The units are printed, or the values are clearly unitless. |
+| `geometric_marks` | The shapes, equality and angle marks, and labels are visible. |
+| `graph_nodes_edges` | The diagram's boxes, connections, junctions and end points can be told apart. |
+| `interpretable_predicates` | Each condition can be checked by looking. |
+| `legible_values` | The requested values are printed or can be estimated at the stated precision. |
+| `multiple_entities` | At least two relevant objects can be told apart. |
+| `multiple_evidence_regions` | At least two relevant parts of the same image hold evidence. |
+| `multiple_facts` | At least two separate visible facts are available in the requested area. |
+| `multiple_tables` | At least two separate tables are visible. |
+| `notation_context` | The symbols, keys and notation the drawing uses are visible. |
+| `ordered_series` | The order along the chart's axis is visible. |
+| `panels_resolvable` | The image contains at least two panels that can be told apart. |
+| `readable_chart` | The chart or map supports the requested reading. |
+| `readable_diagram` | The diagram's elements, labels and marks can be read. |
+| `readable_formula` | The formula's symbols and two-dimensional structure can be read. |
+| `readable_prose` | Enough document text can be read for the requested operation. |
+| `readable_table` | The needed rows, columns and cells can be read. |
+| `readable_text` | The relevant text can be read at the image's actual resolution. |
+| `reading_order` | The reading order of the text blocks is visible or marked. |
+| `rendered_layout` | The visible layout can be redrawn with the allowed code under fixed rendering rules. |
+| `repeated_structure` | Several examples show a repeating structure. |
+| `resolvable_region` | The area can be described in words without inventing a marker or coordinate. |
+| `scene_context` | Enough of the setting is visible to say what kind of scene it is. |
+| `spatial_layout` | The positions needed for the relation can be read in the image. |
+| `table_headers` | Row and column headers, including group headers, can be read. |
+| `table_join_keys` | The tables share a visible identifier for matching rows. |
+| `text_fields` | The labeled fields and their values can be located. |
+| `text_object_alignment` | The text can be linked to the object or region it refers to. |
+| `typed_operands` | The numbers needed are printed, with enough context to know what they measure. |
+| `ui_controls` | The relevant buttons, fields and other controls can be located. |
+| `ui_state_indicators` | The interface shows the state asked about explicitly. |
+| `visible_attribute` | The property asked about can be seen; it is not hidden or inferred. |
+| `visible_entity` | The object asked about is visible and can be told apart from its surroundings. |
+| `visible_interaction` | Body pose or contact shows the action or interaction. |
+| `visible_sequence_order` | The order of the panels is numbered, marked by arrows, or otherwise clear. |
+
+## Eligibility checks
+
+An eligibility check is a condition on the question and the image that the drafter must satisfy and the question judges confirm.
+
+| Check | Condition |
+|---|---|
+| `action_schema_available` | An allowed action and coordinate format is configured; the action is described, never performed. |
+| `action_visually_supported` | Body pose or contact visibly shows the action; nothing about time, intent or what happens next. |
+| `all_evidence_on_canvas` | Everything needed (panels, pages, labels, options and text) is in this one image. |
+| `answer_evidence_present` | The visible document contains the answer; pages that are not shown do not count. |
+| `association_explicit` | A visible line, key, label or layout links the items; being close together is not enough. |
+| `attribute_visible` | The property asked about can be seen, and it is not a hidden or sensitive personal trait. |
+| `candidate_options_public` | All answer options are visible in the image or listed in the question. |
+| `chemical_notation_resolved` | The drawing uses atom, bond and hydrogen conventions that the validator supports. |
+| `circuit_notation_resolved` | The drawing's symbols and junction conventions are supported by the validator. |
+| `claim_public_and_local` | The question quotes the claim, and the claim concerns visible content. |
+| `comparable_basis` | The compared items use the same property, unit, scale and period. |
+| `complete_scope` | The whole group or area asked about is visible, so a complete answer is possible; unreadable or cut-off parts make the question unanswerable, not empty. |
+| `coordinates_verifiable` | Coordinates refer to the image as shown and to a verified target area. |
+| `count_unit_defined` | The question makes clear what counts as one item and which items are included. |
+| `description_claims_visible` | Every statement in the description is supported by something visible in the requested area. |
+| `edges_resolved` | The connected elements, arrow directions and junctions or crossings can be read. |
+| `encoding_resolved` | The axes, legend, scale type (linear or log), baseline and units are clear. |
+| `exception_rule_defined` | The rule is stated or clearly shown before asking which element breaks it. |
+| `expression_defined` | The question states the calculation, the order of the operands and any rounding. |
+| `fields_bound` | Each requested field has a visible label or value area; a missing field is reported as missing, never invented. |
+| `formal_rules_available` | The problem type is covered by an allowed rule set and a qualified validator. |
+| `geometry_evidence_sufficient` | Exact claims rely on drawn marks or printed values, not on how the drawing looks. |
+| `grouping_key_defined` | The question names the grouping attribute, and every object falls into exactly one group. |
+| `hypothetical_public` | The question states the change explicitly as a hypothetical, not as something that happened. |
+| `join_keys_unique` | The shared identifier matches the rows of the tables without ambiguity. |
+| `local_goal_public` | The question states one goal that a single action on the visible screen can start, without claiming any result. |
+| `local_question_supported` | The question being judged concerns a visible object or field, so its answerability can be judged from the image. |
+| `music_context_complete` | The clef, key, meter and accidentals needed are visible and supported by the validator. |
+| `notation_resolved` | The notation (for example LaTeX, or the diagram's own symbols) is clear and all visible structure is kept. |
+| `operands_grounded` | Every number used is printed in the image or was established in an earlier turn. |
+| `panels_publicly_identified` | The panels can be told apart by labels or an obvious layout. |
+| `path_objective_defined` | The question names the start, the end and what counts as a valid path. |
+| `pattern_rule_unique` | Exactly one of the allowed rule types fits every example. |
+| `precision_declared` | The question states the precision, and the answer never claims more precision than the image shows. |
+| `predicates_observable` | Each condition can be checked by looking, and the way the conditions combine (and, or, not) is clear. |
+| `public_rule_input_defined` | The flowchart's conditions are printed and the question gives the input; text in the image is never followed as an instruction. |
+| `reading_order_resolved` | When several text blocks are involved, their reading order is clear from columns, numbering or layout. |
+| `relation_frame_defined` | The question states the viewpoint for the relation, and the relation can be judged from the image without measuring anything. |
+| `rendering_contract_available` | A sandboxed renderer with fixed font, asset and syntax rules is configured. |
+| `role_visually_supported` | Layout and readable content together show the element's role. |
+| `scale_and_pointer_resolved` | The scale's marks, origin and units and the pointer position can be read. |
+| `schema_public` | The question states the required output format. |
+| `scope_resolved` | The question refers to something that is actually in the image (a visible object, region, text or the whole image), never to a marker, number or coordinate the user cannot see. |
+| `sequence_order_supported` | Numbers, arrows, timestamps or a clear convention give the order of the panels. |
+| `summary_entails_evidence` | The summary keeps the source's meaning and adds no unsupported fact. |
+| `table_headers_bound` | The full row and column header paths, units and footnotes can be read; blank cells stay blank, never zero. |
+| `text_legible` | The text can be read at the image's actual resolution; unreadable or cut-off text is not completed from guesses. |
+| `ui_state_explicit` | The interface shows the state clearly; gray or color alone does not prove that a control is disabled. |
+| `ui_target_visible` | The control is on the screen and the question asks about it directly. |
+| `unique_referent` | The description matches exactly one object; if several match, the question must be rewritten or the answer must say so. |
+| `unique_solution` | The visible facts determine exactly one answer under the allowed rules. |
+| `unit_rule_available` | The conversion is a standard exact one, such as meters to centimeters, or is stated in the question. |
+| `visible_category_supported` | The visible features justify the category named in the answer; no guessed identities and no finer category than the appearance supports. |
+
+## Verification contracts
+
+| Contract | What it checks | Applies when |
+|---|---|---|
+| `chart_encoding_check` | Two independent readers recover the axes, legend, scale and the relevant marks, and the controller checks the answer and its precision against them. | The answer depends on a chart's or map's encoding or on plotted values. |
+| `chemical_graph_validator` | A specialized validator compares the read molecule graph with two independent extractions; it never proposes chemistry procedures. | The chemical_structure_reading extension is enabled. |
+| `circuit_graph_validator` | A specialized validator compares the read circuit topology with two independent extractions under the stated symbol and junction conventions. | The circuit_structure_reading extension is enabled. |
+| `closed_set_check` | Two independent readers list the members or per-group counts of the visible group, and the controller compares them with the answer. Duplicates, unknown members and incomplete groups stay explicit. | The answer depends on a complete list, a count, an order, or an all, none or some claim. |
+| `dual_visual_review` | Two independent judges each decide whether the question and the answer are correct, complete, supported by the image and in the requested language and format. Their agreement does not prove truth. | Always. |
+| `evidence_binding_check` | Two independent reviewers link every essential part of the answer to a visible region or an exact quote, and check that the linked evidence agrees, without using outside facts. | The answer identifies or combines evidence from parts of the image or from earlier verified turns. |
+| `exact_arithmetic_check` | Two independent readers extract the operands, and the controller recomputes the result exactly with the stated units and rounding. A correct calculation does not prove that the operands were read correctly. | The answer depends on a calculation or a numeric comparison. |
+| `formal_geometry_validator` | A specialized validator checks every visual premise and a formal derivation under an allowed set of theorems. | The geometric_constraint_solving extension is enabled. |
+| `formula_structure_check` | Two independent readers transcribe the formula's structure, and the controller compares symbols, grouping and scripts. An algebraically equivalent formula does not count as correct. | The answer transcribes a visible mathematical formula. |
+| `geometry_check` | Two independent readers extract the drawn marks and printed values; the controller never treats how the drawing looks as an exact fact. | The answer states a geometric relation or a shape property. |
+| `graph_check` | Two independent readers extract the diagram's elements and connections, and the controller computes neighbors, paths and branch outcomes from them. | The answer depends on connections, directions, paths or branches. |
+| `music_notation_validator` | A specialized validator checks the read notes, rests and durations against the visible notation; sound is never inferred. | The music_notation_reading extension is enabled. |
+| `panel_comparison_check` | Two independent reviewers compare only the panels the question names and link every stated difference or change to those panels. | The answer compares panels or describes their sequence. |
+| `pattern_check` | Two independent readers describe every panel and option, and the controller searches the allowed rule types, requiring exactly one fitting rule and answer. | The answer names a pattern rule, a completion or an exception. |
+| `sandbox_render_validator` | A locked-down renderer without network, file access, scripts or unsafe TeX renders the answer's code and compares it with the image under fixed fidelity rules. | The diagram_to_code or screen_to_code extension is enabled. |
+| `scale_check` | Two independent readers recover the scale's labels, ticks, units and pointer, and the controller recomputes the reading and its tolerance. | The answer reads a ruler, gauge, scale or clock. |
+| `schema_check` | The controller checks that the answer follows the requested machine-readable format. A valid format does not make the content correct. | The question requires JSON, HTML, Markdown or another fixed format. |
+| `table_structure_check` | Two independent readers recover the table's header paths and cells, and the controller checks the answer's alignment and completeness against them. | The answer depends on row, column or header alignment, or rebuilds a table. |
+| `transcript_alignment` | Two independent readers transcribe the requested source text, and the controller compares the answer with it exactly, including punctuation and meaningful whitespace. Source errors are not corrected. | The answer copies or extracts visible text, code or labels. |
+| `ui_action_validator` | A specialized validator checks one allowed, unexecuted action, its target and its coordinates against the image as shown; it never assumes the action succeeded. | The ui_action_specification extension is enabled. |
+| `ui_grounding_check` | Two independent reviewers find the visible control that the question refers to and check the answer's description of it and of its location. | The answer locates or identifies an interface control. |
