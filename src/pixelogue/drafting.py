@@ -173,7 +173,9 @@ def presence_draft_plan(
             "answer": "no",
             "absent_kind": kind,
             "instruction": "This turn needs a question whose honest answer is no. Ask about "
-            f"{description}.",
+            f"{description}, in an area where it would clearly be seen if it were there: sharp, "
+            "well lit, unobstructed and inside the frame. Ask about the whole image only when "
+            "all of it is like that.",
         }
     detail = ASKED_DETAILS[digest[0] % len(ASKED_DETAILS)]
     return {

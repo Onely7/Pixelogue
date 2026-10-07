@@ -393,7 +393,7 @@ requested object. For object_presence and false_premise_question the question ma
 that is not in the image: the answer must describe the visible objects truthfully, say correctly
 whether the asked or assumed object is there, never invent details of a missing object, and end with
 its conclusion (yes or no, 0 for a count, or that the detail cannot be determined). An absence that
-could be due to cropping, occlusion or small size is UNKNOWN; a false-premise question whose
+could be due to blur, darkness, cropping, occlusion or small size is UNKNOWN; a false-premise question whose
 assumption actually holds, or a question that hints whether the object is there or tells how to
 answer, is NOT_MET.
 Return the schema only.""",
@@ -518,7 +518,9 @@ spatial ordering cannot realize correspondence matching. Ability or hypothetical
 unsupported motion claims from a still image, are NOT_MET for visible_action. Compound
 independent operations or unsupported machine-readable output requests are NOT_MET.
 For false_premise_question the assumed object, property, relation or action must be clearly absent;
-if it is visible, or could be hidden or too small to see, the question is NOT_MET.
+if it is visible, or could be hidden or too small to see, the question is NOT_MET. For
+object_presence about an absent object, the question is NOT_MET when blur, darkness, cropping or
+something in front could hide that object in the area asked about.
 useful_request: NOT_MET when public_history already contains the same answered request or a
 paraphrase of it, or when the question itself already states the requested answer: the category
 for object_identification, the value for attribute_lookup, the action for visible_action, the name

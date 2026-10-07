@@ -22,6 +22,7 @@ from pixelogue.premise_verifiers import (
     PremiseSource,
     verify_premise,
 )
+from pixelogue.prompts import STAGE_INSTRUCTIONS
 from pixelogue.task_evidence import ImageRegion
 from pixelogue.task_verification import verify_operation
 
@@ -193,6 +194,25 @@ def test_presence_draft_plans_are_seeded_and_balanced() -> None:
         if (item := plan("false_premise_question", index))
     )
     assert set(details) == {"count", "attribute", "location", "action", "kind"}
+
+
+def test_absent_objects_are_asked_about_where_they_would_be_seen() -> None:
+    """The reference rejected 3 of 3 B0 absences asked about blurred or covered areas."""
+    plans = [
+        presence_draft_plan(
+            "object_presence", seed=7, conversation_id=f"c{index}", turn_index=1, call_index=0
+        )
+        for index in range(40)
+    ]
+    absent = [plan for plan in plans if plan and plan["answer"] == "no"]
+    assert absent
+    assert all("would clearly be seen if it were there" in plan["instruction"] for plan in absent)
+    gate, review = (
+        " ".join(STAGE_INSTRUCTIONS[stage].split())
+        for stage in ("question_gate", "holistic_review")
+    )
+    assert "blur, darkness, cropping or something in front could hide that object" in gate
+    assert "due to blur, darkness, cropping" in review
 
 
 def test_a_false_premise_draft_must_follow_its_planned_detail() -> None:
