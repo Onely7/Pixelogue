@@ -113,8 +113,8 @@ Routing uses `supported_families` and whether `image_kind` is `screen`. If the p
 
 For each turn, the controller offers one primary family with up to four operations and one secondary family with up to two:
 
-1. **Available operations.** Drafting offers the 65 core operations whose validators are registered. In the first `tasks.anchor_turns` turns (default 2), only lightly verified operations are offered: those verified by the two blind reviews, evidence binding, or transcript alignment alone. These turns decide whether the conversation reaches two committed turns, and structured extraction verifiers abstain more often.
-2. **Feasible families.** These are the profiled families that have an available operation. `screen_ui` stays feasible only for an image profiled as `screen`. When none remain, or the profile is missing, the fallback families `visual_description`, `text_reading`, `reference_spatial`, `set_logic` and `evidence_verification` are used.
+1. **Available operations.** Drafting offers the 59 core tasks whose validators are registered. In the first `tasks.anchor_turns` turns (default 2), only the 22 light tasks are offered: those verified by the two blind reviews, evidence binding, or transcript alignment alone. These turns decide whether the conversation reaches two committed turns, and structured extraction verifiers abstain more often.
+2. **Feasible families.** These are the profiled families that have an available operation. `screen_ui` stays feasible only for an image profiled as `screen`. When none remain, or the profile is missing, the fallback families `visual_description`, `text_reading`, `reference_spatial`, `counting_and_sets` and `evidence_verification` are used.
 3. **Primary family.** Families not yet used by the conversation's committed turns come first. Among them, the controller picks the largest deficit between the family's target share (`tasks.family_targets`, uniform by default) and its share of all turns committed so far in the run. This run-wide family ledger is shared by images processed concurrently and is updated after every commit. The secondary family is the best remaining feasible family by the same preferences.
 4. **Operations.** Within a family, operations not yet used in the conversation come first, then those with the fewest committed turns in the run after division by `tasks.task_weights`. The default weight is 0.25 for table, chart and document structure reconstruction and 1 for every other operation, so whole-structure reconstructions are offered less often.
 
@@ -122,12 +122,12 @@ Ties use a SHA-256 rank of the seed, image, turn, and candidate value. Each rout
 
 ### Step 3: draft questions
 
-The conversation's generator receives the image, the exact committed public history, the target language, the offered operation contracts in route order, the family plan, the private fact keys of earlier committed turns, and `tasks.draft_count` (default 2). It returns at most that many drafts; the decoder also restricts each `task_id` to the offered operations. Every draft has:
+The conversation's generator receives the image, the exact committed public history, the target language, the offered operation contracts in route order (each with the task's definition, parameter contract and any answer format), the family plan, the private fact keys of earlier committed turns, and `tasks.draft_count` (default 2). It returns at most that many drafts; the decoder also restricts each `task_id` to the offered operations. Every draft has:
 
 - `task_id`: one offered operation;
 - `question`: the public user question;
 - `target`: a short public locator of the subject, which never contains the answer;
-- `public_parameters`: every required public choice of the operation, as an array of name and value objects;
+- `public_parameters`: every required parameter of the task, as an array of name and value objects; a list value is a JSON array and an integer a JSON number;
 - `scope_region` and `target_region`: the region the draft used and the subject inside it, as fractions from 0 to 1 of the image width and height with left < right and top < bottom;
 - `fact_key`: a private subject and dimension, such as “dog on the left” and “fur color”, never the value.
 
@@ -135,17 +135,17 @@ The instruction states both formats explicitly: without them, Gemma 4 wrote regi
 
 ### Step 4: admit drafts deterministically
 
-Drafts are examined in order. The controller first converts a draft into an operation contract with `origin: direct` and a private `request_key` built from its fact key; spelling variants such as `colour`/`color` and articles do not create a new fact. For verbatim text, reading-order, and code transcription, the whole drafted scope becomes the bound text region.
+Drafts are examined in order. The controller first converts a draft into an operation contract with `origin: direct` and a private `request_key` built from its fact key; spelling variants such as `colour`/`color` and articles do not create a new fact. For text transcription, including several text blocks and code, the whole drafted scope becomes the text region.
 
 A draft is rejected before any judge call when:
 
-- its operation was not offered or its public parameters break the catalog contract (unknown or missing names, unsupported values, scene categories without two distinct options); these go to `draft-rejections`;
+- its operation was not offered or its public parameters break the catalog contract (unknown or missing names, a value of the wrong kind or outside the allowed values, scene categories without two to five distinct options); these go to `draft-rejections`;
 - the question gate already rejected the same normalized question in this turn;
 - it reproduces a substantial part of a private model instruction;
 - it contains a controller reference such as `scope_0`, `evidence_…`, or “selected region”;
 - it repeats an earlier user question after normalization;
 - its fact key matches a committed turn of the conversation;
-- a `visible_action_relation` question asks what a subject can or could do;
+- a `visible_action` question asks what a subject can or could do;
 - a `text_transcription` question locates its text relatively, for example “above” or “next to”;
 - a `scene_categorization` question does not state every listed option.
 
@@ -153,7 +153,7 @@ Every reason after the first is saved with the rejected text in `public-text-rej
 
 ### Step 5: gate the question with both judges
 
-Both generator models act as blind judges and make one `question_gate` call each, concurrently. A judge sees the image views, the public history, the drafted operation contract, all 72 task definitions, and the question. No answer exists yet. Each judge returns three verdicts and a reason, and only then its own label for the operation the question actually asks for (`realized_task_id`, or null):
+Both generator models act as blind judges and make one `question_gate` call each, concurrently. A judge sees the image views, the public history, the drafted operation contract, all 66 task definitions, and the question. No answer exists yet. Each judge returns three verdicts and a reason, and only then its own label for the operation the question actually asks for (`realized_task_id`, or null):
 
 1. `local_anchor`: the question refers to something that exists in the image or committed history, and to the bound subject when a target region is given;
 2. `operation_coherent`: it realizes the drafted operation exactly, with every public parameter and eligibility check;
@@ -171,7 +171,7 @@ A judge's three verdicts reduce to `MET` only when all are `MET`, and to `NOT_ME
 
 The question passes only when the label outcome is `MET` and both judges' reduced verdicts are `MET`. A clear rejection needs `NOT_MET` from both judges or an agreed label mismatch; anything else short of a pass is uncertainty. Either way, the next draft is examined. When no draft of the call passes, one more drafting call (`tasks.extra_draft_calls_per_turn`, default 1) is routed with a preference for families that the first call did not offer. If that call fails too, the turn stops: abstained after an uncertain last gate decision, rejected otherwise. Each decision, with both votes, is saved in `question-gate-decisions`.
 
-**What the judges see.** For object identification, attribute lookup, text transcription, reading order, and code transcription with a bound region smaller than the image, the controller cuts an exact crop of the target region, or of the scope region when no target region exists. Rounding never enlarges the crop, and it records its source view and coordinates in `focus-views`. With `evaluation.judge_views: full_and_crop` (default), judges receive the complete image first and the crop second; they judge the local subject inside the crop and use the complete image only for context. With `crop`, they receive the crop alone. Other operations always use the complete image. A crop without a whole pixel is recorded in `focus-view-abstentions`; under `full_and_crop` the judges then see the complete image, under `crop` the decision is `UNKNOWN`, and in both modes the turn cannot pass its operation checks. Generators always see the complete image.
+**What the judges see.** For object identification, attribute lookup and text transcription with a region smaller than the image, the controller cuts an exact crop of the target region, or of the scope region when no target region exists. Rounding never enlarges the crop, and it records its source view and coordinates in `focus-views`. With `evaluation.judge_views: full_and_crop` (default), judges receive the complete image first and the crop second; they judge the local subject inside the crop and use the complete image only for context. With `crop`, they receive the crop alone. Other operations always use the complete image. A crop without a whole pixel is recorded in `focus-view-abstentions`; under `full_and_crop` the judges then see the complete image, under `crop` the decision is `UNKNOWN`, and in both modes the turn cannot pass its operation checks. Generators always see the complete image.
 
 ### Step 6: answer the first gated question
 

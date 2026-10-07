@@ -41,7 +41,7 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
 {
   "image_kind": "photo",
   "readable_text": "some",
-  "supported_families": ["visual_description", "reference_spatial", "text_reading", "set_logic"],
+  "supported_families": ["visual_description", "reference_spatial", "text_reading", "counting_and_sets"],
   "reason": "Street scene with people at a bus stop and a readable shop sign."
 }
 ```
@@ -51,7 +51,7 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
 ```json
 {
   "primary_family": "text_reading",
-  "primary_task_ids": ["text_transcription", "label_value_linking", "text_reading_order", "text_visual_binding"],
+  "primary_task_ids": ["text_transcription", "label_value_lookup", "text_object_binding"],
   "secondary_family": "visual_description",
   "secondary_task_ids": ["attribute_lookup", "object_identification"],
   "basis": "profile"
@@ -71,7 +71,7 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
   "call_index": 0,
   "route": {
     "primary_family": "text_reading",
-    "primary_task_ids": ["text_transcription", "label_value_linking", "text_reading_order", "text_visual_binding"],
+    "primary_task_ids": ["text_transcription", "label_value_lookup", "text_object_binding"],
     "secondary_family": "visual_description",
     "secondary_task_ids": ["attribute_lookup", "object_identification"],
     "basis": "profile"
@@ -118,7 +118,7 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
 }
 ```
 
-操作契約に反する案は別に記録します。3往復目では、`attribute_grouping` の案が必須の `return` を指定していませんでした。
+操作契約に反する案は別に記録します。3往復目では、`group_by_attribute` の案が必須の `return` を指定していませんでした。
 
 ```json
 {
@@ -299,7 +299,7 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
     },
     {
       "turn_index": 2,
-      "task_id": "visible_action_relation",
+      "task_id": "visible_action",
       "question": "What is the person on the left doing?",
       "answer": "The person on the left is looking at a phone.",
       "rating": "PASS",
@@ -360,7 +360,7 @@ image ID、正規化後の画素hash、visual groupは、それぞれ別のこ�
   "visual_group_id": "visual-group-example-001",
   "generation_model": "Qwen/Qwen3.8-27B",
   "operation_ids": ["attribute_lookup", "grounded_description"],
-  "catalog_versions": ["7.0", "7.0"],
+  "catalog_versions": ["8.0", "8.0"],
   "primary_operation_id": "grounded_description"
 }
 ```

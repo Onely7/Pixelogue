@@ -2,10 +2,13 @@
 
 [日本語](verification-contract-v2_ja.md)
 
-`scope-operations-v2` retains the 72 task IDs, the two blind judges and the
-minimum of two committed turns. It changes public operation conditions and
+`scope-operations-v2` retained the 72 task IDs of catalog 7.0, the two blind judges and the
+minimum of two committed turns. It changed public operation conditions and
 verification schemas. Use a new run ID; retain older runs with their original
 code and catalog. A CPU fixture pass does not establish natural-image accuracy.
+
+Catalog 8.0 (`scope-operations-v3`) renames and merges task IDs and keeps the rules
+below; see the [catalog guide](README.md#changes-from-catalog-70).
 
 ## Public conditions and independent evidence
 

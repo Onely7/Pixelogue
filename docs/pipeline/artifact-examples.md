@@ -41,7 +41,7 @@ The router's response is kept with its model call:
 {
   "image_kind": "photo",
   "readable_text": "some",
-  "supported_families": ["visual_description", "reference_spatial", "text_reading", "set_logic"],
+  "supported_families": ["visual_description", "reference_spatial", "text_reading", "counting_and_sets"],
   "reason": "Street scene with people at a bus stop and a readable shop sign."
 }
 ```
@@ -51,7 +51,7 @@ For turn 1, an anchor turn, the controller offers only lightly verified operatio
 ```json
 {
   "primary_family": "text_reading",
-  "primary_task_ids": ["text_transcription", "label_value_linking", "text_reading_order", "text_visual_binding"],
+  "primary_task_ids": ["text_transcription", "label_value_lookup", "text_object_binding"],
   "secondary_family": "visual_description",
   "secondary_task_ids": ["attribute_lookup", "object_identification"],
   "basis": "profile"
@@ -71,7 +71,7 @@ The conversation's generator returned two drafts for that route:
   "call_index": 0,
   "route": {
     "primary_family": "text_reading",
-    "primary_task_ids": ["text_transcription", "label_value_linking", "text_reading_order", "text_visual_binding"],
+    "primary_task_ids": ["text_transcription", "label_value_lookup", "text_object_binding"],
     "secondary_family": "visual_description",
     "secondary_task_ids": ["attribute_lookup", "object_identification"],
     "basis": "profile"
@@ -118,7 +118,7 @@ The first draft locates its text relatively, which the transcript evidence canno
 }
 ```
 
-A draft that breaks its operation contract is recorded separately. In turn 3, an `attribute_grouping` draft omitted its required `return` choice:
+A draft that breaks its operation contract is recorded separately. In turn 3, an `group_by_attribute` draft omitted its required `return` choice:
 
 ```json
 {
@@ -299,7 +299,7 @@ This is a `conversation-stop-reasons` record. Because two turns were already com
     },
     {
       "turn_index": 2,
-      "task_id": "visible_action_relation",
+      "task_id": "visible_action",
       "question": "What is the person on the left doing?",
       "answer": "The person on the left is looking at a phone.",
       "rating": "PASS",
@@ -360,7 +360,7 @@ The corresponding provenance row remains separate:
   "visual_group_id": "visual-group-example-001",
   "generation_model": "Qwen/Qwen3.8-27B",
   "operation_ids": ["attribute_lookup", "grounded_description"],
-  "catalog_versions": ["7.0", "7.0"],
+  "catalog_versions": ["8.0", "8.0"],
   "primary_operation_id": "grounded_description"
 }
 ```

@@ -32,9 +32,9 @@ uv run --locked pixelogue make-fixtures \
 uv run --locked pytest
 ```
 
-The first command validates the complete configuration and emits the versioned 72-task catalog (65 core candidates and 7 gated extensions), per-task runtime admission, the effective settings, exact language quotas, and JSON Schemas. Model weights are not needed for these steps.
+The first command validates the complete configuration and emits the versioned 66-task catalog (59 core tasks and 7 gated extensions), per-task runtime admission, the effective settings, exact language quotas, and JSON Schemas. Model weights are not needed for these steps.
 
-See the [v7 catalog and runtime admission guide](docs/tasks/README.md) for routing, draft admission, validator status, and migration. All 65 core operations have CPU verification paths, and synthesis drafts questions only for them. The 7 specialist extensions are evaluated with `evaluate-specialist` and require exact model-bound calibration and their runtime dependencies.
+See the [v8 catalog and runtime admission guide](docs/tasks/README.md) for task definitions, routing, draft admission, validator status, and the changes from catalog 7.0. The [task reference](docs/tasks/TASKS.md) is generated from the catalog. All 59 core tasks have CPU verification paths, and synthesis drafts questions only for them. The 7 specialist extensions are evaluated with `evaluate-specialist` and require exact model-bound calibration and their runtime dependencies.
 
 ## Guides
 
