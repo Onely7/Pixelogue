@@ -4,7 +4,7 @@ This page connects the pipeline promises to the code, saved artifacts, commands,
 
 | Promise | Main implementation | Saved or emitted evidence | Entry point |
 |---|---|---|---|
-| Versioned 76-task catalog, generated task reference, runtime admission and required verifiers | `task_catalog.py`, `catalog.py`, `task_docs.py`, `task_registry.py`, `task_runtime.py`, `task_verification.py`, `knowledge_verifiers.py`, `box_verifier.py` | catalog identity, `task_admission`, operation checks, operation counts | `compile`, `synthesize` |
+| Versioned 78-task catalog, generated task reference, runtime admission and required verifiers | `task_catalog.py`, `catalog.py`, `task_docs.py`, `task_registry.py`, `task_runtime.py`, `task_verification.py`, `knowledge_verifiers.py`, `box_verifier.py`, `premise_verifiers.py` | catalog identity, `task_admission`, operation checks, operation counts | `compile`, `synthesize` |
 | Strict configuration, exact quotas, and pinned model roles | `config.py`, `planner.py` | compiled config, quota table, model revisions | `compile` |
 | Rights checks, canonical images, duplicate groups, and split isolation | `images.py`, `operations.py`, `sscd.py` | image ledger, failures, split map, manifest hash | `ingest` |
 | Fixed Open Images V7 validation sample | `open_images.py`, `validation/open_images_v7_manifest.jsonl` | source and rights JSONL plus private download metadata | `prepare` |

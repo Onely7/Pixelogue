@@ -1,10 +1,10 @@
 # Task catalog v8
 
-[日本語](README_ja.md) · [76 task definitions](TASKS.md) · [185-subset research map](finevision_mapping_185.md)
+[日本語](README_ja.md) · [78 task definitions](TASKS.md) · [185-subset research map](finevision_mapping_185.md)
 
 See [Specialist and research guide](specialist-and-research.md) for the optional environment, calibration and experiment commands.
 
-The installed catalog contains **69 core tasks and 7 validator-gated extensions** in 17 families. [TASKS.md](TASKS.md) is generated from `src/pixelogue/resources/task_catalog.yaml`. Regenerate it after every catalog edit; a test fails when the committed file differs from the catalog:
+The installed catalog contains **71 core tasks and 7 validator-gated extensions** in 18 families. [TASKS.md](TASKS.md) is generated from `src/pixelogue/resources/task_catalog.yaml`. Regenerate it after every catalog edit; a test fails when the committed file differs from the catalog:
 
 ```bash
 uv run --locked pixelogue compile --tasks-markdown docs/tasks/TASKS.md
@@ -27,7 +27,7 @@ The question drafter receives the definition, `do_not_infer`, the eligibility ch
 
 `pixelogue compile` emits the complete catalog, strict JSON Schemas and `task_admission`. Every `task_admission` entry reports whether the task is available, the required validators and their environments, any certified calibration domains, and the concrete reasons that block it.
 
-All **69 core tasks** have verification paths, and synthesis drafts questions only for core tasks. 35 of them use blind structured extraction followed by deterministic checks for finite sets, arithmetic, tables, charts, documents, formulas, diagrams, scales, marked geometry and finite patterns. Five knowledge tasks commit only when two blind readers give the same short answer, and object boxes must overlap two blind box readings. Panel comparison, panel sequences and UI element location use two blind visual contract reviews. The remaining 25 are light tasks, described under the routing rules. Unknown notation, incomplete extraction, ambiguous results or disagreement between extractors causes abstention. `grounded_arithmetic` uses the same exact numeric engine as the other numeric tasks. The precision and unit rules that the question states determine which calculations are admissible.
+All **71 core tasks** have verification paths, and synthesis drafts questions only for core tasks. 35 of them use blind structured extraction followed by deterministic checks for finite sets, arithmetic, tables, charts, documents, formulas, diagrams, scales, marked geometry and finite patterns. Five knowledge tasks commit only when two blind readers give the same short answer, the two presence tasks only when two blind readers agree on whether the asked object is there, and object boxes must overlap two blind box readings. Panel comparison, panel sequences and UI element location use two blind visual contract reviews. The remaining 25 are light tasks, described under the routing rules. Unknown notation, incomplete extraction, ambiguous results or disagreement between extractors causes abstention. `grounded_arithmetic` uses the same exact numeric engine as the other numeric tasks. The precision and unit rules that the question states determine which calculations are admissible.
 
 Table, table-lookup, chart, graph and specialist source readers use `tasks.source_max_tokens` (default 4096). A chart or graph reading that stops at that limit before producing complete JSON is retried with up to twice the allowance, capped at 8,192 tokens unless the configured allowance is already higher. A table reading keeps its allowance and must return `UNKNOWN` when the complete table does not fit. No table cell is filled from the candidate answer.
 
@@ -46,6 +46,15 @@ The [FineVision row audit](finevision_mapping_185.md#row-level-audit-2026-10-07)
 The five tasks with short knowledge answers (`named_entity_recognition`, `style_recognition`, `map_region_identification`, `notation_interpretation` and `math_word_problem`) use `answer_consensus_check`. Two readers answer the question without seeing the candidate answer, and the turn commits only when both short answers match the candidate's after normalizing case, punctuation, leading articles and number format. Readers who disagree, or an alias such as a translated name, leave the turn uncommitted. Agreement between two models is evidence, not proof, so these tasks also pass both blind judges. `concept_explanation` and `grounded_creative_writing` are light tasks checked by the judges and by evidence binding.
 
 The audit also added three tasks to existing families. `object_box_grounding` answers with normalized boxes, which `box_iou_check` matches one-to-one to two blind box readings at an overlap (IoU) of at least 0.5. `chart_value_arithmetic` computes a result from both chart readings, exactly for printed values and as a range for estimates. `visible_text_translation` translates a delimited piece of visible text. Medical images, multiple-choice answer formats and several images per question were not added; the audit table gives the decision for each subset.
+
+## Presence and false-premise tasks
+
+The `presence_and_premises` family teaches a model to check whether something is there before answering, the failure that object-hallucination benchmarks such as POPE and false-premise sets such as HaloQuest measure.
+
+- `object_presence` asks whether an object of a named kind is in the image or a named area, for example "Is there a fork on the table?". About half of the questions name an object that is absent. The drafter prefers an absent object that usually appears with the visible ones (a fork beside a plate, the adversarial negatives of POPE), then a very common object (a person, the popular negatives), and otherwise an unrelated one (the random negatives); present objects give the yes answers.
+- `false_premise_question` asks, as if it were true, about the count, a property, the location, the action or the kind of something the image does not show: an absent object ("What color is the woman's purse?" when she has none) or a visible object with a property, relation or action that it does not have (a black dog when the only dog is brown). `asked_detail` records which of the five was asked.
+
+Both answers first name the relevant visible objects, then say whether the asked or assumed object is there, and end with the conclusion: yes or no, 0 for a count, or that the detail cannot be determined. `premise_check` asks two readers who never see the candidate answer whether the image shows the asked or assumed object, and has two image-free parses read the answer's conclusion; the turn commits only when both readers agree with each other and with that conclusion. A reader's doubt about a hidden, cut-off or very small area leaves the turn uncommitted, and a false-premise question whose assumption turns out to hold never commits. These are the only operations that may ask about something absent: `entity_count`, `described_object_lookup`, `visual_claim_verification` and `answerability_assessment` now point to them for absent objects. The question gate accepts the absent object only for these two operations, and the answer prompts tell every operation to correct a false assumption instead of inventing the missing object.
 
 ## Per-image flow
 
@@ -153,7 +162,7 @@ The catalog no longer has task numbers, counts, facets, classification rules, ro
 
 ## Migration and analysis
 
-Use a **new run ID**. The run identity includes configuration, code, prompts, Schemas, catalog, the task contract version (`scope-operations-v3`), specialist lock, model and processor revisions, seed and the prepared input/rights manifest identity. Records written before catalog 8.0 do not validate under 8.0: every saved instruction carries the removed `profile` field, and versioned ones use 7.0 task IDs. Inspect, replay and re-rate such runs with the code that wrote them, such as commit `6f224e0`.
+Use a **new run ID**. The run identity includes configuration, code, prompts, Schemas, catalog, the task contract version (`scope-operations-v4`), specialist lock, model and processor revisions, seed and the prepared input/rights manifest identity. Records written before catalog 8.0 do not validate under 8.0: every saved instruction carries the removed `profile` field, and versioned ones use 7.0 task IDs. Inspect, replay and re-rate such runs with the code that wrote them, such as commit `6f224e0`.
 
 Synthesis and rerating write an `.operations.json` sidecar counting all committed task IDs and the final committed task per conversation. Stopped tails are excluded. Selection uses the final committed family as its primary label; the semantic fingerprint retains the full task sequence. Export records task IDs and catalog versions only in provenance, keeping training messages public-only. Existing evaluation-source exclusions and rights checks remain in force.
 

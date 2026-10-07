@@ -20,7 +20,7 @@ uv run --locked pixelogue synthesize \
 The coordinator assigns languages and generators with exact batch quotas. A conversation uses one generator throughout. Each image follows this flow:
 
 1. the router (generator A's `Qwen/Qwen3.8-27B` server) profiles the image once and lists the task families it can support;
-2. for each planned turn, the controller routes a primary and a secondary family from the 69 core tasks, offering only the 25 light tasks in the first `tasks.anchor_turns` turns;
+2. for each planned turn, the controller routes a primary and a secondary family from the 71 core tasks, offering only the 25 light tasks in the first `tasks.anchor_turns` turns;
 3. the conversation's generator drafts up to `tasks.draft_count` questions, each with its operation, public parameters, regions and a private fact key;
 4. deterministic checks reject contract violations, private-prompt echoes, internal references, repeated questions and facts, and operation-specific defects before any judge call;
 5. both judges gate the question in one blind call each, including an independent operation label; one extra drafting call may follow when nothing passes;
