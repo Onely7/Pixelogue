@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from pixelogue.contracts import GateVerdict
@@ -249,4 +251,25 @@ def test_label_binding_preserves_ambiguity_and_structural_disagreement(mismatch)
             answer.answer_quote,
         )
         is GateVerdict.UNKNOWN
+    )
+
+
+def test_a_repeated_edge_is_read_as_the_same_link() -> None:
+    source = _source("diagram_connectivity", "neighbors", node_id="A")
+    data = source.model_dump(mode="json")
+    data["edges"].append(data["edges"][0])
+    repeated = GraphSource.model_validate_json(json.dumps(data))
+    assert len(repeated.edges) == 4
+    answer = _answer("B and C", members=("B", "C"))
+    assert (
+        verify_graph(
+            source.task_id,
+            (source, repeated),
+            (answer, answer),
+            {},
+            "scope",
+            "view",
+            answer.answer_quote,
+        )
+        is GateVerdict.MET
     )

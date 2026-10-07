@@ -1973,7 +1973,7 @@ class SynthesisCoordinator:
                 call_kwargs["seed"] = int(call_kwargs["seed"]) + 100_000 * attempt
                 call_kwargs["retry_feedback"] = retry_feedback
                 if (
-                    stage in {"chart_source", "graph_source"}
+                    stage in {"chart_source", "graph_source", "finite_source"}
                     and prior_error == "MODEL_FINISH_REASON"
                 ):
                     original_tokens = int(kwargs["max_tokens"])

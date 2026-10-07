@@ -207,6 +207,28 @@ def _bind_text_payload_schema(schema: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _bind_formula_source_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Bind a formula reading: MET carries a rooted tree and its region, otherwise neither."""
+    properties = schema["properties"]
+    base = {"type": "object", "additionalProperties": False, "required": list(properties)}
+    complete = {
+        **properties,
+        "coverage": {"type": "string", "const": "MET"},
+        "formula_region": {"$ref": "#/$defs/ImageRegion"},
+        "root": {"$ref": "#/$defs/FormulaNode"},
+    }
+    uncertain = {
+        **properties,
+        "coverage": {"type": "string", "enum": ["NOT_MET", "UNKNOWN"]},
+        "formula_region": {"type": "null"},
+        "root": {"type": "null"},
+    }
+    return {
+        "$defs": schema["$defs"],
+        "anyOf": [{**base, "properties": complete}, {**base, "properties": uncertain}],
+    }
+
+
 def _bind_chart_source_schema(schema: dict[str, Any], payload: dict[str, Any]) -> None:
     """Prevent contradictory axis shapes and absent operands in a complete reading.
 
@@ -785,6 +807,8 @@ class VllmClient:
             schema = _bind_answer_parse_schema(schema, stage, payload)
         if response_model is TextPayload:
             schema = _bind_text_payload_schema(schema)
+        if stage == "formula_source":
+            schema = _bind_formula_source_schema(schema)
         if stage in STRUCTURAL_OUTPUT_STAGES:
             if stage in {
                 "chart_source",

@@ -34,6 +34,7 @@ from pixelogue.evaluation import (
     unverified_transcription_relation,
 )
 from pixelogue.export import training_record
+from pixelogue.finite_verifiers import FiniteSource
 from pixelogue.formula_verifier import FormulaSource
 from pixelogue.gates import GateDecision, QuestionGateVote
 from pixelogue.graph_verifiers import GraphSource
@@ -243,6 +244,20 @@ class ScriptedClient:
                     "reason": "The formula is not readable.",
                 }
             )
+        elif response_model is FiniteSource:
+            value = FiniteSource.model_validate(
+                {
+                    "task_id": "count_comparison",
+                    "coverage": "UNKNOWN",
+                    "closed": False,
+                    "scope_id": "whole",
+                    "view_id": "view",
+                    "scope_region": {"left": 0, "top": 0, "right": 1, "bottom": 1},
+                    "members": (),
+                    "query": {"answer_form": "relation"},
+                    "reason": "The objects are not countable.",
+                }
+            )
         elif response_model is TextPayload:
             if stage == "answer_generation" and self.echo_answer_prompt:
                 text = STAGE_INSTRUCTIONS["answer_generation"]
@@ -449,7 +464,12 @@ def test_chart_retry_does_not_trust_unstructured_error_text():
 
 
 @pytest.mark.parametrize(
-    ("stage", "model"), [("chart_source", ChartSource), ("graph_source", GraphSource)]
+    ("stage", "model"),
+    [
+        ("chart_source", ChartSource),
+        ("graph_source", GraphSource),
+        ("finite_source", FiniteSource),
+    ],
 )
 @pytest.mark.parametrize(
     ("reason", "expected_budgets"),

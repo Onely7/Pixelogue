@@ -15,6 +15,7 @@ from pixelogue.contracts import RubricVerdict, TextPayload
 from pixelogue.document_verifiers import DocumentSource
 from pixelogue.errors import ExecutionError
 from pixelogue.finite_verifiers import FiniteAnswer
+from pixelogue.formula_verifier import FormulaSource
 from pixelogue.graph_verifiers import GraphAnswer, GraphSource
 from pixelogue.pattern_verifiers import PatternAnswer
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
@@ -478,6 +479,29 @@ def test_text_payload_schema_requires_text_or_a_reason():
     assert set(answered["required"]) == set(abstained["required"]) == {"text", "reason"}
     TextPayload.model_validate_json('{"text": "A cat.", "reason": null}')
     TextPayload.model_validate_json('{"text": null, "reason": "The image is blank."}')
+
+
+def test_formula_reader_schema_ties_met_to_a_rooted_formula():
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="formula")
+    try:
+        body = client._build_body(
+            "formula_source",
+            {"expected_operation": {"task_id": "formula_transcription"}},
+            (),
+            FormulaSource,
+            max_tokens=2048,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    complete, uncertain = body["response_format"]["json_schema"]["schema"]["anyOf"]
+    assert complete["properties"]["coverage"] == {"type": "string", "const": "MET"}
+    assert complete["properties"]["root"] == {"$ref": "#/$defs/FormulaNode"}
+    assert complete["properties"]["formula_region"] == {"$ref": "#/$defs/ImageRegion"}
+    assert uncertain["properties"]["root"] == {"type": "null"}
+    assert uncertain["properties"]["formula_region"] == {"type": "null"}
+    assert set(complete["required"]) == set(FormulaSource.model_fields)
 
 
 def test_answer_parse_schema_stays_unbound_for_an_unknown_operation():

@@ -91,30 +91,18 @@ class GraphSource(StrictModel):
 
     @model_validator(mode="after")
     def check_graph(self) -> GraphSource:
-        """Reject dangling links, duplicate nodes and nonlocal visual evidence."""
+        """Reject dangling links, duplicate nodes and nonlocal visual evidence.
+
+        A repeated edge with the same endpoints, direction and condition is allowed here; the
+        verifier compares each reading's set of distinct edges (see ``distinct_edges``).
+        """
         ids = [node.node_id for node in self.nodes]
         if len(ids) != len(set(ids)):
             raise ValueError("Repeated graph node ID")
         known = set(ids)
-        signatures: set[tuple[str, str, bool, str | None]] = set()
         for edge in self.edges:
             if edge.source not in known or edge.target not in known:
                 raise ValueError("Edge has an unresolved endpoint")
-            endpoints = (
-                (edge.source, edge.target)
-                if edge.directed
-                else tuple(sorted((edge.source, edge.target)))
-            )
-            left, right = endpoints
-            signature = (
-                left,
-                right,
-                edge.directed,
-                edge.condition.model_dump_json() if edge.condition else None,
-            )
-            if signature in signatures:
-                raise ValueError("Repeated graph edge")
-            signatures.add(signature)
         if self.coverage != "MET" and (self.closed or self.nodes or self.edges):
             raise ValueError("Incomplete graph cannot certify nodes or edges")
         if self.coverage == "MET" and not self.nodes:
@@ -148,6 +136,25 @@ class GraphAnswer(StrictModel):
         if self.coverage != "MET" and (populated or self.answer_quote):
             raise ValueError("Incomplete graph answer cannot supply a result")
         return self
+
+
+def _edge_signature(edge: GraphEdge) -> tuple[str, str, bool, str | None]:
+    left, right = (
+        (edge.source, edge.target) if edge.directed else tuple(sorted((edge.source, edge.target)))
+    )
+    return left, right, edge.directed, edge.condition.model_dump_json() if edge.condition else None
+
+
+def distinct_edges(source: GraphSource) -> GraphSource:
+    """Keep the first of repeated edges; a repeat adds no link, so the graph is unchanged."""
+    seen: set[tuple[str, str, bool, str | None]] = set()
+    edges = []
+    for edge in source.edges:
+        signature = _edge_signature(edge)
+        if signature not in seen:
+            seen.add(signature)
+            edges.append(edge)
+    return source.model_copy(update={"edges": tuple(edges)})
 
 
 def _canonical(source: GraphSource) -> dict[str, object]:
@@ -342,7 +349,7 @@ def verify_graph(
         for source in sources
     ):
         return GateVerdict.UNKNOWN
-    bound = tuple(_label_bound_source(source) for source in sources)
+    bound = tuple(_label_bound_source(distinct_edges(source)) for source in sources)
     if bound[0] is None or bound[1] is None:
         return GateVerdict.UNKNOWN
     sources = (bound[0], bound[1])
