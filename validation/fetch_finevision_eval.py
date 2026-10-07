@@ -295,9 +295,11 @@ def subsets() -> list[tuple[int, str, str]]:
         SystemExit: If the research map and the category grouping disagree.
     """
     category_of = {name: category for category, names in CATEGORIES.items() for name in names}
+    # The main table comes before the first section heading; later sections reuse its numbers.
+    table = MAPPING_DOC.read_text(encoding="utf-8").split("\n## ", 1)[0]
     rows = [
         (int(match.group(1)), match.group(2))
-        for line in MAPPING_DOC.read_text(encoding="utf-8").splitlines()
+        for line in table.splitlines()
         if (match := MAPPING_ROW.match(line))
     ]
     numbers = [number for number, _ in rows]
