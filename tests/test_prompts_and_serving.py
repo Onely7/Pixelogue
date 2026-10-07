@@ -7,12 +7,13 @@ from pathlib import Path
 
 import httpx
 import pytest
-from pydantic import HttpUrl
+from pydantic import HttpUrl, ValidationError
 
 from pixelogue.chart_verifiers import ChartAnswer, ChartSource
 from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
 from pixelogue.contracts import RubricVerdict, TextPayload
 from pixelogue.document_verifiers import DocumentSource
+from pixelogue.drafting import QuestionDraftBatch
 from pixelogue.errors import ExecutionError
 from pixelogue.finite_verifiers import FiniteAnswer
 from pixelogue.formula_verifier import FormulaSource
@@ -40,6 +41,7 @@ from pixelogue.store import RunStore
 from pixelogue.table_lookup import TableLookupSource
 from pixelogue.table_verifiers import TableAnswer, TableSource
 from pixelogue.task_evidence import (
+    ImageRegion,
     TranscriptSource,
 )
 
@@ -302,6 +304,28 @@ def test_source_decoder_limits_coordinates_to_the_declared_public_region(stage, 
     ):
         assert fields[field]["minimum"] == bound[lower]
         assert fields[field]["maximum"] == bound[upper]
+
+
+def test_region_decoder_cannot_open_a_region_at_the_far_edge():
+    """A 0-1000 coordinate cut to 1 by the decoder made left 1.0 and the region empty."""
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="edges")
+    try:
+        body = client._build_body(
+            "question_draft",
+            {"allowed_tasks": [{"task_id": "object_identification"}], "draft_count": 2},
+            (),
+            QuestionDraftBatch,
+            max_tokens=2048,
+            temperature=0.7,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    fields = body["response_format"]["json_schema"]["schema"]["$defs"]["ImageRegion"]["properties"]
+    assert fields["left"]["exclusiveMaximum"] == fields["top"]["exclusiveMaximum"] == 1
+    assert fields["right"]["exclusiveMinimum"] == fields["bottom"]["exclusiveMinimum"] == 0
+    with pytest.raises(ValidationError):
+        ImageRegion(left=1.0, top=0.05, right=1.0, bottom=0.95)
 
 
 def test_incomplete_document_decoder_cannot_certify_partial_source_facts():

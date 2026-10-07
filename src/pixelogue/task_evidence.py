@@ -13,12 +13,17 @@ ObservationVerdict = Literal["MET", "NOT_MET", "UNKNOWN"]
 
 
 class ImageRegion(StrictModel):
-    """Normalized location in the exact delivered image view."""
+    """Normalized location in the exact delivered image view.
 
-    left: Annotated[float, Field(ge=0, le=1)]
-    top: Annotated[float, Field(ge=0, le=1)]
-    right: Annotated[float, Field(ge=0, le=1)]
-    bottom: Annotated[float, Field(ge=0, le=1)]
+    Left and top stay below 1 and right and bottom above 0, as in every non-empty region. The
+    strict bounds reach the decoder, so a model that starts a coordinate on its native 0-1000
+    scale cannot open the region at 1 and must write a fraction.
+    """
+
+    left: Annotated[float, Field(ge=0, lt=1)]
+    top: Annotated[float, Field(ge=0, lt=1)]
+    right: Annotated[float, Field(gt=0, le=1)]
+    bottom: Annotated[float, Field(gt=0, le=1)]
 
     @model_validator(mode="after")
     def validate_extent(self) -> ImageRegion:
