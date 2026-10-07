@@ -375,8 +375,8 @@ verification_contracts:
   transcript_alignment:
     contract: >-
       Two independent readers transcribe the requested source text, and the controller compares the
-      answer with it exactly, including punctuation and meaningful whitespace. Source errors are not
-      corrected.
+      answer's words and punctuation with it after unifying dashes, quotation marks and spacing; indented
+      text such as code is compared line by line. Source errors are not corrected.
     applies_when: The answer copies or extracts visible text, code or labels.
   schema_check:
     contract: >-
