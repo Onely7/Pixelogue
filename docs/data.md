@@ -75,6 +75,33 @@ The fetcher verifies the pinned Commons page ID, thumbnail SHA-256, and recorded
 
 The diverse report lists and counts only `COMMITTED` turn tasks. A rejected or abstained terminal attempt remains in the diagnostic stop record and is excluded from committed task counts.
 
+## FineVision subset evaluation sample
+
+The [FineVision manifest](../validation/finevision_185_eval_manifest.jsonl) pins one row from each of the 185 subsets of `HuggingFaceM4/FineVision` at commit `3c380a7`. The fetcher reads the first row group of each subset's first parquet shard, which keeps the original image bytes, and selects the lowest row whose first image passes the ingest limits. Six subsets have no such row in that group; their first image is padded with white to the minimum edge and stored as PNG, and the manifest records both steps. Two subsets skip row 0 because it repeats another subset's picture, and the fetcher fails if any two selected images decode to the same pixels. The 16 text-only subsets keep their first row without an image, which leaves 169 evaluation images.
+
+```sh
+uv run --locked --script validation/fetch_finevision_eval.py --workers 4
+```
+
+The script has its own dependency lock, `validation/fetch_finevision_eval.py.lock`, so the application environment is unchanged. Row texts and ratings are dataset annotations: they stay under the ignored `data/finevision-185-eval/rows/` for task analysis and never enter model requests. The images are evaluation-only; processing is allowed, while training, question-answer redistribution and image redistribution are not.
+
+## Diverse 269-image evaluation set
+
+The [269-image manifest](../validation/diverse_269_20261007_manifest.json) joins the 100 diverse development images of `validation/diverse_100_20261004_manifest.json` (the 60 Commons category images and 40 stratified Commons images) with the 169 FineVision images. It is a development set, not an independent holdout. Restore the three source roots first: `data/diverse-web-eval` with `validation/fetch_diverse_eval.py`, `data/qg-fast-50-20261003` from the source URLs and hashes in `validation/qg_fast_50_manifest.json`, and `data/finevision-185-eval` with the FineVision fetcher. Then build and check the set:
+
+```sh
+uv run --locked python validation/build_diverse_269.py assemble
+uv run --locked pixelogue ingest \
+  --config configs/split-diverse-269.yaml \
+  --sources data/diverse-269-eval/sources.jsonl \
+  --rights data/diverse-269-eval/rights.jsonl \
+  --image-root data/diverse-269-eval \
+  --artifact-root artifacts/prepared-diverse-269-eval
+uv run --locked python validation/build_diverse_269.py manifest
+```
+
+`assemble` checks every image against its pinned hash and copies it under `data/diverse-269-eval/`, changing only `image_path`. Source IDs stay the same, so the earlier 100 images keep their image IDs. Ingest must accept all 269 images, and `manifest` fails unless every image has its own visual group. The manifest records each image's identity, cohort, stratum (the 10 earlier strata plus one per FineVision category), FineVision subset and category, and the generator role and planned turn count that `pixelogue synthesize` assigns under `configs/split-diverse-269.yaml`. A test checks that schedule and the links to both source manifests.
+
 ## Separate six-image holdout smoke set
 
 The [holdout manifest](../validation/holdout_web_eval_manifest.jsonl) pins six other Commons pages: a photograph, document, table, chart, flowchart, and app screen. Their page IDs, pixel hashes, and visual groups differ from the 60 development images and the fixed Open Images sample. The fetcher restores evaluation-only source and rights records; image bytes stay out of Git.

@@ -1,0 +1,64 @@
+# Full-pipeline evaluation of the standard BF16 pair on the pinned diverse-269 images
+# (validation/diverse_269_20261007_manifest.json) in the split three-GPU layout of
+# configs/split-pilot.yaml. All 269 images are evaluation-only; both blind evaluators
+# remain distinct.
+version: '1.0'
+profile: standard
+seed: 20261004
+tasks:
+  catalog_version: '8.0'
+  source_max_tokens: 4096
+  answer_max_tokens: 1024
+  enabled_extensions: []
+evaluation:
+  retain_accepted_prefix: true
+data:
+  target_dialogues: 269
+  min_turns: 2
+  max_turns: 6
+  languages:
+  - tag: en
+    weight: 100
+  pilot: false
+  pilot_max_image_groups: 100
+  pilot_gpu_hours: 4.0
+  open_images:
+    enabled: false
+    split: validation
+    groups: 20
+    seed: 20260915
+    image_ids_manifest: null
+    metadata_url: https://storage.googleapis.com/openimages/2018_04/validation/validation-images-with-rotation.csv
+models:
+  generator_a: &generator_a
+    repo_id: Qwen/Qwen3.8-27B
+    revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+    processor_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+    base_url: http://127.0.0.1:18702/v1
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.88
+  # Images are routed by generator A's own server; the router repeats its endpoint.
+  router: *generator_a
+  generator_b:
+    repo_id: google/gemma-4-31B-it
+    revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
+    processor_revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
+    base_url: http://127.0.0.1:18703/v1
+    tensor_parallel_size: 2
+    gpu_memory_utilization: 0.9
+  generation_allocation:
+    generator_a: 1
+    generator_b: 1
+storage:
+  run_root: /var/tmp/pixelogue
+  backup_root: null
+  require_local_wal: true
+runtime:
+  request_timeout_seconds: 180
+  transport_max_attempts: 3
+  structured_output_max_attempts: 2
+  max_concurrent_images: 4
+  refill_completed_images: true
+  max_total_requests: 10000000
+  max_total_output_tokens: 1000000000
+  allow_external_inference: false

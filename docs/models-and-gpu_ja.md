@@ -16,6 +16,7 @@ Pixelogue は、画像の割り当てと、対話の生成・評価を別の役�
 
 `configs/split-pilot.yaml` は標準のモデルを維持したまま、同じホストにあるとは限らない3台の GPU へ配置します。Gemma 4 31B は 48 GiB の GPU 2台（`runtime/vllm/generator-b-split.yaml`、port 18703）、画像の割り当ても行う Qwen3.8-27B は 96 GiB の GPU 1台（`runtime/vllm/generator-a-split.yaml`、port 18702、メモリ比率 0.88）です。Gemma を RTX 6000 Ada 2台、Qwen を別ホストの RTX PRO 6000 Blackwell 1台に置き、SSH のポート転送でつないで動作を確認しました（[3節](#ホストをまたぐ分割配置)）。他の GPU では容量を再確認してください。これは pilot 用の配置で、standard プロファイルは変更しません。
 `configs/split-diverse.yaml` は同じendpointとモデル固定値を使い、Commonsの60分類を検証専用で処理するため、対象数を60にします。学習exportには含めません。
+`configs/split-diverse-269.yaml` は同じendpointでstandardプロファイルを使い、[269枚の多様な検証用セット](data_ja.md#269枚の多様な検証用セット)をseed 20261004で処理します。固定したmanifestに、各画像の生成器と予定ターン数を記録しています。
 
 ## 1. GPUを使う直前に調べる
 

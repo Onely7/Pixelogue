@@ -75,6 +75,33 @@ uv run --locked pixelogue ingest \
 
 多様画像レポートのタスク一覧と件数には、`COMMITTED` のターンだけを含めます。最後に棄却・棄権された試行は診断用の停止記録に残し、確定タスク件数には含めません。
 
+## FineVisionのsubsetによる検証用サンプル
+
+[FineVisionのmanifest](../validation/finevision_185_eval_manifest.jsonl)には、`HuggingFaceM4/FineVision` の185 subsetから、commit `3c380a7` の行を1件ずつ固定しています。取得処理は各subsetの最初のparquet shardの最初の行グループを読み、元の画像バイト列を使います。先頭画像が取り込みの制約を満たす最小の行を選びます。6 subsetではその行グループに該当する行がないため、先頭画像を白い余白で最小の辺の長さまで広げてPNGで保存し、両方の手順をmanifestに記録します。2 subsetは行0が別のsubsetと同じ画像のため行0を使いません。選んだ画像のうち2枚の画素が一致した場合、取得処理は失敗します。テキストだけの16 subsetは画像なしで先頭行を記録するため、検証用の画像は169枚です。
+
+```sh
+uv run --locked --script validation/fetch_finevision_eval.py --workers 4
+```
+
+このスクリプトの依存関係は別のロック `validation/fetch_finevision_eval.py.lock` で固定しているため、アプリケーションの環境は変わりません。各行の対話文と評価値はデータセットの注釈です。タスクの分析のためにGit管理外の `data/finevision-185-eval/rows/` に置き、モデルへの入力には含めません。画像は検証専用です。処理は許可されますが、学習、質問・回答の再配布、画像の再配布は許可されません。
+
+## 269枚の多様な検証用セット
+
+[269枚のmanifest](../validation/diverse_269_20261007_manifest.json)は、`validation/diverse_100_20261004_manifest.json` の多様な開発用画像100枚（Commonsの60分類の画像と、層別に選んだCommons画像40枚）に、FineVisionの画像169枚を加えたものです。独立した保留評価セットではなく、開発用のセットです。先に3つの取得元を復元します。`data/diverse-web-eval` は `validation/fetch_diverse_eval.py` で、`data/qg-fast-50-20261003` は `validation/qg_fast_50_manifest.json` に記録した取得元URLとハッシュから、`data/finevision-185-eval` はFineVisionの取得処理で復元します。その後、セットを組み立てて確認します。
+
+```sh
+uv run --locked python validation/build_diverse_269.py assemble
+uv run --locked pixelogue ingest \
+  --config configs/split-diverse-269.yaml \
+  --sources data/diverse-269-eval/sources.jsonl \
+  --rights data/diverse-269-eval/rights.jsonl \
+  --image-root data/diverse-269-eval \
+  --artifact-root artifacts/prepared-diverse-269-eval
+uv run --locked python validation/build_diverse_269.py manifest
+```
+
+`assemble` は各画像を固定したハッシュと照合し、`data/diverse-269-eval/` の下へコピーします。変更するのは `image_path` だけです。source IDは変わらないため、既存の100枚の画像IDも変わりません。取り込みでは269枚すべてが受理される必要があり、`manifest` はすべての画像が別々のvisual groupでなければ失敗します。manifestには、各画像の識別情報、cohort、層（既存の10層と、FineVisionの分類ごとの層）、FineVisionのsubsetと分類、`configs/split-diverse-269.yaml` で `pixelogue synthesize` が割り当てる生成器と予定ターン数を記録します。この割り当てと、2つの元manifestとの対応はテストで確認します。
+
 ## 独立した6画像の保留評価セット
 
 [保留評価manifest](../validation/holdout_web_eval_manifest.jsonl)には、写真・文書・表・チャート・フローチャート・アプリ画面の別のCommonsページ6件を固定しています。ページID、画素ハッシュ、視覚groupは、調整用60枚およびOpen Imagesの固定サンプルと重なりません。取得処理は検証専用の出典・権利記録を復元し、画像本体はGitに含めません。

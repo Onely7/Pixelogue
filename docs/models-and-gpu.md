@@ -16,6 +16,7 @@ No model is quantized, and dtype stays BF16. Configuration accepts only the `Qwe
 
 `configs/split-pilot.yaml` keeps the standard models but places them on three GPUs that need not share a host: Gemma 4 31B on two 48 GiB GPUs (`runtime/vllm/generator-b-split.yaml`, port 18703) and Qwen3.8-27B, which also routes images, on one 96 GiB GPU (`runtime/vllm/generator-a-split.yaml`, port 18702, memory fraction 0.88). This layout ran with Gemma on two RTX 6000 Ada GPUs and Qwen on an RTX PRO 6000 Blackwell GPU of another host behind an SSH forward ([section 3](#split-layout-across-two-hosts)); recheck capacity on other hardware. This is a pilot scheduling profile, not a change to the standard profile.
 `configs/split-diverse.yaml` uses the same endpoints and model locks with a 60-image evaluation target for the pinned Commons category sweep. It keeps evaluation-only inputs separate from training exports.
+`configs/split-diverse-269.yaml` runs the standard profile on the same endpoints for the [269-image diverse evaluation set](data.md#diverse-269-image-evaluation-set) with seed 20261004. Its pinned manifest records each image's generator and planned turn count.
 
 ## 1. Inspect before using a GPU
 
