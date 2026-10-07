@@ -78,6 +78,135 @@ STRUCTURAL_ANSWER_FORMS = {
 }
 
 
+# Answer-only parses fill exactly one result form when MET; these are the forms each operation
+# allows, and every result field of the parse.
+ANSWER_PARSE_FORMS: dict[str, dict[str, tuple[str, ...]]] = {
+    "finite_answer": {
+        "spatial_ordering": ("members",),
+        "count_comparison": ("relation",),
+        "quantified_claim_verification": ("truth",),
+        "hypothetical_set_update": ("count", "members"),
+    },
+    "quantity_answer": {
+        "quantity_comparison": ("relation",),
+        "stated_value_consistency": ("truth", "value"),
+        "grounded_arithmetic": ("value",),
+        "value_aggregation": ("value",),
+        "unit_conversion": ("value",),
+    },
+    "scale_answer": {"measurement_reading": ("value", "time")},
+    "pattern_answer": {
+        "pattern_rule": ("rule",),
+        "pattern_completion": ("option_id",),
+        "pattern_exception": ("frame_id",),
+    },
+}
+ANSWER_PARSE_FIELDS = {
+    "finite_answer": ("members", "count", "truth", "relation"),
+    "quantity_answer": ("value", "relation", "truth"),
+    "scale_answer": ("value", "time"),
+    "pattern_answer": ("rule", "option_id", "frame_id"),
+}
+FINITE_ANSWER_FORMS = {
+    "members": "members",
+    "count": "count",
+    "truth": "boolean",
+    "relation": "relation",
+}
+# Parses quote the answer and explain briefly; bounded text keeps a runaway completion short.
+PARSE_QUOTE_MAX_LENGTH = 600
+PARSE_REASON_MAX_LENGTH = 600
+# Bounded fields fit well inside this; a parse that needs more is runaway text.
+PARSE_MAX_TOKENS = 768
+
+
+def _bind_answer_parse_schema(
+    schema: dict[str, Any], stage: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Bind an answer-only parse so that MET carries exactly one allowed result.
+
+    Every field must be emitted. A MET branch fills one result form that the public operation
+    allows and leaves the others empty; the abstaining branch leaves every result empty. An
+    operation without known forms keeps the unbound schema, which the typed model still checks.
+    """
+    operation = payload.get("expected_operation")
+    task_id = operation.get("task_id") if isinstance(operation, dict) else None
+    forms = ANSWER_PARSE_FORMS[stage].get(task_id) if isinstance(task_id, str) else None
+    if forms is None:
+        return schema
+    properties = schema["properties"]
+    fields = ANSWER_PARSE_FIELDS[stage]
+
+    def filled(name: str) -> dict[str, Any]:
+        if name == "members":
+            minimum = 1 if task_id == "spatial_ordering" else 0
+            return {**properties["members"], "minItems": minimum}
+        options = [item for item in properties[name]["anyOf"] if item.get("type") != "null"]
+        return options[0]
+
+    def empty(name: str) -> dict[str, Any]:
+        if name == "members":
+            return {**properties["members"], "maxItems": 0}
+        return {"type": "null"}
+
+    reason = {"type": "string", "minLength": 1, "maxLength": PARSE_REASON_MAX_LENGTH}
+    base = {"type": "object", "additionalProperties": False, "required": list(properties)}
+    branches = []
+    for form in forms:
+        branch = {**properties, "coverage": {"type": "string", "const": "MET"}, "reason": reason}
+        if "answer_quote" in properties:
+            branch["answer_quote"] = {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": PARSE_QUOTE_MAX_LENGTH,
+            }
+        if stage == "finite_answer":
+            branch["answer_form"] = {"type": "string", "const": FINITE_ANSWER_FORMS[form]}
+        for name in fields:
+            branch[name] = filled(name) if name == form else empty(name)
+        branches.append({**base, "properties": branch})
+    abstain = {
+        **properties,
+        "coverage": {"type": "string", "enum": ["NOT_MET", "UNKNOWN"]},
+        "reason": reason,
+    }
+    if "answer_quote" in properties:
+        abstain["answer_quote"] = {"type": "string", "maxLength": 0}
+    if stage == "finite_answer":
+        abstain["answer_form"] = {
+            "type": "string",
+            "enum": sorted({FINITE_ANSWER_FORMS[form] for form in forms}),
+        }
+    for name in fields:
+        abstain[name] = empty(name)
+    branches.append({**base, "properties": abstain})
+    return {**({"$defs": schema["$defs"]} if "$defs" in schema else {}), "anyOf": branches}
+
+
+def _bind_text_payload_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Bind public text: either nonempty text, or no text with the reason for abstaining."""
+    properties = schema["properties"]
+    base = {"type": "object", "additionalProperties": False, "required": list(properties)}
+    return {
+        "anyOf": [
+            {
+                **base,
+                "properties": {
+                    "text": {"type": "string", "minLength": 1},
+                    "reason": properties["reason"],
+                },
+            },
+            {
+                **base,
+                "properties": {
+                    "text": {"type": "null"},
+                    "reason": {"type": "string", "minLength": 1},
+                },
+            },
+        ]
+    }
+
+
 def _bind_chart_source_schema(schema: dict[str, Any], payload: dict[str, Any]) -> None:
     """Prevent contradictory axis shapes and absent operands in a complete reading.
 
@@ -652,6 +781,10 @@ class VllmClient:
         _bind_direct_schema(schema, response_model, payload)
         if stage in SPECIALIST_SOURCE_STAGES:
             _bind_specialist_source_schema(schema, stage, payload)
+        if stage in ANSWER_PARSE_FORMS:
+            schema = _bind_answer_parse_schema(schema, stage, payload)
+        if response_model is TextPayload:
+            schema = _bind_text_payload_schema(schema)
         if stage in STRUCTURAL_OUTPUT_STAGES:
             if stage in {
                 "chart_source",

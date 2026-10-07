@@ -66,7 +66,7 @@ from pixelogue.planner import allocated_role, planned_turn_count
 from pixelogue.prompts import is_private_prompt_echo
 from pixelogue.routing import FamilyLedger, ImageProfile, Route, choose_route, family_definitions
 from pixelogue.serialization import canonical_hash, canonical_json
-from pixelogue.serving import ModelImage, ModelResponse
+from pixelogue.serving import ANSWER_PARSE_FORMS, PARSE_MAX_TOKENS, ModelImage, ModelResponse
 from pixelogue.store import RunStore
 from pixelogue.task_evidence import ImageRegion
 from pixelogue.task_runtime import operation_contract, unavailable_reasons
@@ -1596,6 +1596,8 @@ class SynthesisCoordinator:
                 self.config.tasks.source_max_tokens
                 if stage in {"table_source", "table_lookup_source", "chart_source", "graph_source"}
                 or (stage.startswith("specialist_") and stage.endswith("_source"))
+                else PARSE_MAX_TOKENS
+                if stage in ANSWER_PARSE_FORMS
                 else 2048
             )
             return self._invoke(

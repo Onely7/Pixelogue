@@ -14,12 +14,17 @@ from pixelogue.config import ModelEndpoint, RuntimeConfig, load_config
 from pixelogue.contracts import RubricVerdict, TextPayload
 from pixelogue.document_verifiers import DocumentSource
 from pixelogue.errors import ExecutionError
+from pixelogue.finite_verifiers import FiniteAnswer
 from pixelogue.graph_verifiers import GraphAnswer, GraphSource
+from pixelogue.pattern_verifiers import PatternAnswer
 from pixelogue.pipeline import SynthesisCoordinator, SynthesisJob
 from pixelogue.profiling import profile_database
 from pixelogue.prompts import STAGE_INSTRUCTIONS, validate_stage_payload
+from pixelogue.quantitative_verifiers import QuantityAnswer
+from pixelogue.scale_verifier import ScaleAnswer
 from pixelogue.serialization import canonical_hash
 from pixelogue.serving import (
+    ANSWER_PARSE_FIELDS,
     ModelAdapter,
     ModelImage,
     VllmClient,
@@ -363,6 +368,133 @@ def test_parser_schema_limits_forms_using_only_the_public_operation(stage, model
         else:
             assert schema["properties"][field] == {"type": "null", "const": None}
     assert model.model_json_schema() == original
+
+
+SAMPLE_RESULTS = {
+    "members": ["left cup", "right cup"],
+    "count": 2,
+    "truth": True,
+    "relation": "greater",
+    "value": {"value": "12", "decimal_separator": ".", "group_separator": None, "unit": "kg"},
+    "time": "3:15",
+    "rule": None,
+    "option_id": "B",
+    "frame_id": "panel 3",
+}
+
+
+@pytest.mark.parametrize(
+    ("stage", "model", "task_id", "forms"),
+    [
+        ("finite_answer", FiniteAnswer, "count_comparison", ("relation",)),
+        ("finite_answer", FiniteAnswer, "spatial_ordering", ("members",)),
+        ("finite_answer", FiniteAnswer, "hypothetical_set_update", ("count", "members")),
+        ("quantity_answer", QuantityAnswer, "stated_value_consistency", ("truth", "value")),
+        ("scale_answer", ScaleAnswer, "measurement_reading", ("value", "time")),
+        ("pattern_answer", PatternAnswer, "pattern_completion", ("option_id",)),
+    ],
+)
+def test_answer_parse_schema_requires_one_allowed_result_when_met(stage, model, task_id, forms):
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="parse")
+    original = model.model_json_schema()
+    try:
+        body = client._build_body(
+            stage,
+            {"expected_operation": {"task_id": task_id}, "candidate_answer": "It is 12 kg."},
+            (),
+            model,
+            max_tokens=768,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    schema = body["response_format"]["json_schema"]["schema"]
+    fields = ANSWER_PARSE_FIELDS[stage]
+    *met, abstain = schema["anyOf"]
+    assert len(met) == len(forms)
+    for branch, form in zip(met, forms, strict=True):
+        properties = branch["properties"]
+        assert list(properties) == list(original["properties"])
+        assert set(branch["required"]) == set(original["properties"])
+        assert properties["coverage"] == {"type": "string", "const": "MET"}
+        assert properties[form] not in ({"type": "null"},)
+        assert properties[form].get("maxItems") != 0
+        for other in set(fields) - {form}:
+            assert properties[other] == {"type": "null"} or properties[other]["maxItems"] == 0
+        instance = {
+            "coverage": "MET",
+            "reason": "Parsed.",
+            **{name: [] if name == "members" else None for name in fields},
+            form: SAMPLE_RESULTS[form],
+        }
+        if "answer_quote" in properties:
+            instance["answer_quote"] = "It is 12 kg at 3:15 with B in panel 3"
+        if stage == "finite_answer":
+            instance["answer_form"] = properties["answer_form"]["const"]
+        model.model_validate_json(json.dumps(instance))
+    properties = abstain["properties"]
+    assert set(properties["coverage"]["enum"]) == {"NOT_MET", "UNKNOWN"}
+    for name in fields:
+        assert properties[name] == {"type": "null"} or properties[name]["maxItems"] == 0
+    instance = {
+        "coverage": "UNKNOWN",
+        "reason": "No final answer.",
+        **{name: [] if name == "members" else None for name in fields},
+    }
+    if "answer_quote" in properties:
+        instance["answer_quote"] = ""
+    if stage == "finite_answer":
+        instance["answer_form"] = properties["answer_form"]["enum"][0]
+    model.model_validate_json(json.dumps(instance))
+    assert model.model_json_schema() == original
+
+
+def test_text_payload_schema_requires_text_or_a_reason():
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="text")
+    try:
+        body = client._build_body(
+            "answer_generation",
+            {
+                "target_language": "en",
+                "public_history": [],
+                "question": "What is shown?",
+                "expected_operation": {"task_id": "grounded_description"},
+                "active_requirements": [],
+                "image_views": [],
+            },
+            (),
+            TextPayload,
+            max_tokens=1024,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    answered, abstained = body["response_format"]["json_schema"]["schema"]["anyOf"]
+    assert answered["properties"]["text"] == {"type": "string", "minLength": 1}
+    assert abstained["properties"]["text"] == {"type": "null"}
+    assert abstained["properties"]["reason"] == {"type": "string", "minLength": 1}
+    assert set(answered["required"]) == set(abstained["required"]) == {"text", "reason"}
+    TextPayload.model_validate_json('{"text": "A cat.", "reason": null}')
+    TextPayload.model_validate_json('{"text": null, "reason": "The image is blank."}')
+
+
+def test_answer_parse_schema_stays_unbound_for_an_unknown_operation():
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="parse")
+    try:
+        body = client._build_body(
+            "finite_answer",
+            {"expected_operation": {"task_id": "unknown_operation"}, "candidate_answer": "Two."},
+            (),
+            FiniteAnswer,
+            max_tokens=768,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    assert body["response_format"]["json_schema"]["schema"] == FiniteAnswer.model_json_schema()
 
 
 @pytest.mark.parametrize(
