@@ -2650,8 +2650,8 @@ tasks:
   definition: >-
     The user asks whether an object of a named kind is in the image or a named area, such as 'Is there a
     fork on the table?'; the answer names the relevant visible objects, says whether the object asked
-    about is there, and ends with yes or no. Absent objects are often ones that usually go with what is
-    visible.
+    about is there, and ends with yes or no. Half of the asked objects are visible, and absent ones often
+    go with what is visible.
   required_capabilities:
   - decidable_presence
   eligibility_checks:

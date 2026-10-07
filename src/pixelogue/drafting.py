@@ -164,14 +164,16 @@ def presence_draft_plan(
         if digest[0] % 2 == 0:
             return {
                 "answer": "yes",
-                "instruction": "Ask about an object that is clearly visible, so that the honest "
-                "answer is yes.",
+                "instruction": "This turn needs a question whose honest answer is yes. Ask whether "
+                "the image contains an object that is clearly visible in it, for example one of the "
+                "main objects or a smaller object that is easy to see; never an absent one.",
             }
         kind, description = ABSENT_OBJECT_KINDS[digest[1] % len(ABSENT_OBJECT_KINDS)]
         return {
             "answer": "no",
             "absent_kind": kind,
-            "instruction": f"Ask about {description}, so that the honest answer is no.",
+            "instruction": "This turn needs a question whose honest answer is no. Ask about "
+            f"{description}.",
         }
     detail = ASKED_DETAILS[digest[0] % len(ASKED_DETAILS)]
     return {

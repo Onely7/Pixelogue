@@ -1079,7 +1079,7 @@ The user asks whether a specific question about a visible object or field can be
 
 #### `object_presence`: Say whether an object is in the image
 
-The user asks whether an object of a named kind is in the image or a named area, such as 'Is there a fork on the table?'; the answer names the relevant visible objects, says whether the object asked about is there, and ends with yes or no. Absent objects are often ones that usually go with what is visible.
+The user asks whether an object of a named kind is in the image or a named area, such as 'Is there a fork on the table?'; the answer names the relevant visible objects, says whether the object asked about is there, and ends with yes or no. Half of the asked objects are visible, and absent ones often go with what is visible.
 
 - **Status.** core; structured verification.
 - **Example question.** Is there a fork on the table?

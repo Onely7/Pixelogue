@@ -497,8 +497,8 @@ of a named kind is in the image or in a named visible area. For false_premise_qu
 were true, about something that is clearly not in the image: an absent object, or a visible object
 with a property, relation or action that it does not have (a black dog when the only dog is brown);
 mention a visible person, object or area, and set asked_detail. For both write one short natural
-question that never says whether the object is there or how to answer; target is the visible area or
-subject, never the object asked about.
+question that never says whether the object is there or how to answer, and adds no answer options
+such as '(yes/no)'; target is the visible area or subject, never the object asked about.
 When answer_format is present, make the question request that form of answer. Never print controller IDs, coordinates, private parameters or the words
 "selected region" in a question. Return drafts=[] and a reason when no allowed operation is
 clearly supported."""
