@@ -157,23 +157,31 @@ against blind chart readings. No image is needed to parse a plainly written numb
     "consensus_source": """Answer the public question yourself, without any proposed answer.
 Use the image, public history and expected_operation. For knowledge operations use only the widely
 known world knowledge or standard specialist knowledge that the operation's definition allows; never
-identify a person. Put only the shortest complete answer in short_answer: a name, style, region,
-notation reading, or final number with its unit, with no explanation. List the visible cues you used
-in visible_evidence. If the image does not let you answer with confidence, if several answers fit
-equally, or if the answer would require identifying a person, use coverage UNKNOWN with
-short_answer empty. Do not guess.""",
+identify a person. First list the visible cues you use in visible_evidence, then put only the
+shortest complete answer in short_answer: a name, style, region, notation reading, or final number
+with its unit, with no explanation. Set coverage MET when you are confident in short_answer. If
+the image does not let you answer with confidence, if several answers fit equally, or if the
+answer would require identifying a person, use coverage UNKNOWN with short_answer empty. Do not
+guess.""",
     "consensus_answer": """Parse only the candidate answer and public question, without an image.
-Copy into answer_quote the exact substring of the candidate answer that states its final answer,
-and copy that final answer alone into short_answer: the name, style, region, notation reading or
-final number with its unit, without explanation. Use coverage UNKNOWN with empty answer_quote and
-short_answer when the candidate gives no single final answer or gives several. Do not judge whether
-the answer is correct.""",
+The candidate may explain or justify its answer; that is expected and is no reason for UNKNOWN.
+Copy into answer_quote the exact words of the candidate answer that state its final answer, and
+copy into short_answer only the final answer itself: the name, style, region, notation reading or
+final number with its unit. For example, 'D major, based on the two sharps' has answer_quote
+'D major' and short_answer 'D major'. No special answer line is required. Set coverage MET
+whenever you copied a final answer; MET means only that the parse succeeded, not that the answer
+is right. Use coverage UNKNOWN with empty answer_quote and short_answer only when the candidate
+gives no final answer, is cut off before it, or gives two different final answers. Never judge
+whether the answer is correct; a wrong answer is parsed like a right one.""",
     "box_source": """Read only the image, public question, history and expected_operation, without any
-proposed answer. Find every object the question describes and draw one tight box around each, as
+proposed answer. First write in targets one short phrase per object that matches the description,
+saying where it is. Then draw one tight box around each listed object, in the same order, as
 fractions from 0 to 1 of the delivered image width and height, with left < right and top < bottom.
-List the boxes from left to right. Include only objects that match the description; do not box
-look-alikes. If a target is hidden, cut off, ambiguous or too small to box, use coverage UNKNOWN
-with boxes=[].""",
+List the objects from left to right. Include only objects that match the description; do not box
+look-alikes. Small objects get small boxes, and a box encloses only the visible part of its object.
+Set coverage MET when your boxes cover every described object. Use coverage UNKNOWN with
+targets=[] and boxes=[] only when no object matches the description or you cannot tell which
+objects it means.""",
     "table_lookup_source": """Read the image, public question and bound operation WITHOUT an answer.
 For a SINGLE cell in a simple table, extract ALL visible data-row labels and ALL data-column
 headers as literal string arrays in reading order, but only the requested cell's value.

@@ -19,10 +19,16 @@ IOU_THRESHOLD = 0.5
 
 
 class BoxSource(StrictModel):
-    """One reader's answer-blind boxes for every target the question describes."""
+    """One reader's answer-blind boxes for every target the question describes.
 
-    coverage: Literal["MET", "UNKNOWN"]
+    The reader names each matching object before drawing its box and decides coverage last.
+    Readers asked for boxes first chose an empty list and abstained even on large, fully visible
+    targets; naming the objects first removed those abstentions.
+    """
+
+    targets: Annotated[tuple[str, ...], Field(max_length=MAX_BOXES)]
     boxes: Annotated[tuple[ImageRegion, ...], Field(max_length=MAX_BOXES)]
+    coverage: Literal["MET", "UNKNOWN"]
     reason: str = Field(min_length=1)
 
 
@@ -96,11 +102,15 @@ def verify_boxes(
 ) -> tuple[GateVerdict, dict[str, Any]]:
     """Accept boxes only when both blind readers agree and each answer box matches theirs.
 
-    Readers that abstain or disagree with each other leave the result UNKNOWN; an answer that
-    breaks the box format or misses either agreed reading is NOT_MET.
+    Readers that abstain, name a different number of objects than they box, or disagree with
+    each other leave the result UNKNOWN; an answer that breaks the box format or misses either
+    agreed reading is NOT_MET.
     """
     details: dict[str, Any] = {"threshold": IOU_THRESHOLD}
-    if any(source.coverage != "MET" or not source.boxes for source in sources):
+    if any(
+        source.coverage != "MET" or not source.boxes or len(source.targets) != len(source.boxes)
+        for source in sources
+    ):
         return GateVerdict.UNKNOWN, details
     readers = matched_pairs(sources[0].boxes, sources[1].boxes)
     details["reader_pairs"] = readers

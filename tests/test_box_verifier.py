@@ -16,8 +16,11 @@ LEFT = ImageRegion(left=0.1, top=0.2, right=0.3, bottom=0.5)
 RIGHT = ImageRegion(left=0.6, top=0.2, right=0.8, bottom=0.5)
 
 
-def _reader(*boxes: ImageRegion, coverage: str = "MET") -> BoxSource:
-    return BoxSource.model_validate({"coverage": coverage, "boxes": boxes, "reason": "drawn blind"})
+def _reader(*boxes: ImageRegion, coverage: str = "MET", targets: int | None = None) -> BoxSource:
+    names = tuple(f"object {index}" for index in range(len(boxes) if targets is None else targets))
+    return BoxSource.model_validate(
+        {"targets": names, "boxes": boxes, "coverage": coverage, "reason": "drawn blind"}
+    )
 
 
 def _answer(*boxes: list[float]) -> str:
@@ -37,6 +40,13 @@ def test_answer_boxes_must_match_both_blind_readers() -> None:
     assert verify_boxes(disagreeing, close)[0] is GateVerdict.UNKNOWN
     abstaining = (_reader(LEFT, RIGHT), _reader(coverage="UNKNOWN"))
     assert verify_boxes(abstaining, close)[0] is GateVerdict.UNKNOWN
+
+
+def test_a_reading_must_box_every_object_it_names() -> None:
+    answer = _answer([0.1, 0.2, 0.3, 0.5], [0.6, 0.2, 0.8, 0.5])
+    uneven = (_reader(LEFT, RIGHT, targets=3), _reader(LEFT, RIGHT))
+    assert verify_boxes(uneven, answer)[0] is GateVerdict.UNKNOWN
+    assert verify_boxes((_reader(LEFT, RIGHT), _reader(LEFT, RIGHT)), answer)[0] is GateVerdict.MET
 
 
 @pytest.mark.parametrize(

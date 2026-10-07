@@ -33,20 +33,27 @@ _NUMBER = re.compile(r"([+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|[+-]?\.\d+)(.*
 
 
 class ConsensusSource(StrictModel):
-    """One reader's answer-blind short answer and the visible cues it rests on."""
+    """One reader's answer-blind short answer and the visible cues it rests on.
 
-    coverage: Literal["MET", "UNKNOWN"]
-    short_answer: str = Field(max_length=200)
+    Fields are ordered so that a reader states its cues and answer before deciding coverage.
+    """
+
     visible_evidence: str = Field(max_length=400)
+    short_answer: str = Field(max_length=200)
+    coverage: Literal["MET", "UNKNOWN"]
     reason: str = Field(min_length=1)
 
 
 class ConsensusAnswer(StrictModel):
-    """An image-free parse of the candidate's final short answer."""
+    """An image-free parse of the candidate's final short answer.
 
-    coverage: Literal["MET", "UNKNOWN"]
+    The quote and short answer come before coverage, so the parse is written before the parser
+    decides whether it is complete.
+    """
+
     answer_quote: str = Field(max_length=600)
     short_answer: str = Field(max_length=200)
+    coverage: Literal["MET", "UNKNOWN"]
     reason: str = Field(min_length=1)
 
 
