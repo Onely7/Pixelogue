@@ -51,6 +51,10 @@ uv run --locked pixelogue ingest \
 
 同じ visual group に検証専用画像が 1 件でもあれば、グループ全体を検証専用にします。さらに`export` でも検証画像を拒否するため、学習出力への混入を 2 段階で防ぎます。
 
+## 別の出典を追加する
+
+両方のmanifestに、1行に1つのJSONオブジェクトを書きます。source recordのパスは `--image-root` からの相対パスです。絶対パスと、`..` で外へ出るパスは拒否します。`valid_from` にはISO 8601形式の時刻を使います。学習用の出典では、`training_allowed` と `qa_redistribution_allowed` の両方がtrueである必要があります。利用条件を判断した根拠資料は、モデルのプロンプトに含めずに保管してください。
+
 公式資料には [V7 validation と取得方法](https://storage.googleapis.com/openimages/web/download_v7.html)および[回転値が反時計回りの角度であること](https://storage.googleapis.com/openimages/web/2018-05-17-rotation-information.html)が説明されています。
 
 ## 多様なWeb画像による検証用サンプル
