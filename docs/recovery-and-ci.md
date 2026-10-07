@@ -127,5 +127,8 @@ database transactions remain serialized. Use a new run identity for a scheduling
 New request artifacts externalize repeated image data URLs into content-addressed
 `request-images` artifacts (`archive_format: image-refs-v1`). The HTTP payload and request hash
 remain unchanged. Use `pixelogue.serving.read_request_artifact(store, artifact_hash)` to restore
-the exact request envelope for auditing; it also reads legacy inline-image requests. Backups
-must include all artifacts, including the referenced images.
+the request envelope for auditing; it also reads legacy inline-image requests. The archive stores
+keys in sorted order, so a restored response schema lists its properties alphabetically, not in
+the order that was sent. Constrained decoding writes fields in schema order, so rebuild a request
+with the code under test before replaying it. Backups must include all artifacts, including the
+referenced images.

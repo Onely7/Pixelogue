@@ -55,10 +55,11 @@ Read the guides in this order:
 10. [Implementation map](docs/implementation-map.md)
 11. [Open Images synthesis and examples by task](docs/validation/synthesis-campaign.md)
 12. [Full pipeline on the diverse-100 evaluation images](docs/validation/br-diverse-100.md)
+13. [Verified fixes against the catalog 8.0 baseline](docs/validation/pipeline-v10.md)
 
 Japanese documentation begins at [README_ja.md](README_ja.md).
 
-[Yield and speed comparison procedure](docs/validation/yield-and-speed.md) documents the controlled comparison and audit procedure. Reports under `docs/validation/` record measurements of earlier pipeline versions and do not describe the current direct-drafting path, except the diverse-100 report, which measures the current BF16 pipeline.
+[Yield and speed comparison procedure](docs/validation/yield-and-speed.md) documents the controlled comparison and audit procedure. Reports under `docs/validation/` record measurements of earlier pipeline versions and do not describe the current direct-drafting path, except the diverse-100 and verified-fixes reports, which measure the BF16 pipeline of 2026-10-07.
 
 ## Model roles
 

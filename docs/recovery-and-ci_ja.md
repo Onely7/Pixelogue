@@ -78,4 +78,4 @@ uv run --locked pre-commit run --all-files
 
 `runtime.refill_completed_images` の既定値は `false` です。`true` では、遅い先行画像を待っている間も完了した画像の枠に次の画像を投入し、結果は入力順で返します。実行中の画像数は `runtime.max_concurrent_images` 以内、投入済み・待機中の結果は指定並列数の2倍までです。各会話の公開履歴は会話内に閉じ、DB処理の直列化も維持します。実行方式の比較には新しいrun識別を使います。
 
-新しいrequest artifactは、繰り返し現れる画像data URLを内容hashで管理する `request-images` へ分離します（`archive_format: image-refs-v1`）。HTTP payloadとrequest hashは変えません。監査には `pixelogue.serving.read_request_artifact(store, artifact_hash)` を使い、正確な要求を復元します。旧形式の埋め込み画像にも対応します。バックアップには参照先の画像artifactも含めてください。
+新しいrequest artifactは、繰り返し現れる画像data URLを内容hashで管理する `request-images` へ分離します（`archive_format: image-refs-v1`）。HTTP payloadとrequest hashは変えません。監査には `pixelogue.serving.read_request_artifact(store, artifact_hash)` を使って要求を復元します。旧形式の埋め込み画像にも対応します。保存ではキーを辞書順に並べるため、復元した応答Schemaの項目は送信時の順ではなく辞書順になります。構造化出力はSchemaの項目順に書かれるので、要求を送り直すときは、検証するコードで要求を組み直してください。バックアップには参照先の画像artifactも含めてください。
