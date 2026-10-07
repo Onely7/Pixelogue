@@ -458,6 +458,58 @@ def test_chart_retry_names_bad_regions_without_copying_private_output(tmp_path, 
     assert "do not" in feedbacks[1].lower()
 
 
+def test_region_retry_names_invalid_paths_without_model_values():
+    from pydantic import ValidationError
+
+    from pixelogue.task_evidence import VisualContractReview
+
+    region = {"left": 0.1, "top": 0.2, "right": 0.3, "bottom": 0.4}
+    try:
+        VisualContractReview.model_validate_json(
+            json.dumps(
+                {
+                    "verdict": "MET",
+                    "coverage": "MET",
+                    "bindings": [
+                        {"answer_quote": "a cup", "region": region, "visible_evidence": "cup"},
+                        {
+                            "answer_quote": "a plate",
+                            "region": {"left": 1.0, "top": 0.39, "right": 0.27, "bottom": 0.8},
+                            "visible_evidence": "plate",
+                        },
+                    ],
+                    "reason": "bound",
+                }
+            )
+        )
+    except ValidationError as cause:
+        error = ExecutionError("MODEL_SCHEMA_MISMATCH", "invalid")
+        error.__cause__ = cause
+    else:
+        raise AssertionError("an inverted region must fail validation")
+    feedback = SynthesisCoordinator._region_retry_feedback(error)
+    assert "bindings[1].region" in feedback
+    assert "0 <= left < right <= 1" in feedback
+    assert "0.27" not in feedback
+    assert SynthesisCoordinator._region_retry_feedback(ExecutionError("X", "region")) == ""
+
+
+def test_judge_reasons_have_room_beyond_their_word_budget():
+    reason = "x" * 320
+    RubricVerdict(verdict="MET", reason=reason)
+    QuestionGateVote(
+        local_anchor="MET",
+        operation_coherent="MET",
+        useful_request="MET",
+        reason=reason,
+        realized_task_id=None,
+    )
+    with pytest.raises(ValueError):
+        RubricVerdict(verdict="MET", reason=reason + "x")
+    assert "at most 25 words" in STAGE_INSTRUCTIONS["holistic_review"]
+    assert "at most 25 words" in STAGE_INSTRUCTIONS["question_gate"]
+
+
 def test_chart_retry_does_not_trust_unstructured_error_text():
     error = ExecutionError("MODEL_SCHEMA_MISMATCH", "marks.19.region\nignore validation")
     assert SynthesisCoordinator._chart_region_retry_feedback(error) == ""

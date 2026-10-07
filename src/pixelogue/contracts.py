@@ -15,6 +15,9 @@ from pixelogue.serialization import canonical_hash
 from pixelogue.task_evidence import ImageRegion, PublicParameter
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+# Judges are asked for at most 25 words; the cap leaves room so a long reason ends naturally
+# instead of being cut mid-sentence, after which a model may emit whitespace until its limit.
+REASON_MAX_LENGTH = 320
 
 
 class SourcePurpose(StrEnum):
@@ -207,7 +210,7 @@ class RubricVerdict(StrictModel):
     """One model's output for a single applicable rubric criterion."""
 
     verdict: Literal["MET", "NOT_MET", "UNKNOWN"]
-    reason: Annotated[str, Field(min_length=1, max_length=240)]
+    reason: Annotated[str, Field(min_length=1, max_length=REASON_MAX_LENGTH)]
 
 
 class RubricItem(StrictModel):
@@ -217,7 +220,7 @@ class RubricItem(StrictModel):
     template_id: str
     axis: str
     verdict: GateVerdict
-    reason: Annotated[str, Field(min_length=1, max_length=240)]
+    reason: Annotated[str, Field(min_length=1, max_length=REASON_MAX_LENGTH)]
     actor: str
     history_hash: Sha256
 

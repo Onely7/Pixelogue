@@ -2041,6 +2041,8 @@ class SynthesisCoordinator:
                                 " positive-extent rectangles inside scope_region."
                             )
                             retry_feedback += self._chart_region_retry_feedback(error)
+                    if error.reason == "MODEL_SCHEMA_MISMATCH" and stage != "chart_source":
+                        retry_feedback += self._region_retry_feedback(error)
                     if stage == "question_draft" and error.reason in {
                         "MODEL_SCHEMA_MISMATCH",
                         "MODEL_OUTPUT_REPETITION",
@@ -2109,6 +2111,35 @@ class SynthesisCoordinator:
             " Re-read those visible marks in the attached image. Keep every rectangle"
             " positive in width and height and inside the public scope. Do not invent or"
             " automatically expand a box; if it cannot be grounded, return UNKNOWN."
+        )
+
+    @staticmethod
+    def _region_retry_feedback(error: ExecutionError) -> str:
+        """Name invalid regions by field path and restate their bounds, without model values.
+
+        Regions failed most often with left at 1.0 and a smaller right; a repeated generic
+        correction produced the same rectangle again.
+        """
+        cause = error.__cause__
+        if not isinstance(cause, ValidationError):
+            return ""
+        paths = set()
+        for item in cause.errors(include_input=False, include_context=False, include_url=False):
+            loc = item["loc"]
+            if any(isinstance(part, str) and part.endswith("region") for part in loc):
+                paths.add(
+                    "".join(
+                        f"[{part}]" if isinstance(part, int) else f".{part}" if index else part
+                        for index, part in enumerate(loc)
+                    )
+                )
+        if not paths:
+            return ""
+        return (
+            f" Invalid regions: {', '.join(sorted(paths)[:8])}. Each region gives fractions of"
+            " the image width and height measured from its left and top edges, with"
+            " 0 <= left < right <= 1 and 0 <= top < bottom <= 1; left and top are the smaller"
+            " values. Re-read the region in the image instead of reusing the same numbers."
         )
 
     @staticmethod

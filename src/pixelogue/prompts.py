@@ -349,7 +349,8 @@ same visible object names and spatial qualifiers; preserve duplicate answer memb
 expected list requires a genuinely explicit empty scope; do not call omitted extraction complete.
 If coverage is not MET all arrays must be [] and empty_scope_is_explicit=false.""",
     "holistic_review": """Review this image-grounded question and answer as a whole, using the
-image and public history. Return one verdict (MET, NOT_MET, UNKNOWN) and a short concrete reason.
+image and public history. Return one verdict (MET, NOT_MET, UNKNOWN) and one concrete reason of
+at most 25 words.
 When image_views provides source_view_id and source_left/top/right/bottom, the delivered image is
 only that crop of the original view. The requested local subject and its material visual claims
 must be supported inside the crop; do not borrow a neighboring subject from omitted context.
@@ -525,7 +526,8 @@ for named_entity_recognition or map_region_identification, whether the object is
 object_presence, or the text for transcription. Explicit
 regrouping of known facts is useful. A question that asks to identify a person is NOT_MET for every
 operation.
-Give a short concrete reason. Finally, set realized_task_id to the single operation from
+Give one concrete reason of at most 25 words. Finally, set realized_task_id to the single
+operation from
 task_definitions that describes what the question asks the assistant to do; it may be the
 selected operation. Use null when the request is ambiguous, compound or matches no definition.
 Distinguish naming an object from reporting its attributes, comparing positions, counting, reading

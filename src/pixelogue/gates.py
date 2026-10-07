@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from pixelogue.config import StrictModel
-from pixelogue.contracts import GateVerdict
+from pixelogue.contracts import REASON_MAX_LENGTH, GateVerdict
 from pixelogue.evaluation import consensus
 
 Verdict = Literal["MET", "NOT_MET", "UNKNOWN"]
@@ -30,7 +30,7 @@ class QuestionGateVote(StrictModel):
     local_anchor: Verdict
     operation_coherent: Verdict
     useful_request: Verdict
-    reason: Annotated[str, Field(min_length=1, max_length=240)]
+    reason: Annotated[str, Field(min_length=1, max_length=REASON_MAX_LENGTH)]
     realized_task_id: Annotated[str, Field(min_length=1, max_length=64)] | None
 
     @property
