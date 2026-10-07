@@ -14,6 +14,8 @@ The images are evaluation-only:
 
 **B1 met every acceptance criterion except time per image.** Gold-valid conversations rose by 28% on diverse-269 and by 35% on P100. Time per image on diverse-269 rose to 1.13 times B0, above the 1.1 limit fixed before the run. The rise came from conversations getting further rather than from slower steps, and gold-valid conversations per GPU-hour improved by 15%.
 
+B1 was adopted with this exception. The extra time bought more committed turns at fewer calls per turn, and quality and the negative controls improved, so the maintainer judged the time criterion too strict for this bundle.
+
 ## Why only these fixes
 
 An earlier candidate bundled these fixes with routing changes. It offered structured operations from the first turn and switched once to a lightly verified question when a verifier abstained. That bundle lowered gold-valid conversations on diverse-269 from 47 to 31 and took 1.8 times as long. The fixes below each had separate evidence from replays or gold rationales. B1 measures them without the routing changes.
