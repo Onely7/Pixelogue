@@ -1998,8 +1998,9 @@ tasks:
   example_question: What is the total price of the two drinks printed on the menu?
   do_not_infer: Prices or rates that are not printed, an implied denominator, or unstated intermediate values.
   answer_format: >-
-    One exact number from a single add, subtract, multiply or divide step, rounded only as the question
-    states; no percentages or other derived forms, and units that allow the operation.
+    One exact number from a single addition, subtraction, multiplication or division, rounded only as
+    the question states and with the unit that the calculation gives; no percentages or other derived
+    forms.
   related_finevision_subsets:
   - chartqa
   - finqa
@@ -2515,7 +2516,9 @@ tasks:
       kind: text
       required: false
       description: For the input action only, the exact text to type.
-  example_question: To focus the search field, where should one click? Give normalized coordinates.
+  example_question: >-
+    To focus the search field, where should one click? Give the point as fractions of the image width
+    and height.
   do_not_infer: Several steps through unseen screens, assumed results, or performing the action.
   related_finevision_subsets:
   - aguvis-stage-1

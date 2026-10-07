@@ -735,7 +735,7 @@ The user asks for the result of one addition, subtraction, multiplication or div
 
 - **Status.** core; structured verification.
 - **Example question.** What is the total price of the two drinks printed on the menu?
-- **Answer format.** One exact number from a single add, subtract, multiply or divide step, rounded only as the question states; no percentages or other derived forms, and units that allow the operation.
+- **Answer format.** One exact number from a single addition, subtraction, multiplication or division, rounded only as the question states and with the unit that the calculation gives; no percentages or other derived forms.
 - **Do not infer.** Prices or rates that are not printed, an implied denominator, or unstated intermediate values.
 - **Required capabilities.** `typed_operands`.
 - **Eligibility checks.** `scope_resolved`, `operands_grounded`, `expression_defined`, `precision_declared`.
@@ -999,7 +999,7 @@ The user asks for static HTML and CSS that reproduce a visible screen layout; th
 The user states a goal on the visible screen and asks for one click, focus or text input that starts it; the answer gives the action and the target's coordinates in the image, without performing it.
 
 - **Status.** extension; structured verification.
-- **Example question.** To focus the search field, where should one click? Give normalized coordinates.
+- **Example question.** To focus the search field, where should one click? Give the point as fractions of the image width and height.
 - **Do not infer.** Several steps through unseen screens, assumed results, or performing the action.
 - **Required capabilities.** `ui_controls`.
 - **Eligibility checks.** `scope_resolved`, `unique_referent`, `local_goal_public`, `action_schema_available`, `coordinates_verifiable`.
