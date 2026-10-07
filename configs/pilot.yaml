@@ -2,7 +2,7 @@ version: "1.0"
 profile: pilot
 seed: 20260915
 tasks:
-  catalog_version: "7.0"
+  catalog_version: "8.0"
   source_max_tokens: 4096
   answer_max_tokens: 1024
   enabled_extensions: []

@@ -94,7 +94,7 @@ def test_comparison_and_cross_region_consistency_require_comparable_units() -> N
     comparison = _source("quantity_comparison", "compare", values)
     answer = QuantityAnswer(coverage="MET", answer_quote="less", relation="less", reason="literal")
     assert _check(comparison, answer) is GateVerdict.MET
-    equality = _source("cross_region_consistency_check", "equal", values)
+    equality = _source("stated_value_consistency", "equal", values)
     boolean = QuantityAnswer(coverage="MET", answer_quote="false", truth=False, reason="literal")
     assert _check(equality, boolean) is GateVerdict.MET
     incomparable = comparison.model_copy(update={"operands": (values[0], _operand("b", "3", "m"))})
@@ -112,7 +112,7 @@ def test_quantity_comparison_and_consistency_reject_wrong_relation_and_unreadabl
         _check(comparison.model_copy(update={"coverage": "UNKNOWN"}), wrong_relation)
         is GateVerdict.UNKNOWN
     )
-    consistency = _source("cross_region_consistency_check", "equal", values)
+    consistency = _source("stated_value_consistency", "equal", values)
     wrong_truth = QuantityAnswer(coverage="MET", answer_quote="true", truth=True, reason="literal")
     assert _check(consistency, wrong_truth) is GateVerdict.NOT_MET
     assert (
@@ -123,7 +123,7 @@ def test_quantity_comparison_and_consistency_reject_wrong_relation_and_unreadabl
 
 def test_closed_aggregation_and_half_up_rounding() -> None:
     values = (_operand("a", "1", "m"), _operand("b", "2", "m"), _operand("c", "2", "m"))
-    source = _source("grounded_aggregation", "mean", values, decimal_places=2, rounding="half_up")
+    source = _source("value_aggregation", "mean", values, decimal_places=2, rounding="half_up")
     assert _check(source, _answer("1.67", "m"), operator="mean") is GateVerdict.MET
     assert _check(source, _answer("1.66", "m"), operator="mean") is GateVerdict.NOT_MET
     assert (
@@ -134,7 +134,7 @@ def test_closed_aggregation_and_half_up_rounding() -> None:
 
 def test_weighted_mean_and_versioned_conversion() -> None:
     weighted = _source(
-        "grounded_aggregation",
+        "value_aggregation",
         "weighted_mean",
         (_operand("a", "2", "m", "1"), _operand("b", "4", "m", "3")),
     )
@@ -189,9 +189,9 @@ def test_pipeline_never_shows_answer_to_quantity_source() -> None:
         task_id=task.id,
         family=task.family,
         visible_scope="two labels",
-        instruction_summary=task.definition_en,
+        instruction_summary=task.definition,
         required_capabilities=task.required_capabilities,
-        catalog_version="7.0",
+        catalog_version="8.0",
         scope_id="scope-a",
         view_id="view-a",
         evidence_refs=("e1",),

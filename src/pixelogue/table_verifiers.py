@@ -19,9 +19,9 @@ from pixelogue.task_evidence import ImageRegion
 TABLE_TASKS = frozenset(
     {
         "table_cell_lookup",
-        "table_predicate_selection",
-        "table_structure_reconstruction",
-        "table_cross_reference",
+        "table_row_selection",
+        "table_reconstruction",
+        "table_join",
     }
 )
 
@@ -524,7 +524,7 @@ def verify_table(
         raise ValueError("No table verifier for this task")
     unknown = (
         GateVerdict.UNKNOWN,
-        GateVerdict.UNKNOWN if task_id == "table_structure_reconstruction" else None,
+        GateVerdict.UNKNOWN if task_id == "table_reconstruction" else None,
     )
     if any(
         source.coverage != "MET"
@@ -542,7 +542,7 @@ def verify_table(
     ):
         return unknown
     table = by_id[query.table_ids[0]]
-    if task_id == "table_structure_reconstruction":
+    if task_id == "table_reconstruction":
         if query.operation != "reconstruct" or query.format is None:
             return unknown
         if public_parameters.get("format") != query.format:
@@ -589,10 +589,10 @@ def verify_table(
         cell = table.at(query.row, query.col)
         expected: object = cell.text if cell else None
         observed: object = answer.value
-    elif task_id == "table_predicate_selection" and query.operation == "select":
+    elif task_id == "table_row_selection" and query.operation == "select":
         expected = _select_rows(table, query)
         observed = answer.rows
-    elif task_id == "table_cross_reference" and query.operation == "join":
+    elif task_id == "table_join" and query.operation == "join":
         expected = _join_rows(table, by_id[query.table_ids[1]], query)
         observed = answer.pairs
     else:

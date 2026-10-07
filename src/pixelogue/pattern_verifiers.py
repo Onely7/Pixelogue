@@ -14,9 +14,7 @@ from pixelogue.errors import ExecutionError
 from pixelogue.rules import parse_numeric_lexeme
 from pixelogue.task_evidence import ImageRegion
 
-PATTERN_TASKS = frozenset(
-    {"pattern_rule_identification", "pattern_completion", "rule_based_exception"}
-)
+PATTERN_TASKS = frozenset({"pattern_rule", "pattern_completion", "pattern_exception"})
 RuleKind = Literal[
     "constant",
     "translation",
@@ -341,7 +339,7 @@ def verify_pattern(
     ):
         return GateVerdict.UNKNOWN
     source, answer = sources[0], answers[0]
-    if task_id == "pattern_rule_identification":
+    if task_id == "pattern_rule":
         rules = _candidates(source.frames)
         if len(rules) != 1 or answer.rule is None:
             return GateVerdict.UNKNOWN

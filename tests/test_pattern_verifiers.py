@@ -54,11 +54,11 @@ def _check(source: PatternSource, answer: PatternAnswer) -> GateVerdict:
 
 def test_unique_progression_rule_and_competing_rules_abstain() -> None:
     frames = (_frame("a", count=1), _frame("b", count=2), _frame("c", count=3))
-    source = _source("pattern_rule_identification", frames)
+    source = _source("pattern_rule", frames)
     assert _check(source, _answer("count_progression", rule="count_progression")) is GateVerdict.MET
     assert _check(source, _answer("rotation", rule="rotation")) is GateVerdict.NOT_MET
     ambiguous = _source(
-        "pattern_rule_identification",
+        "pattern_rule",
         (
             _frame("a", count=1, x="1", y="0"),
             _frame("b", count=2, x="2", y="0"),
@@ -88,7 +88,7 @@ def test_completion_requires_one_rule_and_one_visible_option() -> None:
 
 def test_exception_search_preserves_original_indices() -> None:
     source = _source(
-        "rule_based_exception",
+        "pattern_exception",
         (
             _frame("a", count=1),
             _frame("b", count=2),
@@ -103,7 +103,7 @@ def test_exception_search_preserves_original_indices() -> None:
 
 def test_cycle_and_set_composition_are_bounded_rule_families() -> None:
     cycle = _source(
-        "pattern_rule_identification",
+        "pattern_rule",
         (
             _frame("a", attribute="red"),
             _frame("b", attribute="blue"),
@@ -113,7 +113,7 @@ def test_cycle_and_set_composition_are_bounded_rule_families() -> None:
     )
     assert _check(cycle, _answer("attribute_cycle", rule="attribute_cycle")) is GateVerdict.MET
     composition = _source(
-        "pattern_rule_identification",
+        "pattern_rule",
         (
             _frame("a", members=("a",)),
             _frame("b", members=("b",)),
@@ -127,7 +127,7 @@ def test_cycle_and_set_composition_are_bounded_rule_families() -> None:
 
 def test_disagreement_and_wrong_image_view_abstain() -> None:
     source = _source(
-        "pattern_rule_identification",
+        "pattern_rule",
         (
             _frame("a", count=1),
             _frame("b", count=2),

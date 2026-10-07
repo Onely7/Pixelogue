@@ -101,7 +101,7 @@ def test_lookup_checks_cell_position_and_blank_value() -> None:
 
 def test_selection_checks_closed_rows_and_numeric_predicate() -> None:
     source = _source(
-        "table_predicate_selection",
+        "table_row_selection",
         TableQuery(
             operation="select",
             table_ids=("t",),
@@ -149,7 +149,7 @@ def test_join_requires_unique_keys_and_complete_visible_tables() -> None:
         }
     )
     source = _source(
-        "table_cross_reference",
+        "table_join",
         TableQuery(
             operation="join",
             table_ids=("left", "right"),
@@ -168,7 +168,7 @@ def test_join_requires_unique_keys_and_complete_visible_tables() -> None:
 
 def test_reconstruction_separates_schema_from_content_and_preserves_spans() -> None:
     source = _source(
-        "table_structure_reconstruction",
+        "table_reconstruction",
         TableQuery(operation="reconstruct", table_ids=("t",), format="structured_json"),
     )
     grid = _grid().model_dump(mode="json")
@@ -198,7 +198,7 @@ def test_reconstruction_separates_schema_from_content_and_preserves_spans() -> N
 
 def test_html_and_simple_markdown_are_parsed_without_executing_markup() -> None:
     source = _source(
-        "table_structure_reconstruction",
+        "table_reconstruction",
         TableQuery(operation="reconstruct", table_ids=("t",), format="html_table"),
     )
     html = "<table><tr><th rowspan='2'>Item</th><th colspan='2'>2024</th></tr><tr><th>Sales</th><th>Count</th></tr><tr><td>A</td><td>20</td><td></td></tr></table>"
@@ -221,7 +221,7 @@ def test_html_and_simple_markdown_are_parsed_without_executing_markup() -> None:
         ),
     )
     markdown_source = _source(
-        "table_structure_reconstruction",
+        "table_reconstruction",
         TableQuery(operation="reconstruct", table_ids=("t",), format="markdown_simple_only"),
         (simple,),
     )
@@ -242,7 +242,7 @@ def test_html_and_simple_markdown_are_parsed_without_executing_markup() -> None:
 )
 def test_static_html_rejects_undeclared_or_active_presentation(attribute: str) -> None:
     source = _source(
-        "table_structure_reconstruction",
+        "table_reconstruction",
         TableQuery(operation="reconstruct", table_ids=("t",), format="html_table"),
     )
     html = f"<table {attribute}><tr><th>A</th></tr></table>"
@@ -265,7 +265,7 @@ def test_static_html_preserves_line_breaks_and_balanced_header_sections() -> Non
         ),
     )
     source = _source(
-        "table_structure_reconstruction",
+        "table_reconstruction",
         TableQuery(operation="reconstruct", table_ids=("t",), format="html_table"),
         (grid,),
     )

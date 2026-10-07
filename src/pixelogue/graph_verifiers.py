@@ -17,11 +17,10 @@ from pixelogue.task_evidence import ImageRegion
 
 GRAPH_TASKS = frozenset(
     {
-        "diagram_element_lookup",
-        "graph_connectivity",
-        "graph_path_tracing",
+        "diagram_connectivity",
+        "diagram_path_tracing",
         "diagram_process_description",
-        "diagram_branch_evaluation",
+        "flowchart_evaluation",
     }
 )
 
@@ -67,7 +66,7 @@ class GraphEdge(StrictModel):
 class GraphQuery(StrictModel):
     """Public graph objective and optional hypothetical input."""
 
-    operation: Literal["element", "neighbors", "edges", "paths", "process", "branch"]
+    operation: Literal["neighbors", "edges", "paths", "process", "branch"]
     start: str | None = None
     end: str | None = None
     node_id: str | None = None
@@ -131,11 +130,10 @@ class GraphSource(StrictModel):
 
 
 class GraphAnswer(StrictModel):
-    """Answer-only parse of a label, neighbor set, edge set or explicit paths."""
+    """Answer-only parse of a neighbor set, edge set or explicit paths."""
 
     coverage: Literal["MET", "NOT_MET", "UNKNOWN"]
     answer_quote: str = ""
-    label: str | None = None
     members: tuple[str, ...] | None = None
     edges: tuple[tuple[str, str], ...] | None = None
     paths: tuple[tuple[str, ...], ...] | None = None
@@ -144,9 +142,7 @@ class GraphAnswer(StrictModel):
     @model_validator(mode="after")
     def check_shape(self) -> GraphAnswer:
         """Forbid partial and compound answer parses."""
-        populated = sum(
-            item is not None for item in (self.label, self.members, self.edges, self.paths)
-        )
+        populated = sum(item is not None for item in (self.members, self.edges, self.paths))
         if self.coverage == "MET" and (populated != 1 or not self.answer_quote):
             raise ValueError("Complete graph answer needs one quoted form")
         if self.coverage != "MET" and (populated or self.answer_quote):
@@ -363,8 +359,6 @@ def verify_graph(
         return GateVerdict.UNKNOWN
     source = sources[0]
     answer = answers[0]
-    if answer.label is not None and answer.label not in answer.answer_quote:
-        return GateVerdict.UNKNOWN
     if answer.members is not None and any(
         item not in answer.answer_quote for item in answer.members
     ):
@@ -380,10 +374,7 @@ def verify_graph(
     query = source.query
     expected: object | None = None
     observed: object | None = None
-    if task_id == "diagram_element_lookup" and query.operation == "element":
-        node = next((item for item in source.nodes if item.node_id == query.node_id), None)
-        expected, observed = (node.label if node else None), answer.label
-    elif task_id == "graph_connectivity" and query.operation == "neighbors":
+    if task_id == "diagram_connectivity" and query.operation == "neighbors":
         if query.node_id not in {node.node_id for node in source.nodes}:
             return GateVerdict.UNKNOWN
         expected, observed = (
@@ -397,12 +388,12 @@ def verify_graph(
             if answer.members is not None
             else None,
         )
-    elif task_id == "graph_connectivity" and query.operation == "edges":
+    elif task_id == "diagram_connectivity" and query.operation == "edges":
         expected, observed = (
             _edge_pairs(source),
             tuple(sorted(answer.edges)) if answer.edges is not None else None,
         )
-    elif task_id == "graph_path_tracing" and query.operation == "paths":
+    elif task_id == "diagram_path_tracing" and query.operation == "paths":
         if query.start is None or query.end is None:
             return GateVerdict.UNKNOWN
         expected = _all_paths(source, query.start, query.end)
@@ -412,7 +403,7 @@ def verify_graph(
             _edge_pairs(source),
             tuple(sorted(answer.edges)) if answer.edges is not None else None,
         )
-    elif task_id == "diagram_branch_evaluation" and query.operation == "branch":
+    elif task_id == "flowchart_evaluation" and query.operation == "branch":
         if query.start is None or query.input_value is None:
             return GateVerdict.UNKNOWN
         public_input = public_parameters.get("input_values")

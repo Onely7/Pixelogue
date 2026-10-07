@@ -270,7 +270,7 @@ def verify_operation(
                 "Isolated symbolic geometry check: " + verdict.value,
             )
         )
-    if instruction.task_id == "geometric_relation_analysis":
+    if instruction.task_id == "geometric_relations":
         geometry_source_payload = {
             key: value for key, value in public.items() if key != "candidate_answer"
         }
@@ -570,7 +570,7 @@ def verify_operation(
             else ()
         )
         table_answers: tuple[TableAnswer, TableAnswer] | None = None
-        if instruction.task_id != "table_structure_reconstruction":
+        if instruction.task_id != "table_reconstruction":
             table_answer_payload = {
                 key: public[key]
                 for key in ("target_language", "question", "candidate_answer", "expected_operation")
@@ -709,7 +709,7 @@ def verify_operation(
             continue
         if instruction.task_id in PATTERN_TASKS and name == "pattern_check":
             continue
-        if instruction.task_id == "geometric_relation_analysis" and name == "geometry_check":
+        if instruction.task_id == "geometric_relations" and name == "geometry_check":
             continue
         if (
             instruction.task_id == "geometric_constraint_solving"
@@ -795,11 +795,7 @@ def verify_operation(
                     payload["candidate_answer"],
                     instruction.target_region or instruction.scope_region,
                 )
-            elif instruction.task_id in {
-                "text_transcription",
-                "code_transcription",
-                "text_reading_order",
-            }:
+            elif instruction.task_id == "text_transcription":
                 source_payload = {
                     key: value for key, value in public.items() if key != "candidate_answer"
                 }

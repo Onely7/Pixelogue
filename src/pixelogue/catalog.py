@@ -12,12 +12,12 @@ from pixelogue.errors import ConfigurationError
 from pixelogue.serialization import canonical_json, load_yaml
 from pixelogue.task_catalog import TaskCatalog
 
-TASK_CONTRACT_VERSION = "scope-operations-v2"
+TASK_CONTRACT_VERSION = "scope-operations-v3"
 
 
 @lru_cache(maxsize=1)
 def task_catalog() -> TaskCatalog:
-    """Load v7 with strict schema and cross-reference validation."""
+    """Load the bundled catalog with strict schema and cross-reference validation."""
     path = files("pixelogue.resources").joinpath("task_catalog.yaml")
     with as_file(path) as resource:
         catalog = load_yaml(resource)
@@ -28,5 +28,5 @@ def task_catalog() -> TaskCatalog:
 
 
 def load_task_catalog() -> dict[str, Any]:
-    """Return all 65 standard candidates and 7 disabled specialized extensions."""
+    """Return the validated catalog, core tasks and extensions alike, as JSON data."""
     return task_catalog().model_dump(mode="json")

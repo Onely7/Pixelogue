@@ -79,7 +79,7 @@ def test_order_requires_all_visible_members_in_requested_sequence() -> None:
 
 def test_cardinality_comparison_uses_closed_group_counts() -> None:
     source = _source(
-        "set_cardinality_comparison",
+        "count_comparison",
         FiniteQuery(answer_form="relation", left_group="red", right_group="blue"),
     )
     assert _check(source, _answer("relation", "greater")) is GateVerdict.MET
@@ -88,7 +88,7 @@ def test_cardinality_comparison_uses_closed_group_counts() -> None:
 
 def test_quantifier_checks_public_choice_and_threshold() -> None:
     source = _source(
-        "quantified_statement_verification",
+        "quantified_claim_verification",
         FiniteQuery(answer_form="boolean", quantifier="exactly", threshold=2),
     )
     assert _check(source, _answer("boolean", True), quantifier="exactly") is GateVerdict.MET
@@ -98,7 +98,7 @@ def test_quantifier_checks_public_choice_and_threshold() -> None:
 
 def test_hypothetical_add_remove_and_relabel_follow_public_update() -> None:
     add = _source(
-        "grounded_hypothetical_update",
+        "hypothetical_set_update",
         FiniteQuery(answer_form="count", update="add", update_ids=("d",), update_group="red"),
     )
     assert _check(add, _answer("count", 4), update="add") is GateVerdict.MET
@@ -122,7 +122,7 @@ def test_hypothetical_add_remove_and_relabel_follow_public_update() -> None:
 
 def test_hypothetical_removal_can_yield_a_closed_empty_member_set() -> None:
     source = _source(
-        "grounded_hypothetical_update",
+        "hypothetical_set_update",
         FiniteQuery(answer_form="members", update="remove", update_ids=("a", "b", "c")),
     )
     empty = _answer("members", ())
@@ -157,7 +157,7 @@ def test_each_finite_operation_rejects_wrong_results_and_unclosed_sources() -> N
         ),
         (
             _source(
-                "set_cardinality_comparison",
+                "count_comparison",
                 FiniteQuery(answer_form="relation", left_group="red", right_group="blue"),
             ),
             _answer("relation", "greater"),
@@ -166,7 +166,7 @@ def test_each_finite_operation_rejects_wrong_results_and_unclosed_sources() -> N
         ),
         (
             _source(
-                "quantified_statement_verification",
+                "quantified_claim_verification",
                 FiniteQuery(answer_form="boolean", quantifier="exactly", threshold=2),
             ),
             _answer("boolean", True),
@@ -175,7 +175,7 @@ def test_each_finite_operation_rejects_wrong_results_and_unclosed_sources() -> N
         ),
         (
             _source(
-                "grounded_hypothetical_update",
+                "hypothetical_set_update",
                 FiniteQuery(answer_form="count", update="remove", update_ids=("b",)),
             ),
             _answer("count", 2),
@@ -226,9 +226,9 @@ def test_operation_extraction_keeps_answer_out_of_visual_source_calls() -> None:
         task_id=task.id,
         family=task.family,
         visible_scope="three boxes",
-        instruction_summary=task.definition_en,
+        instruction_summary=task.definition,
         required_capabilities=task.required_capabilities,
-        catalog_version="7.0",
+        catalog_version="8.0",
         scope_id="scope-a",
         view_id="view-a",
         evidence_refs=("e1",),

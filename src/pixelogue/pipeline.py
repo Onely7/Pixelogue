@@ -206,12 +206,11 @@ class SynthesisCoordinator:
             max_workers=2 * config.runtime.max_concurrent_images,
             thread_name_prefix="pixelogue-judge",
         )
-        # Drafting offers only normal-profile core operations with working validators.
+        # Drafting offers only core operations with working validators.
         self._draft_tasks = {
             task.id: task
             for task in task_catalog().tasks
-            if task.status == "core_candidate"
-            and not unavailable_reasons(task, config.tasks, config.models)
+            if task.status == "core" and not unavailable_reasons(task, config.tasks, config.models)
         }
         self.family_ledger = FamilyLedger(store.committed_task_ids())
 
@@ -796,7 +795,7 @@ class SynthesisCoordinator:
             reason = "REPEATED_PUBLIC_QUESTION"
         elif candidate.request_key in committed_keys:
             reason = "REQUEST_KEY_ALREADY_COMMITTED"
-        elif candidate.task_id == "visible_action_relation" and action_affordance_question(text):
+        elif candidate.task_id == "visible_action" and action_affordance_question(text):
             reason = "ACTION_AFFORDANCE_NOT_VISIBLE"
         elif candidate.task_id == "text_transcription" and unverified_transcription_relation(text):
             reason = "TEXT_RELATION_UNVERIFIED"
@@ -850,7 +849,7 @@ class SynthesisCoordinator:
                     "public_history": self._history(snapshot.public_history),
                     "selected_instruction": operation_contract(candidate),
                     "task_definitions": [
-                        {"task_id": task.id, "definition": task.definition_en}
+                        {"task_id": task.id, "definition": task.definition}
                         for task in catalog.tasks
                     ],
                     "question": question.content,
@@ -1181,7 +1180,7 @@ class SynthesisCoordinator:
                     content=turn.question.content,
                 )
             unsupported_action_affordance = (
-                turn.instruction.task_id == "visible_action_relation"
+                turn.instruction.task_id == "visible_action"
                 and action_affordance_question(turn.question.content)
             )
             if unsupported_action_affordance:
@@ -1443,8 +1442,6 @@ class SynthesisCoordinator:
                 "object_identification",
                 "attribute_lookup",
                 "text_transcription",
-                "text_reading_order",
-                "code_transcription",
             }
             or region is None
             or region == ImageRegion(left=0, top=0, right=1, bottom=1)
@@ -1826,7 +1823,7 @@ class SynthesisCoordinator:
                 return "IDENTIFICATION_ANSWER_IN_QUESTION"
             if identification_answer_in_history(answer, same_scope_messages):
                 return "IDENTIFICATION_ANSWER_ALREADY_PUBLIC"
-        elif instruction.task_id == "ui_element_grounding":
+        elif instruction.task_id == "ui_element_location":
             target = next(
                 (item.value for item in instruction.public_parameters if item.name == "target"),
                 None,
@@ -1840,7 +1837,7 @@ class SynthesisCoordinator:
             question, answer
         ):
             return "TRANSCRIPTION_ANSWER_IN_QUESTION"
-        if instruction.task_id == "visible_action_relation":
+        if instruction.task_id == "visible_action":
             same_scope_texts = tuple(message.content for message in same_scope_messages)
             if action_answer_already_public(question, answer, same_scope_texts):
                 return "ACTION_ALREADY_PUBLIC"

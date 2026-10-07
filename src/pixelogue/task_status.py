@@ -41,20 +41,20 @@ TASK_BOUNDARY_TESTS = {
         "test_arithmetic_recomputes_only_the_bound_public_operator",
     ),
     "spatial_ordering": "test_order_requires_all_visible_members_in_requested_sequence",
-    "set_cardinality_comparison": "test_cardinality_comparison_uses_closed_group_counts",
-    "quantified_statement_verification": "test_quantifier_checks_public_choice_and_threshold",
-    "grounded_hypothetical_update": "test_hypothetical_add_remove_and_relabel_follow_public_update",
-    "cross_region_consistency_check": "test_comparison_and_cross_region_consistency_require_comparable_units",
+    "count_comparison": "test_cardinality_comparison_uses_closed_group_counts",
+    "quantified_claim_verification": "test_quantifier_checks_public_choice_and_threshold",
+    "hypothetical_set_update": "test_hypothetical_add_remove_and_relabel_follow_public_update",
+    "stated_value_consistency": "test_comparison_and_cross_region_consistency_require_comparable_units",
     "quantity_comparison": "test_quantity_comparison_and_consistency_reject_wrong_relation_and_unreadable_source",
-    "grounded_aggregation": "test_closed_aggregation_and_half_up_rounding",
+    "value_aggregation": "test_closed_aggregation_and_half_up_rounding",
     "unit_conversion": "test_weighted_mean_and_versioned_conversion",
     "text_field_extraction": "test_requested_field_values_missing_status_and_schema",
     "formula_transcription": "test_stacked_fraction_is_not_slash_or_algebraic_equivalence",
     "document_structure_reconstruction": "test_document_tree_preserves_content_hierarchy_and_order",
     "table_cell_lookup": "test_lookup_checks_cell_position_and_blank_value",
-    "table_predicate_selection": "test_selection_checks_closed_rows_and_numeric_predicate",
-    "table_structure_reconstruction": "test_reconstruction_separates_schema_from_content_and_preserves_spans",
-    "table_cross_reference": "test_join_requires_unique_keys_and_complete_visible_tables",
+    "table_row_selection": "test_selection_checks_closed_rows_and_numeric_predicate",
+    "table_reconstruction": "test_reconstruction_separates_schema_from_content_and_preserves_spans",
+    "table_join": "test_join_requires_unique_keys_and_complete_visible_tables",
     "chart_value_lookup": "test_exact_lookup_and_coarse_interval_do_not_invent_precision",
     "chart_comparison": "test_comparison_abstains_for_overlapping_intervals",
     "chart_extremum_ranking": "test_complete_ranking_preserves_ties_and_trend_order",
@@ -62,15 +62,14 @@ TASK_BOUNDARY_TESTS = {
     "chart_series_relation": "test_series_crossing_requires_line_encoding",
     "chart_data_reconstruction": "test_reconstruction_schema_and_content_are_independent",
     "measurement_reading": "test_linear_interpolation_rounds_only_to_public_resolution",
-    "diagram_element_lookup": "test_element_lookup_and_directed_neighbors",
-    "graph_connectivity": "test_element_lookup_and_directed_neighbors",
-    "graph_path_tracing": "test_all_paths_include_every_visible_alternative",
+    "diagram_connectivity": "test_directed_neighbors_follow_drawn_edges",
+    "diagram_path_tracing": "test_all_paths_include_every_visible_alternative",
     "diagram_process_description": "test_process_description_checks_all_explicit_edges",
-    "diagram_branch_evaluation": "test_public_numeric_branch_uses_printed_conditions",
-    "geometric_relation_analysis": "test_approximate_parallelism_cannot_prove_exact_relation",
-    "pattern_rule_identification": "test_unique_progression_rule_and_competing_rules_abstain",
+    "flowchart_evaluation": "test_public_numeric_branch_uses_printed_conditions",
+    "geometric_relations": "test_approximate_parallelism_cannot_prove_exact_relation",
+    "pattern_rule": "test_unique_progression_rule_and_competing_rules_abstain",
     "pattern_completion": "test_completion_requires_one_rule_and_one_visible_option",
-    "rule_based_exception": "test_exception_search_preserves_original_indices",
+    "pattern_exception": "test_exception_search_preserves_original_indices",
     "geometric_constraint_solving": "test_right_triangle_rule_derives_unique_positive_length",
     "diagram_to_code": "test_svg_and_html_reject_executable_syntax",
     "screen_to_code": "test_svg_and_html_reject_executable_syntax",
@@ -97,7 +96,7 @@ def _test_module(task_id: str) -> str:
             return path
     return {
         "formula_transcription": "tests/test_formula_verifier.py",
-        "geometric_relation_analysis": "tests/test_geometry_verifier.py",
+        "geometric_relations": "tests/test_geometry_verifier.py",
         "measurement_reading": "tests/test_scale_verifier.py",
     }.get(task_id, "tests/test_task_verification.py")
 
@@ -160,7 +159,7 @@ def task_status_report(
                     }
                 )
     rows: list[dict[str, Any]] = []
-    for task in task_catalog().tasks:
+    for number, task in enumerate(task_catalog().tasks, start=1):
         validators = [registration(name) for name in task.verification_contracts]
         implemented = all(entry is not None and entry.supports(task.id) for entry in validators)
         environment_errors = sorted(
@@ -190,15 +189,18 @@ def task_status_report(
             cpu_status = "shared_contract_tests_passed"
         else:
             cpu_status = "only_skipped"
-        extension = task.status == "validator_gated_extension"
+        extension = task.status == "extension"
         domains = admissions[task.id]["certified_domains"]
         rows.append(
             {
                 "task_id": task.id,
-                "number": task.number,
+                "number": number,
                 "family": task.family,
                 "status": task.status,
-                "supported_parameters": task.parameters,
+                "supported_parameters": {
+                    name: item.model_dump(mode="json", exclude_none=True)
+                    for name, item in task.parameters.items()
+                },
                 "implemented": implemented,
                 "validator_versions": {
                     entry.name: entry.version for entry in validators if entry is not None
@@ -209,7 +211,7 @@ def task_status_report(
                 if not extension
                 else ("certified" if domains else "pending"),
                 "certified_domains": domains,
-                "normal_selectable": admissions[task.id]["normal_profile_available"],
+                "available": admissions[task.id]["available"],
                 "blocked_reasons": admissions[task.id]["blocked_reasons"],
                 "cpu_test_module": path,
                 "cpu_contract_status": cpu_status,
@@ -229,7 +231,7 @@ def task_status_report(
         "summary": {
             "tasks": len(rows),
             "implemented": sum(row["implemented"] for row in rows),
-            "normal_selectable": sum(row["normal_selectable"] for row in rows),
+            "available": sum(row["available"] for row in rows),
             "environment_ready": sum(row["environment_ready"] for row in rows),
             "cpu_shared_contract_passed": sum(
                 row["cpu_contract_status"] == "shared_contract_tests_passed" for row in rows
@@ -263,7 +265,7 @@ def write_task_status_reports(report: dict[str, Any], output_stem: Path) -> None
                 "gpu_turn_cases",
                 "environment_ready",
                 "calibration",
-                "normal_selectable",
+                "available",
                 "blocked_reasons",
             )
         )
@@ -280,16 +282,16 @@ def write_task_status_reports(report: dict[str, Any], output_stem: Path) -> None
                     json.dumps(item["gpu_turn_cases"], ensure_ascii=False),
                     item["environment_ready"],
                     item["calibration"],
-                    item["normal_selectable"],
+                    item["available"],
                     "; ".join(item["blocked_reasons"]),
                 )
             )
     lines = [
         "# Pixelogue task status",
         "",
-        f"Tasks: {report['summary']['tasks']}; normal selectable: {report['summary']['normal_selectable']}.",
+        f"Tasks: {report['summary']['tasks']}; available: {report['summary']['available']}.",
         "",
-        "| # | Task | Implemented | CPU contract | GPU committed / attempted turns | Environment | Calibration | Selectable |",
+        "| # | Task | Implemented | CPU contract | GPU committed / attempted turns | Environment | Calibration | Available |",
         "|---:|---|---|---|---:|---|---|---|",
     ]
     for item in report["tasks"]:
@@ -298,7 +300,7 @@ def write_task_status_reports(report: dict[str, Any], output_stem: Path) -> None
             f"{item['cpu_contract_status']} | {item['gpu_committed_turn_case_count']} / "
             f"{item['gpu_turn_case_count']} | "
             f"{item['environment_ready']} | "
-            f"{item['calibration']} | {item['normal_selectable']} |"
+            f"{item['calibration']} | {item['available']} |"
         )
     lines += ["", report["cpu_evidence_limit"], report["gpu_evidence_limit"], ""]
     output_stem.with_suffix(".md").write_text("\n".join(lines), encoding="utf-8")

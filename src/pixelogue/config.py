@@ -304,7 +304,7 @@ class RuntimeConfig(StrictModel):
 # Whole-structure reconstructions are kept reachable but drafted less often: their
 # verifiers need complete grids or series and abstain far more than targeted lookups.
 DEFAULT_TASK_WEIGHTS = {
-    "table_structure_reconstruction": 0.25,
+    "table_reconstruction": 0.25,
     "chart_data_reconstruction": 0.25,
     "document_structure_reconstruction": 0.25,
 }
@@ -313,7 +313,7 @@ DEFAULT_TASK_WEIGHTS = {
 class TaskRuntimeConfig(StrictModel):
     """Bound question drafting, answers and blind source reading independently of taxonomy size."""
 
-    catalog_version: Literal["7.0"] = "7.0"
+    catalog_version: Literal["8.0"] = "8.0"
     source_max_tokens: Annotated[int, Field(ge=512, le=16384)] = 4096
     answer_max_tokens: Annotated[int, Field(ge=256, le=8192)] = 1024
     enabled_extensions: tuple[str, ...] = ()

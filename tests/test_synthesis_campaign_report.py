@@ -51,13 +51,13 @@ def test_rejected_prefix_is_not_counted_as_candidate_data() -> None:
     assert report["human_approved_conversations"] is None
 
 
-def test_partial_run_keeps_unprocessed_images_and_all_72_tasks_visible() -> None:
+def test_partial_run_keeps_unprocessed_images_and_all_catalog_tasks_visible() -> None:
     report = build_report([{"source_id": "sample"}], [], load_task_catalog()["tasks"])
     assert not report["complete"]
     assert report["unprocessed_images"] == 1
     assert report["automatic_candidate_rate"] is None
-    assert report["catalog_tasks"] == len(report["tasks"]) == 72
-    assert report["normal_catalog_tasks"] == 65
+    assert report["catalog_tasks"] == len(report["tasks"]) == 66
+    assert report["core_catalog_tasks"] == 59
     assert all(task["examples"] == [] for task in report["tasks"])
 
 

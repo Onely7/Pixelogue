@@ -18,9 +18,9 @@ from pixelogue.task_evidence import ImageRegion
 QUANTITATIVE_TASKS = frozenset(
     {
         "quantity_comparison",
-        "cross_region_consistency_check",
+        "stated_value_consistency",
         "grounded_arithmetic",
-        "grounded_aggregation",
+        "value_aggregation",
         "unit_conversion",
     }
 )
@@ -177,7 +177,7 @@ def _expected(source: QuantitySource) -> tuple[str, Fraction | str | bool, str |
         return None
     if any(key not in by_id for key in query.operand_ids) or not query.comparable_basis:
         return None
-    if source.task_id == "grounded_aggregation" and not source.closed:
+    if source.task_id == "value_aggregation" and not source.closed:
         return None
     selected = [by_id[key] for key in query.operand_ids]
     values = [_number(item.value) for item in selected]
@@ -191,19 +191,19 @@ def _expected(source: QuantitySource) -> tuple[str, Fraction | str | bool, str |
             "less" if values[0] < values[1] else "greater" if values[0] > values[1] else "equal",
             None,
         )
-    if op == "equal" and source.task_id == "cross_region_consistency_check":
+    if op == "equal" and source.task_id == "stated_value_consistency":
         if len(values) != 2 or units[0] != units[1]:
             return None
         return "truth", values[0] == values[1], None
     if op in {"add", "subtract", "multiply", "divide"} and source.task_id in {
         "grounded_arithmetic",
-        "cross_region_consistency_check",
+        "stated_value_consistency",
     }:
         value, unit = exact_calculate(op, values, units)
         return "value", value, unit
     if (
         op in {"sum", "mean", "median", "min", "max", "weighted_mean"}
-        and source.task_id == "grounded_aggregation"
+        and source.task_id == "value_aggregation"
     ):
         if len(set(units)) != 1:
             return None

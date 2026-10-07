@@ -20,9 +20,9 @@ from pixelogue.task_status import task_status_report
 def test_status_covers_all_tasks_without_claiming_unrun_cpu_checks(tmp_path: Path) -> None:
     config = load_config(Path("configs/specialist-pilot.yaml"))
     untested = task_status_report(config)
-    assert untested["summary"]["tasks"] == 72
-    assert untested["summary"]["implemented"] == 72
-    assert untested["summary"]["normal_selectable"] == 65
+    assert untested["summary"]["tasks"] == 66
+    assert untested["summary"]["implemented"] == 66
+    assert untested["summary"]["available"] == 59
     assert all(item["cpu_contract_status"] == "not_recorded" for item in untested["tasks"])
     junit = tmp_path / "junit.xml"
     junit.write_text(
@@ -66,7 +66,7 @@ def test_status_records_actual_gpu_turn_without_claiming_all_boundaries(
         instruction=InstructionCandidate(
             candidate_id="candidate",
             task_id="entity_count",
-            family="set_logic",
+            family="counting_and_sets",
             visible_scope="whole image",
             instruction_summary="Count visible objects",
             required_capabilities=("visible_entity",),

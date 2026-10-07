@@ -270,14 +270,13 @@ def test_incomplete_document_decoder_cannot_certify_partial_source_facts():
     ("stage", "model", "task_id", "allowed"),
     [
         ("table_answer", TableAnswer, "table_cell_lookup", {"value"}),
-        ("table_answer", TableAnswer, "table_predicate_selection", {"rows"}),
-        ("table_answer", TableAnswer, "table_cross_reference", {"pairs"}),
+        ("table_answer", TableAnswer, "table_row_selection", {"rows"}),
+        ("table_answer", TableAnswer, "table_join", {"pairs"}),
         ("table_answer", TableAnswer, "unknown_operation", None),
-        ("graph_answer", GraphAnswer, "diagram_element_lookup", {"label"}),
-        ("graph_answer", GraphAnswer, "graph_connectivity", {"members", "edges"}),
-        ("graph_answer", GraphAnswer, "graph_path_tracing", {"paths"}),
+        ("graph_answer", GraphAnswer, "diagram_connectivity", {"members", "edges"}),
+        ("graph_answer", GraphAnswer, "diagram_path_tracing", {"paths"}),
         ("graph_answer", GraphAnswer, "diagram_process_description", {"edges"}),
-        ("graph_answer", GraphAnswer, "diagram_branch_evaluation", {"paths"}),
+        ("graph_answer", GraphAnswer, "flowchart_evaluation", {"paths"}),
         ("graph_answer", GraphAnswer, "unknown_operation", None),
     ],
 )
@@ -300,11 +299,7 @@ def test_parser_schema_limits_forms_using_only_the_public_operation(stage, model
     text = json.loads(body["messages"][1]["content"][0]["text"])
     assert text["response_schema"] == schema
     assert schema["properties"]["coverage"] == original["properties"]["coverage"]
-    fields = (
-        ("value", "rows", "pairs")
-        if model is TableAnswer
-        else ("label", "members", "edges", "paths")
-    )
+    fields = ("value", "rows", "pairs") if model is TableAnswer else ("members", "edges", "paths")
     for field in fields:
         if allowed is None or field in allowed:
             assert schema["properties"][field] == original["properties"][field]

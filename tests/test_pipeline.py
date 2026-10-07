@@ -180,7 +180,7 @@ class ScriptedClient:
             common = {
                 "task_id": "chart_value_lookup"
                 if response_model is ChartSource
-                else "graph_connectivity",
+                else "diagram_connectivity",
                 "coverage": "UNKNOWN",
                 "scope_id": "whole",
                 "view_id": "view",
@@ -1085,9 +1085,7 @@ def test_rerating_rejects_action_affordance_without_judge_calls(
         first = original.turns[0]
         affordance = first.model_copy(
             update={
-                "instruction": first.instruction.model_copy(
-                    update={"task_id": "visible_action_relation"}
-                ),
+                "instruction": first.instruction.model_copy(update={"task_id": "visible_action"}),
                 "question": first.question.model_copy(
                     update={"content": "What action is the car supported to perform?"}
                 ),
@@ -1859,7 +1857,7 @@ def test_empty_local_pixels_abstain_even_after_a_base_review_pass(
             visible_scope="empty pixel region",
             instruction_summary="Identify a local entity",
             required_capabilities=("visible_entity",),
-            catalog_version="7.0",
+            catalog_version="8.0",
             scope_id="tiny",
             evidence_refs=("visible-local-evidence",),
             verification_contracts=("dual_visual_review",),
@@ -1908,7 +1906,7 @@ def test_blind_transcription_sees_full_context_and_rejects_an_incomplete_bound(
             visible_scope="top half",
             instruction_summary="Read the complete title",
             required_capabilities=("readable_text",),
-            catalog_version="7.0",
+            catalog_version="8.0",
             scope_id="title",
             evidence_refs=("title-evidence",),
             verification_contracts=("dual_visual_review", "transcript_alignment"),
@@ -1971,11 +1969,11 @@ def test_chart_inventory_uses_the_configured_source_budget_without_accepting_unk
         instruction = InstructionCandidate(
             candidate_id="ranking",
             task_id="chart_extremum_ranking",
-            family="chart_map_understanding",
+            family="charts_and_maps",
             visible_scope="complete bar chart",
             instruction_summary="Identify the highest and lowest bars",
             required_capabilities=("readable_chart", "complete_series"),
-            catalog_version="7.0",
+            catalog_version="8.0",
             scope_id="chart",
             evidence_refs=("chart-evidence",),
             verification_contracts=(
@@ -2056,12 +2054,12 @@ def test_rerating_rejects_a_ui_name_instead_of_a_location_without_model_calls(
         first = original.turns[0]
         instruction = InstructionCandidate(
             candidate_id="menu",
-            task_id="ui_element_grounding",
+            task_id="ui_element_location",
             family="screen_ui",
             visible_scope="visible desktop",
             instruction_summary="Locate the named menu",
             required_capabilities=("ui_controls",),
-            catalog_version="7.0",
+            catalog_version="8.0",
             scope_id="screen",
             evidence_refs=("menu-evidence",),
             verification_contracts=("dual_visual_review", "ui_grounding_check"),

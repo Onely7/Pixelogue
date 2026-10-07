@@ -26,7 +26,7 @@ FALLBACK_FAMILIES = (
     "visual_description",
     "text_reading",
     "reference_spatial",
-    "set_logic",
+    "counting_and_sets",
     "evidence_verification",
 )
 PRIMARY_TASKS = 4
@@ -143,8 +143,8 @@ def family_definitions(tasks: Mapping[str, TaskDefinition]) -> list[dict[str, An
             rows.append(
                 {
                     "family": family,
-                    "label": definition.label_en,
-                    "operations": [task.label_en for task in members],
+                    "label": definition.label,
+                    "operations": [task.label for task in members],
                 }
             )
     return rows

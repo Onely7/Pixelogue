@@ -31,9 +31,9 @@ def operation(task_id: str) -> InstructionCandidate:
         task_id=task.id,
         family=task.family,
         visible_scope="the whole canvas",
-        instruction_summary=task.definition_en,
+        instruction_summary=task.definition,
         required_capabilities=task.required_capabilities,
-        catalog_version="7.0",
+        catalog_version="8.0",
         scope_id="canvas",
         view_id="view",
         evidence_refs=("scope-evidence",),
@@ -46,7 +46,7 @@ def test_closed_set_verification_uses_the_operation_contract_after_family_rename
     reported, expected_verdict
 ):
     candidate = operation("entity_count")
-    assert candidate.family == "set_logic"
+    assert candidate.family == "counting_and_sets"
     votes = []
 
     def invoke(stage, payload, model, judge):

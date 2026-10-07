@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 
@@ -21,47 +22,130 @@ from pixelogue.task_evidence import ImageRegion
 from pixelogue.task_runtime import (
     fingerprint,
     operation_contract,
+    required_parameter_names,
 )
 
 REGION = ImageRegion(left=0.0, top=0.0, right=1.0, bottom=1.0)
+# Jargon that made earlier definitions hard to read for drafting models and people.
+JARGON = re.compile(
+    r"\b(resolved|bound|public|canvas|closed scope|grounded|declared|versioned|profile|scope_id)\b",
+    re.IGNORECASE,
+)
+# An eligibility check that asks the question to state something needs that public choice.
+CHECK_PARAMETERS = {
+    "count_unit_defined": {"count_unit"},
+    "relation_frame_defined": {"frame"},
+    "grouping_key_defined": {"group_key"},
+    "hypothetical_public": {"update"},
+    "fields_bound": {"fields"},
+    "precision_declared": {"precision"},
+    "public_rule_input_defined": {"input_values"},
+    "claim_public_and_local": {"claim"},
+    "local_question_supported": {"local_question"},
+    "predicates_observable": {"conditions", "condition"},
+    "music_context_complete": {"bar_range"},
+    "chemical_notation_resolved": {"notation"},
+    "circuit_notation_resolved": {"notation"},
+}
 
 
 def test_catalog_counts_cover_the_specification():
     catalog = task_catalog()
-    assert len(catalog.tasks) == 72
-    assert sum(task.status == "core_candidate" for task in catalog.tasks) == 65
-    assert sum(task.status == "validator_gated_extension" for task in catalog.tasks) == 7
+    assert catalog.version == "8.0"
+    assert len(catalog.tasks) == 66
+    assert sum(task.status == "core" for task in catalog.tasks) == 59
+    assert sum(task.status == "extension" for task in catalog.tasks) == 7
     assert len(catalog.families) == 14
 
 
 @pytest.mark.parametrize(
     "mutation",
     [
-        lambda c: c.update(version="8.0"),
+        lambda c: c.update(version="7.0"),
         lambda c: c.update(extra_field=True),
-        lambda c: c["counts"].update(core_candidates=66),
         lambda c: c["tasks"][0].update(id=c["tasks"][1]["id"]),
         lambda c: c["tasks"][0].update(required_capabilities=["imaginary_capability"]),
         lambda c: c["tasks"][0].update(eligibility_checks=["imaginary_check"]),
         lambda c: c["tasks"][0].update(verification_contracts=["imaginary_verifier"]),
         lambda c: c["tasks"][0].update(family="text_reading"),
-        lambda c: c["tasks"][65]["parameters"].update(enabled_by_default=True),
+        lambda c: c["tasks"][0].update(status="extension"),
+        lambda c: c["tasks"][0].update(number=1),
+        lambda c: c["tasks"][0]["parameters"].update(
+            target={"kind": "text", "description": "Locator.", "required": True}
+        ),
+        lambda c: c["tasks"][1]["parameters"]["attribute"].update(values=["color"]),
+        lambda c: c["tasks"][1]["parameters"]["attribute"].update(min_items=1),
         lambda c: c["families"]["visual_description"]["task_ids"].append("unknown_task"),
-        lambda c: c["profile_contracts"]["limitation"]["eligible_task_ids"].append("unknown_task"),
+        lambda c: c["capabilities"].update(unused_capability="Never referenced."),
     ],
 )
-def test_catalog_rejects_malformed_counts_versions_and_references(mutation):
+def test_catalog_rejects_malformed_versions_references_and_parameters(mutation):
     catalog = deepcopy(load_task_catalog())
     mutation(catalog)
     with pytest.raises(ValidationError):
         TaskCatalog.model_validate_json(canonical_json(catalog))
 
 
+def test_merged_operations_are_gone():
+    ids = {task.id for task in task_catalog().tasks}
+    merged = {
+        "visual_summary",
+        "screen_summary",
+        "set_operation",
+        "text_reading_order",
+        "code_transcription",
+        "evidence_localization",
+    }
+    assert not ids & merged
+    assert {"grounded_description", "select_by_conditions", "text_transcription"} <= ids
+
+
+def _model_facing_texts():
+    catalog = task_catalog()
+    for family_id, family in catalog.families.items():
+        yield f"family {family_id}", family.label
+    for check_id, text in catalog.eligibility_checks.items():
+        yield f"check {check_id}", text
+    for contract_id, contract in catalog.verification_contracts.items():
+        yield f"contract {contract_id}", contract.contract
+    for task in catalog.tasks:
+        yield f"{task.id} label", task.label
+        yield f"{task.id} definition", task.definition
+        yield f"{task.id} do_not_infer", task.do_not_infer
+        if task.answer_format is not None:
+            yield f"{task.id} answer_format", task.answer_format
+        for name, parameter in task.parameters.items():
+            yield f"{task.id} parameter {name}", parameter.description
+
+
+def test_model_facing_catalog_text_is_plain_english():
+    for where, text in _model_facing_texts():
+        assert text.isascii(), where
+        assert not JARGON.search(text), (where, JARGON.search(text))
+
+
+def test_definitions_say_what_is_asked_and_answered_briefly():
+    for task in task_catalog().tasks:
+        assert task.definition.startswith("The user "), task.id
+        assert "the answer" in task.definition, task.id
+        assert len(task.definition.split()) <= 65, task.id
+        assert len(re.findall(r"[.!?](?:\s|$)", task.definition)) <= 3, task.id
+
+
+def test_checks_that_need_a_stated_choice_have_an_explicit_required_parameter():
+    for task in task_catalog().tasks:
+        required = set(required_parameter_names(task))
+        for check, names in CHECK_PARAMETERS.items():
+            if check in task.eligibility_checks:
+                assert required & names, (task.id, check)
+
+
 def test_compile_exposes_admission_and_versioned_run_identity(tmp_path):
     config = load_config(Path("configs/pilot.yaml"))
     compiled = compile_configuration(config)
-    assert compiled["task_catalog"]["counts"]["tasks"] == 72
-    assert not compiled["task_admission"]["screen_to_code"]["normal_profile_available"]
+    assert len(compiled["task_catalog"]["tasks"]) == 66
+    assert not compiled["task_admission"]["screen_to_code"]["available"]
+    assert compiled["task_admission"]["object_identification"]["available"]
     assert {"ImageProfile", "QuestionDraftBatch", "QuestionGateVote"} <= set(compiled["schemas"])
     assert "ScopedEvidenceInventory" not in compiled["schemas"]
     assert "legacy_task_migration" not in compiled
@@ -75,7 +159,7 @@ def test_compile_exposes_admission_and_versioned_run_identity(tmp_path):
             store.initialize_run("legacy", config.config_hash, "pilot")
 
 
-def test_legacy_candidate_labels_remain_immutable_when_reading_old_records():
+def test_unversioned_candidate_labels_remain_immutable_when_reading_old_records():
     record = {
         "candidate_id": "legacy",
         "task_id": "region_description",
@@ -90,18 +174,17 @@ def test_legacy_candidate_labels_remain_immutable_when_reading_old_records():
     assert candidate.family == "observation_attribute"
 
 
-def test_specialist_cannot_bypass_its_validator_by_claiming_a_limitation():
+def test_extension_candidates_cannot_drop_their_specialized_validator():
     task = next(task for task in task_catalog().tasks if task.id == "screen_to_code")
-    with pytest.raises(ValidationError, match="does not support this answerability profile"):
+    with pytest.raises(ValidationError, match="cannot omit or replace required verifiers"):
         InstructionCandidate(
             candidate_id="fake",
             task_id=task.id,
             family=task.family,
-            profile="limitation",
             visible_scope="screen",
-            instruction_summary=task.definition_en,
+            instruction_summary=task.definition,
             required_capabilities=task.required_capabilities,
-            catalog_version="7.0",
+            catalog_version="8.0",
             scope_id="screen",
             view_id="view",
             evidence_refs=("evidence",),
@@ -111,9 +194,8 @@ def test_specialist_cannot_bypass_its_validator_by_claiming_a_limitation():
 
 def test_generic_person_category_is_distinct_from_individual_identity():
     task = next(item for item in task_catalog().tasks if item.id == "object_identification")
-    assert "generic person categories" in task.definition_en
-    assert "individual's identity" in task.definition_en
-    assert "named identity" in task.do_not_infer
+    assert "generic category" in task.definition
+    assert "identity" in task.do_not_infer
 
 
 def _drafted(task_id: str, target: str) -> InstructionCandidate:
@@ -151,7 +233,9 @@ def test_model_payloads_exclude_catalog_provenance() -> None:
         draft_task_contract(task),
     ):
         text = json.dumps(payload)
-        assert "inspiration_subsets" not in text
-        assert "source_urls" not in text
+        assert "related_finevision_subsets" not in text
+        assert "example_question" not in text
     with pytest.raises(ExecutionError, match="Forbidden fields"):
         validate_stage_payload("question_gate", {"selected_instruction": {"provenance": "labels"}})
+    with pytest.raises(ExecutionError, match="Forbidden fields"):
+        validate_stage_payload("question_gate", {"selected_instruction": {"example_question": "x"}})

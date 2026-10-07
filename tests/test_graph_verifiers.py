@@ -63,10 +63,8 @@ def _check(source: GraphSource, answer: GraphAnswer, **parameters: object) -> Ga
     )
 
 
-def test_element_lookup_and_directed_neighbors() -> None:
-    lookup = _source("diagram_element_lookup", "element", node_id="B")
-    assert _check(lookup, _answer("B", label="B")) is GateVerdict.MET
-    outgoing = _source("graph_connectivity", "neighbors", node_id="A")
+def test_directed_neighbors_follow_drawn_edges() -> None:
+    outgoing = _source("diagram_connectivity", "neighbors", node_id="A")
     assert _check(outgoing, _answer("B and C", members=("B", "C"))) is GateVerdict.MET
     incoming = outgoing.model_copy(
         update={
@@ -77,7 +75,7 @@ def test_element_lookup_and_directed_neighbors() -> None:
 
 
 def test_neighbors_compare_topology_without_requiring_an_unused_node_subtype() -> None:
-    source = _source("graph_connectivity", "neighbors", node_id="A")
+    source = _source("diagram_connectivity", "neighbors", node_id="A")
     other = source.model_copy(
         update={
             "nodes": tuple(node.model_copy(update={"kind": "station"}) for node in source.nodes)
@@ -112,7 +110,7 @@ def test_neighbors_compare_topology_without_requiring_an_unused_node_subtype() -
 
 
 def test_bilingual_neighbor_names_require_explicit_unique_visible_labels() -> None:
-    source = _source("graph_connectivity", "neighbors", node_id="A")
+    source = _source("diagram_connectivity", "neighbors", node_id="A")
     answer = _answer("Alpha (B), Beta (C)", members=("Alpha (B)", "Beta (C)"))
     assert _check(source, answer) is GateVerdict.MET
     wrong = _answer("Alpha (B), Gamma (D)", members=("Alpha (B)", "Gamma (D)"))
@@ -122,7 +120,7 @@ def test_bilingual_neighbor_names_require_explicit_unique_visible_labels() -> No
 
 
 def test_all_paths_include_every_visible_alternative() -> None:
-    source = _source("graph_path_tracing", "paths", start="A", end="C")
+    source = _source("diagram_path_tracing", "paths", start="A", end="C")
     correct = _answer("A B C; A C", paths=(("A", "B", "C"), ("A", "C")))
     assert _check(source, correct) is GateVerdict.MET
     missing = _answer("A C", paths=(("A", "C"),))
@@ -140,7 +138,7 @@ def test_process_description_checks_all_explicit_edges() -> None:
 def test_public_numeric_branch_uses_printed_conditions() -> None:
     high = BranchCondition(operator="ge", threshold="5", printed_text="input >= 5")
     low = BranchCondition(operator="lt", threshold="5", printed_text="input < 5")
-    base = _source("diagram_branch_evaluation", "branch", start="A", input_value="8")
+    base = _source("flowchart_evaluation", "branch", start="A", input_value="8")
     source = base.model_copy(update={"edges": (_edge("A", "B", high), _edge("A", "C", low))})
     answer = _answer("A to B", paths=(("A", "B"),))
     assert _check(source, answer, input_values="8") is GateVerdict.MET
@@ -152,7 +150,7 @@ def test_public_numeric_branch_uses_printed_conditions() -> None:
 
 
 def test_unresolved_crossing_and_source_disagreement_abstain() -> None:
-    source = _source("graph_connectivity", "neighbors", node_id="A")
+    source = _source("diagram_connectivity", "neighbors", node_id="A")
     answer = _answer("B and C", members=("B", "C"))
     crossing = source.model_copy(update={"junctions_resolved": False})
     assert _check(crossing, answer) is GateVerdict.UNKNOWN
@@ -186,7 +184,7 @@ def _renamed(source: GraphSource) -> GraphSource:
 
 @pytest.mark.parametrize("rename_both", [False, True])
 def test_unique_visible_labels_bind_local_ids_without_changing_saved_evidence(rename_both) -> None:
-    original = _source("graph_connectivity", "neighbors", node_id="A")
+    original = _source("diagram_connectivity", "neighbors", node_id="A")
     other = _renamed(original)
     source = other if rename_both else original
     before = other.model_dump_json()
@@ -222,7 +220,7 @@ def test_unique_visible_labels_bind_local_ids_without_changing_saved_evidence(re
     ],
 )
 def test_label_binding_preserves_ambiguity_and_structural_disagreement(mismatch) -> None:
-    source = _source("graph_connectivity", "neighbors", node_id="A")
+    source = _source("diagram_connectivity", "neighbors", node_id="A")
     data = _renamed(source).model_dump()
     if mismatch == "duplicate_label":
         data["nodes"][1]["label"] = "A"

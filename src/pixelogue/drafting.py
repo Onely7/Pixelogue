@@ -22,17 +22,15 @@ from pixelogue.errors import ExecutionError
 from pixelogue.task_catalog import TaskDefinition
 from pixelogue.task_evidence import ImageRegion, PublicParameter
 from pixelogue.task_runtime import (
-    BOUNDARY_OPERATION_TEXT,
-    OUTPUT_CONTRACT_TEXT,
-    RUNTIME_RESTRICTIONS,
     bindable_parameter_names,
     fingerprint,
+    parameter_contract,
     required_parameter_names,
 )
 
 DraftValue = Annotated[str, Field(min_length=1, max_length=512)]
 # The whole requested text unit must fit the bound region, so the drafted scope is used.
-TEXT_UNIT_TASKS = frozenset({"text_transcription", "text_reading_order", "code_transcription"})
+TEXT_UNIT_TASKS = frozenset({"text_transcription"})
 _ARTICLES = frozenset({"a", "an", "the"})
 
 
@@ -105,22 +103,15 @@ def draft_task_contract(task: TaskDefinition) -> dict[str, Any]:
     return {
         "task_id": task.id,
         "family": task.family,
-        "definition": task.definition_en,
+        "definition": task.definition,
         "do_not_infer": task.do_not_infer,
         "eligibility_checks": {
             name: catalog.eligibility_checks[name] for name in task.eligibility_checks
         },
-        "parameter_contract": {
-            name: list(value) if isinstance(value, tuple) else value
-            for name, value in task.parameters.items()
-        },
+        "parameter_contract": parameter_contract(task),
         "required_parameter_names": list(required_parameter_names(task)),
         "bindable_parameter_names": list(bindable_parameter_names(task)),
-        "boundary": BOUNDARY_OPERATION_TEXT.get(
-            task.id, "Preserve the declared operation and its public conditions."
-        ),
-        "output_contract": OUTPUT_CONTRACT_TEXT.get(task.id),
-        "runtime_restrictions": RUNTIME_RESTRICTIONS.get(task.id),
+        "answer_format": task.answer_format,
     }
 
 
@@ -132,7 +123,7 @@ def validate_draft_parameters(task: TaskDefinition, draft: QuestionDraft) -> Non
     """Apply the catalog's public parameter rules to a draft.
 
     Raises:
-        ExecutionError: If a name, required choice or enumerated value is invalid.
+        ExecutionError: If a name, a required choice, a value's kind or a choice is invalid.
     """
     parameters = {parameter.name: parameter.value for parameter in draft.public_parameters}
     parameters["target"] = draft.target
@@ -142,28 +133,24 @@ def validate_draft_parameters(task: TaskDefinition, draft: QuestionDraft) -> Non
     if missing := sorted(set(required_parameter_names(task)) - parameters.keys()):
         raise _reject("DRAFT_PARAMETER_MISSING", f"Missing parameters {missing}")
     for name, value in parameters.items():
-        choices = task.parameters.get(name)
-        if isinstance(choices, tuple) and value not in choices:
+        item = task.parameters.get(name)
+        if item is None:
+            continue
+        if item.kind == "text" and not isinstance(value, str):
+            raise _reject("DRAFT_PARAMETER_VALUE", f"{name} must be text")
+        if item.kind == "choice" and value not in (item.values or ()):
             raise _reject("DRAFT_PARAMETER_VALUE", f"Unsupported choice for {name}")
-    if task.id == "attribute_lookup" and not isinstance(parameters["attribute"], str):
-        raise _reject("DRAFT_PARAMETER_VALUE", "Attribute lookup needs one public property name")
-    if task.id == "scene_categorization":
-        options = parameters["category_set"]
-        if (
-            not isinstance(options, tuple)
-            or len(options) < 2
-            or len({option.casefold() for option in options}) != len(options)
-        ):
-            raise _reject(
-                "DRAFT_PARAMETER_VALUE", "Scene categories need two distinct public alternatives"
-            )
-    if task.id == "grounded_arithmetic" and "derived_forms" in parameters:
-        raise _reject("DRAFT_PARAMETER_VALUE", "Derived arithmetic forms are unsupported")
-    if (
-        task.id == "document_structure_reconstruction"
-        and parameters.get("format") != "structured_json"
-    ):
-        raise _reject("DRAFT_PARAMETER_VALUE", "Document structure supports structured_json only")
+        if item.kind == "integer" and type(value) is not int:
+            raise _reject("DRAFT_PARAMETER_VALUE", f"{name} must be a whole number")
+        if item.kind == "list":
+            if not isinstance(value, tuple):
+                raise _reject("DRAFT_PARAMETER_VALUE", f"{name} must be a list")
+            if len({entry.casefold() for entry in value}) != len(value):
+                raise _reject("DRAFT_PARAMETER_VALUE", f"{name} repeats an item")
+            if len(value) < (item.min_items or 1) or (
+                item.max_items is not None and len(value) > item.max_items
+            ):
+                raise _reject("DRAFT_PARAMETER_VALUE", f"{name} has an unsupported item count")
 
 
 def draft_to_candidate(
@@ -195,9 +182,8 @@ def draft_to_candidate(
         candidate_id="unbound",
         task_id=task.id,
         family=task.family,
-        profile="normal",
         visible_scope=draft.target,
-        instruction_summary=task.definition_en,
+        instruction_summary=task.definition,
         required_capabilities=task.required_capabilities,
         catalog_version=catalog.version,
         scope_id=f"draft:{turn_index}:{draft_index}",

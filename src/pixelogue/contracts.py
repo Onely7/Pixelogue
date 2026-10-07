@@ -131,11 +131,10 @@ class InstructionCandidate(StrictModel):
     candidate_id: str
     task_id: str
     family: str
-    profile: Literal["normal", "limitation", "false_premise"] = "normal"
     visible_scope: str
     instruction_summary: str
     required_capabilities: tuple[str, ...]
-    catalog_version: Literal["7.0"] | None = None
+    catalog_version: Literal["8.0"] | None = None
     scope_id: str | None = None
     view_id: str | None = None
     scope_region: ImageRegion | None = None
@@ -165,28 +164,20 @@ class InstructionCandidate(StrictModel):
             if task is None or task.family != self.family:
                 raise ValueError("Unknown operation or incorrect family")
             if self.required_capabilities != task.required_capabilities:
-                raise ValueError("V7 candidates cannot replace capability requirements")
-            if (
-                self.profile != "normal"
-                and self.task_id not in catalog.profile_contracts[self.profile].eligible_task_ids
-            ):
-                raise ValueError("Task does not support this answerability profile")
+                raise ValueError("Catalog candidates cannot replace capability requirements")
             if len({parameter.name for parameter in self.public_parameters}) != len(
                 self.public_parameters
             ):
                 raise ValueError("Public parameter names must be unique")
             if not self.scope_id or not self.view_id:
-                raise ValueError("V7 candidates need scope and view bindings")
+                raise ValueError("Catalog candidates need scope and view bindings")
             if self.origin == "scoped" and not self.evidence_refs:
-                raise ValueError("Scoped V7 candidates need evidence bindings")
+                raise ValueError("Scoped catalog candidates need evidence bindings")
             if self.origin == "direct" and (self.evidence_refs or self.scope_region is None):
                 raise ValueError("Direct drafts carry a public scope region and no evidence IDs")
-            required = (
-                task.verification_contracts if self.profile == "normal" else ("dual_visual_review",)
-            )
-            if self.verification_contracts != required:
-                raise ValueError("V7 candidates cannot omit or replace required verifiers")
-            if task.status == "validator_gated_extension" and not self.calibrated_domain:
+            if self.verification_contracts != task.verification_contracts:
+                raise ValueError("Catalog candidates cannot omit or replace required verifiers")
+            if task.status == "extension" and not self.calibrated_domain:
                 raise ValueError("Specialist candidates need a certified domain")
         return self
 
@@ -317,7 +308,6 @@ class SelectionCandidate(StrictModel):
     visual_group_id: str
     task_family: str
     semantic_family: str
-    pattern: str
     purpose: SourcePurpose
     status: Literal["QUALITY_CANDIDATE"] = "QUALITY_CANDIDATE"
 

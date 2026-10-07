@@ -65,15 +65,14 @@ STRUCTURAL_ANSWER_FORMS = {
     },
     "table_answer": {
         "table_cell_lookup": frozenset({"value"}),
-        "table_predicate_selection": frozenset({"rows"}),
-        "table_cross_reference": frozenset({"pairs"}),
+        "table_row_selection": frozenset({"rows"}),
+        "table_join": frozenset({"pairs"}),
     },
     "graph_answer": {
-        "diagram_element_lookup": frozenset({"label"}),
-        "graph_connectivity": frozenset({"members", "edges"}),
-        "graph_path_tracing": frozenset({"paths"}),
+        "diagram_connectivity": frozenset({"members", "edges"}),
+        "diagram_path_tracing": frozenset({"paths"}),
         "diagram_process_description": frozenset({"edges"}),
-        "diagram_branch_evaluation": frozenset({"paths"}),
+        "flowchart_evaluation": frozenset({"paths"}),
     },
 }
 

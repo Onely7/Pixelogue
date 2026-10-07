@@ -148,7 +148,7 @@ class SpecialistEvaluationCase(StrictModel):
     def check_scope(self) -> SpecialistEvaluationCase:
         """Restrict this bypass to held-out specialists and independent labels."""
         task = next((item for item in task_catalog().tasks if item.id == self.task_id), None)
-        if task is None or task.status != "validator_gated_extension":
+        if task is None or task.status != "extension":
             raise ValueError("Evaluation-only route requires a specialist task")
         if self.image.purpose is not SourcePurpose.EVALUATION:
             raise ValueError("Specialist confirmation images must be evaluation-only")
@@ -196,9 +196,8 @@ def _instruction(case: SpecialistEvaluationCase) -> InstructionCandidate:
         candidate_id=canonical_hash({"evaluation_case": case.case_id, "task": case.task_id}),
         task_id=task.id,
         family=task.family,
-        profile="normal",
         visible_scope=case.visible_scope,
-        instruction_summary=task.definition_en,
+        instruction_summary=task.definition,
         required_capabilities=task.required_capabilities,
         catalog_version=task_catalog().version,
         scope_id=case.scope_id,

@@ -35,7 +35,7 @@ def _source(
     coverage: Literal["MET", "NOT_MET", "UNKNOWN"], tables: tuple[TableGrid, ...]
 ) -> TableSource:
     return TableSource(
-        task_id="table_structure_reconstruction",
+        task_id="table_reconstruction",
         coverage=coverage,
         scope_id="table",
         view_id="view",
@@ -81,17 +81,15 @@ def test_open_partial_met_extraction_cannot_certify_a_matching_reconstruction() 
 
 @pytest.mark.parametrize("coverage", ["UNKNOWN", "NOT_MET"])
 def test_empty_source_abstentions_still_use_two_blind_readers(coverage: str) -> None:
-    task = next(
-        task for task in task_catalog().tasks if task.id == "table_structure_reconstruction"
-    )
+    task = next(task for task in task_catalog().tasks if task.id == "table_reconstruction")
     instruction = InstructionCandidate(
         candidate_id="reconstruction",
         task_id=task.id,
         family=task.family,
         visible_scope="the entire table",
-        instruction_summary=task.definition_en,
+        instruction_summary=task.definition,
         required_capabilities=task.required_capabilities,
-        catalog_version="7.0",
+        catalog_version="8.0",
         scope_id="table",
         view_id="view",
         evidence_refs=("table-evidence",),

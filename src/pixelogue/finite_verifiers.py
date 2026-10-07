@@ -14,9 +14,9 @@ from pixelogue.task_evidence import ImageRegion
 FINITE_TASKS = frozenset(
     {
         "spatial_ordering",
-        "set_cardinality_comparison",
-        "quantified_statement_verification",
-        "grounded_hypothetical_update",
+        "count_comparison",
+        "quantified_claim_verification",
+        "hypothetical_set_update",
     }
 )
 
@@ -147,14 +147,14 @@ def _expected(source: FiniteSource) -> tuple[str, object] | None:
         return "members", tuple(
             member.member_id for member in sorted(members, key=lambda item: item.order_index or 0)
         )
-    if task == "set_cardinality_comparison":
+    if task == "count_comparison":
         if not query.left_group or not query.right_group:
             return None
         left = sum(query.left_group in member.groups for member in members)
         right = sum(query.right_group in member.groups for member in members)
         relation = "less" if left < right else "greater" if left > right else "equal"
         return "relation", relation
-    if task == "quantified_statement_verification":
+    if task == "quantified_claim_verification":
         if query.quantifier is None or any(member.predicate_met is None for member in members):
             return None
         matches = sum(member.predicate_met is True for member in members)
@@ -174,7 +174,7 @@ def _expected(source: FiniteSource) -> tuple[str, object] | None:
         else:
             truth = matches <= query.threshold
         return "boolean", truth
-    if task == "grounded_hypothetical_update":
+    if task == "hypothetical_set_update":
         if (
             query.update is None
             or not query.update_ids

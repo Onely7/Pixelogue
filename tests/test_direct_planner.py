@@ -112,7 +112,7 @@ def _tasks(*families: str) -> dict[str, TaskDefinition]:
     return {
         task.id: task
         for task in task_catalog().tasks
-        if task.family in families and task.status == "core_candidate"
+        if task.family in families and task.status == "core"
     }
 
 
@@ -126,7 +126,7 @@ def _route(profile, ledger, used=frozenset(), tasks=None):
     return choose_route(
         profile,
         ledger,
-        tasks=tasks or _tasks("visual_description", "set_logic", "reference_spatial"),
+        tasks=tasks or _tasks("visual_description", "counting_and_sets", "reference_spatial"),
         family_targets="uniform",
         task_weights={},
         used_families=used,
@@ -139,27 +139,33 @@ def _route(profile, ledger, used=frozenset(), tasks=None):
 
 def test_route_prefers_the_least_covered_feasible_family() -> None:
     ledger = FamilyLedger(["object_identification"] * 5 + ["entity_count"] * 2)
-    route = _route(_profile("visual_description", "set_logic", "reference_spatial"), ledger)
+    route = _route(_profile("visual_description", "counting_and_sets", "reference_spatial"), ledger)
     assert route is not None
     assert route.primary_family == "reference_spatial"
-    assert route.secondary_family == "set_logic"
+    assert route.secondary_family == "counting_and_sets"
     assert all(task in _tasks("reference_spatial") for task in route.primary_task_ids)
 
 
 def test_route_avoids_families_already_used_in_the_conversation() -> None:
     route = _route(
-        _profile("visual_description", "set_logic"), FamilyLedger(), used=frozenset({"set_logic"})
+        _profile("visual_description", "counting_and_sets"),
+        FamilyLedger(),
+        used=frozenset({"counting_and_sets"}),
     )
     assert route is not None and route.primary_family == "visual_description"
 
 
 def test_route_is_deterministic_and_falls_back_without_profile() -> None:
-    first = _route(_profile("visual_description", "set_logic"), FamilyLedger())
-    second = _route(_profile("visual_description", "set_logic"), FamilyLedger())
+    first = _route(_profile("visual_description", "counting_and_sets"), FamilyLedger())
+    second = _route(_profile("visual_description", "counting_and_sets"), FamilyLedger())
     assert first == second
     fallback = _route(None, FamilyLedger())
     assert fallback is not None and fallback.basis == "fallback"
-    assert fallback.primary_family in {"visual_description", "reference_spatial", "set_logic"}
+    assert fallback.primary_family in {
+        "visual_description",
+        "reference_spatial",
+        "counting_and_sets",
+    }
 
 
 def test_ledger_counts_concurrent_commits() -> None:
@@ -173,7 +179,7 @@ def test_ledger_counts_concurrent_commits() -> None:
     for thread in threads:
         thread.join()
     families, tasks = ledger.snapshot()
-    assert tasks["entity_count"] == 400 and families["set_logic"] == 400
+    assert tasks["entity_count"] == 400 and families["counting_and_sets"] == 400
 
 
 def vote(
@@ -571,9 +577,9 @@ def test_image_views_match_attached_images(tmp_path, image_artifact) -> None:
 
 
 def test_anchor_turns_offer_only_lightly_verified_operations() -> None:
-    tasks = _tasks("visual_description", "set_logic", "table_understanding")
+    tasks = _tasks("visual_description", "counting_and_sets", "table_understanding")
     ledger = FamilyLedger(["object_identification"] * 9)
-    profile = _profile("visual_description", "set_logic", "table_understanding")
+    profile = _profile("visual_description", "counting_and_sets", "table_understanding")
     light = choose_route(
         profile,
         ledger,
@@ -603,7 +609,10 @@ def test_anchor_turns_offer_only_lightly_verified_operations() -> None:
         image_id="img",
         turn_index=3,
     )
-    assert later is not None and later.primary_family in {"set_logic", "table_understanding"}
+    assert later is not None and later.primary_family in {
+        "counting_and_sets",
+        "table_understanding",
+    }
 
 
 def test_screen_operations_need_a_screen_image() -> None:
@@ -635,7 +644,7 @@ def test_rerating_uses_the_merged_question_gate_without_relabeling(
 ) -> None:
     image, root = image_artifact
     coordinator, store, _, a, b = make_coordinator(tmp_path, judge_script(), judge_script())
-    neighbor = {"object_identification": "referring_object_resolution"}
+    neighbor = {"object_identification": "described_object_lookup"}
 
     def neighbor_label(payload: dict[str, Any], _trial: str | None) -> QuestionGateVote:
         task = payload["selected_instruction"]["task_id"]

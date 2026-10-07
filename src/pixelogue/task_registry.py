@@ -47,9 +47,9 @@ REGISTRATIONS = {
             supported_tasks=frozenset(
                 {
                     "table_cell_lookup",
-                    "table_predicate_selection",
-                    "table_structure_reconstruction",
-                    "table_cross_reference",
+                    "table_row_selection",
+                    "table_reconstruction",
+                    "table_join",
                 }
             ),
         ),
@@ -58,7 +58,7 @@ REGISTRATIONS = {
             "2",
             supported_tasks=frozenset(
                 {
-                    "table_structure_reconstruction",
+                    "table_reconstruction",
                     "chart_data_reconstruction",
                     "text_field_extraction",
                     "document_structure_reconstruction",
@@ -86,14 +86,13 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "graph_check",
-            "3",
+            "4",
             supported_tasks=frozenset(
                 {
-                    "diagram_element_lookup",
-                    "graph_connectivity",
-                    "graph_path_tracing",
+                    "diagram_connectivity",
+                    "diagram_path_tracing",
                     "diagram_process_description",
-                    "diagram_branch_evaluation",
+                    "flowchart_evaluation",
                 }
             ),
         ),
@@ -107,16 +106,16 @@ REGISTRATIONS = {
             "1",
             supported_tasks=frozenset(
                 {
-                    "pattern_rule_identification",
+                    "pattern_rule",
                     "pattern_completion",
-                    "rule_based_exception",
+                    "pattern_exception",
                 }
             ),
         ),
         ValidatorRegistration(
             "geometry_check",
             "1",
-            supported_tasks=frozenset({"geometric_relation_analysis"}),
+            supported_tasks=frozenset({"geometric_relations"}),
         ),
         ValidatorRegistration(
             "formal_geometry_validator",

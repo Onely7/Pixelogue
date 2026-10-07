@@ -371,7 +371,6 @@ def candidate_from_conversation(conversation: ConversationArtifact) -> Selection
         )
     families = tuple(turn.instruction.family for turn in conversation.turns)
     tasks = tuple(turn.instruction.task_id for turn in conversation.turns)
-    profiles = tuple(turn.instruction.profile for turn in conversation.turns)
     return SelectionCandidate(
         conversation_id=conversation.conversation_id,
         language=conversation.target_language,
@@ -381,7 +380,6 @@ def candidate_from_conversation(conversation: ConversationArtifact) -> Selection
         if conversation.turns[-1].instruction.catalog_version
         else families[0],
         semantic_family=canonical_hash(tasks),
-        pattern="/".join(profiles),
         purpose=conversation.image.purpose,
     )
 

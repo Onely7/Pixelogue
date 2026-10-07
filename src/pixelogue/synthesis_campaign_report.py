@@ -133,7 +133,7 @@ def build_report(
     count = len(conversations)
     candidates = statuses["QUALITY_CANDIDATE"]
     task_rows = []
-    for task in tasks:
+    for number, task in enumerate(tasks, start=1):
         task_id = task["id"]
         actual = sorted(
             examples[task_id],
@@ -142,9 +142,9 @@ def build_report(
         task_rows.append(
             {
                 "id": task_id,
-                "number": task["number"],
-                "label": task["label_en"],
-                "definition": task["definition_en"],
+                "number": number,
+                "label": task["label"],
+                "definition": task["definition"],
                 "family": task["family"],
                 "catalog_status": task["status"],
                 "attempted_turns": attempted[task_id],
@@ -177,7 +177,7 @@ def build_report(
         "candidate_task_diversity": diversity(candidate),
         "candidate_family_diversity": diversity(families),
         "catalog_tasks": len(tasks),
-        "normal_catalog_tasks": sum(task["status"] == "core_candidate" for task in tasks),
+        "core_catalog_tasks": sum(task["status"] == "core" for task in tasks),
         "candidate_lengths": dict(lengths),
         "candidate_languages": dict(languages),
         "generator_outcomes": {name: dict(values) for name, values in generators.items()},
@@ -283,7 +283,7 @@ def write_reports(report: dict[str, Any], artifact_root: Path, destination: Path
         if not examples_html:
             reason = (
                 "校正待ちの専門拡張。通常選択対象外。"
-                if task["catalog_status"] == "validator_gated_extension"
+                if task["catalog_status"] == "extension"
                 else "今回の画像群で検証済みの実例は得られていません。"
             )
             examples_html.append(f"<p>{reason}</p>")
@@ -294,7 +294,7 @@ def write_reports(report: dict[str, Any], artifact_root: Path, destination: Path
     count = report["processed_images"]
     candidates = report["automatic_quality_candidates"]
     rate = f"{report['automatic_candidate_rate']:.1%}" if count else "未測定"
-    introduction = f"# Open Images V7 合成結果とタスク別実例\n\n処理 {count}/{report['requested_images']}画像。自動品質候補 {candidates}件（{rate}）。人手品質は未確認。\n\n採用候補会話のタスク種類: {report['candidate_task_diversity']['represented']}/{report['normal_catalog_tasks']}標準タスク。\n\n"
+    introduction = f"# Open Images V7 合成結果とタスク別実例\n\n処理 {count}/{report['requested_images']}画像。自動品質候補 {candidates}件（{rate}）。人手品質は未確認。\n\n採用候補会話のタスク種類: {report['candidate_task_diversity']['represented']}/{report['core_catalog_tasks']}標準タスク。\n\n"
     overview = (
         "| # | タスク | 試行turn | 確定turn | 候補内turn | 実例 |\n|---:|---|---:|---:|---:|---|\n"
         + "\n".join(rows)
@@ -306,7 +306,7 @@ def write_reports(report: dict[str, Any], artifact_root: Path, destination: Path
     options = '<option value="">全分野</option>' + "".join(
         f"<option>{e(family)}</option>" for family in families
     )
-    page = f'<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pixelogue タスク別合成実例</title><style>body{{font:16px/1.65 system-ui;max-width:1100px;margin:auto;padding:24px}}section{{border-top:1px solid #aaa;padding:20px 0}}article{{background:#f5f7fa;padding:20px;margin:16px 0;overflow-wrap:anywhere}}img{{max-width:100%;height:auto}}input,select{{font:inherit;padding:8px}}.kind{{font-weight:bold}}code{{font-size:13px}}nav{{position:sticky;top:0;background:white;padding:12px;border-bottom:1px solid #aaa}}</style><h1>Pixelogue タスク別合成実例</h1><p>処理 {count}/{report["requested_images"]}画像・自動品質候補 {candidates}件（{rate}）。人手未確認。実例のないタスクは明示しています。画像は評価用で、学習exportは行っていません。</p><p>候補会話内のタスク種類 {report["candidate_task_diversity"]["represented"]}/{report["normal_catalog_tasks"]}標準タスク。未採用会話のprefixは診断用です。</p><nav><input id="query" placeholder="タスク・指示・回答を検索"><select id="family">{options}</select><span id="count"></span></nav>{"".join(cards)}<script>function filter(){{const q=document.getElementById("query").value.toLowerCase(),f=document.getElementById("family").value;let n=0;document.querySelectorAll("section").forEach(s=>{{s.hidden=!(s.textContent.toLowerCase().includes(q)&&(!f||s.dataset.family===f));if(!s.hidden)n++;}});document.getElementById("count").textContent="表示 "+n+"タスク";}}document.getElementById("query").addEventListener("input",filter);document.getElementById("family").addEventListener("change",filter);filter();</script></html>'
+    page = f'<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pixelogue タスク別合成実例</title><style>body{{font:16px/1.65 system-ui;max-width:1100px;margin:auto;padding:24px}}section{{border-top:1px solid #aaa;padding:20px 0}}article{{background:#f5f7fa;padding:20px;margin:16px 0;overflow-wrap:anywhere}}img{{max-width:100%;height:auto}}input,select{{font:inherit;padding:8px}}.kind{{font-weight:bold}}code{{font-size:13px}}nav{{position:sticky;top:0;background:white;padding:12px;border-bottom:1px solid #aaa}}</style><h1>Pixelogue タスク別合成実例</h1><p>処理 {count}/{report["requested_images"]}画像・自動品質候補 {candidates}件（{rate}）。人手未確認。実例のないタスクは明示しています。画像は評価用で、学習exportは行っていません。</p><p>候補会話内のタスク種類 {report["candidate_task_diversity"]["represented"]}/{report["core_catalog_tasks"]}標準タスク。未採用会話のprefixは診断用です。</p><nav><input id="query" placeholder="タスク・指示・回答を検索"><select id="family">{options}</select><span id="count"></span></nav>{"".join(cards)}<script>function filter(){{const q=document.getElementById("query").value.toLowerCase(),f=document.getElementById("family").value;let n=0;document.querySelectorAll("section").forEach(s=>{{s.hidden=!(s.textContent.toLowerCase().includes(q)&&(!f||s.dataset.family===f));if(!s.hidden)n++;}});document.getElementById("count").textContent="表示 "+n+"タスク";}}document.getElementById("query").addEventListener("input",filter);document.getElementById("family").addEventListener("change",filter);filter();</script></html>'
     (destination / "examples.html").write_text(page, encoding="utf-8")
     write_jsonl(
         destination / "examples.jsonl",
