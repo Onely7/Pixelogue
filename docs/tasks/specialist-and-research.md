@@ -4,7 +4,7 @@
 
 ## Admission and environments
 
-The 59 core tasks have verification paths. Seven extensions have first-version validators. `configs/specialist-pilot.yaml` names all seven, but naming an extension does not admit it. `compile`, `doctor` and `task-status` report each validator's version, environment, calibration domain and admission reason. Admission requires a certificate for the **exact active generator/processor pair**, validator version and supported domain. Direct synthesis drafts only the 59 core tasks; the extensions are evaluated with `evaluate-specialist`.
+The 69 core tasks have verification paths. Seven extensions have first-version validators. `configs/specialist-pilot.yaml` names all seven, but naming an extension does not admit it. `compile`, `doctor` and `task-status` report each validator's version, environment, calibration domain and admission reason. Admission requires a certificate for the **exact active generator/processor pair**, validator version and supported domain. Direct synthesis drafts only the 69 core tasks; the extensions are evaluated with `evaluate-specialist`.
 
 ```bash
 uv sync --locked --extra cpu --group dev

@@ -113,7 +113,7 @@ Routing uses `supported_families` and whether `image_kind` is `screen`. If the p
 
 For each turn, the controller offers one primary family with up to four operations and one secondary family with up to two:
 
-1. **Available operations.** Drafting offers the 59 core tasks whose validators are registered. In the first `tasks.anchor_turns` turns (default 2), only the 22 light tasks are offered: those verified by the two blind reviews, evidence binding, or transcript alignment alone. These turns decide whether the conversation reaches two committed turns, and structured extraction verifiers abstain more often.
+1. **Available operations.** Drafting offers the 69 core tasks whose validators are registered. In the first `tasks.anchor_turns` turns (default 2), only the 25 light tasks are offered: those verified by the two blind reviews, evidence binding, or transcript alignment alone. These turns decide whether the conversation reaches two committed turns, and structured extraction verifiers abstain more often.
 2. **Feasible families.** These are the profiled families that have an available operation. `screen_ui` stays feasible only for an image profiled as `screen`. When none remain, or the profile is missing, the fallback families `visual_description`, `text_reading`, `reference_spatial`, `counting_and_sets` and `evidence_verification` are used.
 3. **Primary family.** Families not yet used by the conversation's committed turns come first. Among them, the controller picks the largest deficit between the family's target share (`tasks.family_targets`, uniform by default) and its share of all turns committed so far in the run. This run-wide family ledger is shared by images processed concurrently and is updated after every commit. The secondary family is the best remaining feasible family by the same preferences.
 4. **Operations.** Within a family, operations not yet used in the conversation come first, then those with the fewest committed turns in the run after division by `tasks.task_weights`. The default weight is 0.25 for table, chart and document structure reconstruction and 1 for every other operation, so whole-structure reconstructions are offered less often.
@@ -153,7 +153,7 @@ Every reason after the first is saved with the rejected text in `public-text-rej
 
 ### Step 5: gate the question with both judges
 
-Both generator models act as blind judges and make one `question_gate` call each, concurrently. A judge sees the image views, the public history, the drafted operation contract, all 66 task definitions, and the question. No answer exists yet. Each judge returns three verdicts and a reason, and only then its own label for the operation the question actually asks for (`realized_task_id`, or null):
+Both generator models act as blind judges and make one `question_gate` call each, concurrently. A judge sees the image views, the public history, the drafted operation contract, all 76 task definitions, and the question. No answer exists yet. Each judge returns three verdicts and a reason, and only then its own label for the operation the question actually asks for (`realized_task_id`, or null):
 
 1. `local_anchor`: the question refers to something that exists in the image or committed history, and to the bound subject when a target region is given;
 2. `operation_coherent`: it realizes the drafted operation exactly, with every public parameter and eligibility check;

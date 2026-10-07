@@ -1,10 +1,10 @@
 # Task catalog v8
 
-[日本語](README_ja.md) · [66 task definitions](TASKS.md) · [185-subset research map](finevision_mapping_185.md)
+[日本語](README_ja.md) · [76 task definitions](TASKS.md) · [185-subset research map](finevision_mapping_185.md)
 
 See [Specialist and research guide](specialist-and-research.md) for the optional environment, calibration and experiment commands.
 
-The installed catalog contains **59 core tasks and 7 validator-gated extensions** in 14 families. [TASKS.md](TASKS.md) is generated from `src/pixelogue/resources/task_catalog.yaml`. Regenerate it after every catalog edit; a test fails when the committed file differs from the catalog:
+The installed catalog contains **69 core tasks and 7 validator-gated extensions** in 17 families. [TASKS.md](TASKS.md) is generated from `src/pixelogue/resources/task_catalog.yaml`. Regenerate it after every catalog edit; a test fails when the committed file differs from the catalog:
 
 ```bash
 uv run --locked pixelogue compile --tasks-markdown docs/tasks/TASKS.md
@@ -27,13 +27,25 @@ The question drafter receives the definition, `do_not_infer`, the eligibility ch
 
 `pixelogue compile` emits the complete catalog, strict JSON Schemas and `task_admission`. Every `task_admission` entry reports whether the task is available, the required validators and their environments, any certified calibration domains, and the concrete reasons that block it.
 
-All **59 core tasks** have verification paths, and synthesis drafts questions only for core tasks. 34 of them use blind structured extraction followed by deterministic checks for finite sets, arithmetic, tables, charts, documents, formulas, diagrams, scales, marked geometry and finite patterns. Panel comparison, panel sequences and UI element location use two blind visual contract reviews. The remaining 22 are light tasks, described under the routing rules. Unknown notation, incomplete extraction, ambiguous results or disagreement between extractors causes abstention. `grounded_arithmetic` uses the same exact numeric engine as the other numeric tasks. The precision and unit rules that the question states determine which calculations are admissible.
+All **69 core tasks** have verification paths, and synthesis drafts questions only for core tasks. 35 of them use blind structured extraction followed by deterministic checks for finite sets, arithmetic, tables, charts, documents, formulas, diagrams, scales, marked geometry and finite patterns. Five knowledge tasks commit only when two blind readers give the same short answer, and object boxes must overlap two blind box readings. Panel comparison, panel sequences and UI element location use two blind visual contract reviews. The remaining 25 are light tasks, described under the routing rules. Unknown notation, incomplete extraction, ambiguous results or disagreement between extractors causes abstention. `grounded_arithmetic` uses the same exact numeric engine as the other numeric tasks. The precision and unit rules that the question states determine which calculations are admissible.
 
 Table, table-lookup, chart, graph and specialist source readers use `tasks.source_max_tokens` (default 4096). A chart or graph reading that stops at that limit before producing complete JSON is retried with up to twice the allowance, capped at 8,192 tokens unless the configured allowance is already higher. A table reading keeps its allowance and must return `UNKNOWN` when the complete table does not fit. No table cell is filled from the candidate answer.
 
 Chart verification also supports bars whose exact values are printed next to the marks but whose numeric axis has no labeled ticks. The extractor marks that axis `unmarked` and cannot use it for pixel-based estimates. Every relevant value must have a directly printed label; an unlabeled mark remains unverified. Calibrated linear and log axes still require at least two ordered labeled ticks.
 
 All 7 specialist validators are implemented within their first-version ranges and can be named in `tasks.enabled_extensions`. `task_admission` reports an enabled extension as available only with an exact model-bound calibration certificate and a working validator environment; the all-seven example is `configs/specialist-pilot.yaml`. Direct drafting never offers an extension, so extensions are exercised through `evaluate-specialist`. On a host without a working OS sandbox, both code reconstruction tasks report an environment block. Static SVG, limited TikZ and HTML/CSS are rendered only within that sandbox. A UI action is checked as data and never executed.
+
+## Knowledge, specialist and creative tasks
+
+The [FineVision row audit](finevision_mapping_185.md#row-level-audit-2026-10-07) added three families that go beyond reading the image itself:
+
+- `knowledge_recognition` names well-known landmarks, artworks, styles and map regions from world knowledge. People are never identified.
+- `domain_reasoning` applies standard textbook knowledge: it explains labeled scientific or technical diagrams, interprets standard notation and solves math problems printed in the image.
+- `grounded_creation` writes short creative texts. Mood and narrative may be invented, but every statement about what the image shows must be true.
+
+The five tasks with short knowledge answers (`named_entity_recognition`, `style_recognition`, `map_region_identification`, `notation_interpretation` and `math_word_problem`) use `answer_consensus_check`. Two readers answer the question without seeing the candidate answer, and the turn commits only when both short answers match the candidate's after normalizing case, punctuation, leading articles and number format. Readers who disagree, or an alias such as a translated name, leave the turn uncommitted. Agreement between two models is evidence, not proof, so these tasks also pass both blind judges. `concept_explanation` and `grounded_creative_writing` are light tasks checked by the judges and by evidence binding.
+
+The audit also added three tasks to existing families. `object_box_grounding` answers with normalized boxes, which `box_iou_check` matches one-to-one to two blind box readings at an overlap (IoU) of at least 0.5. `chart_value_arithmetic` computes a result from both chart readings, exactly for printed values and as a range for estimates. `visible_text_translation` translates a delimited piece of visible text. Medical images, multiple-choice answer formats and several images per question were not added; the audit table gives the decision for each subset.
 
 ## Per-image flow
 
@@ -48,7 +60,7 @@ The [generation guide](../pipeline/generation-and-evaluation.md) describes each 
 
 ### Routing rules
 
-The first `tasks.anchor_turns` turns (default 2) offer only light tasks: those whose verification contracts are limited to `dual_visual_review`, `evidence_binding_check` and `transcript_alignment`. With the current catalog, 22 of the 59 core tasks qualify; [TASKS.md](TASKS.md) marks each task as light or structured. These turns decide whether a conversation reaches its two-turn minimum, and structured extraction verifiers abstain more often.
+The first `tasks.anchor_turns` turns (default 2) offer only light tasks: those whose verification contracts are limited to `dual_visual_review`, `evidence_binding_check` and `transcript_alignment`. With the current catalog, 25 of the 69 core tasks qualify; [TASKS.md](TASKS.md) marks each task as light or structured. These turns decide whether a conversation reaches its two-turn minimum, and structured extraction verifiers abstain more often.
 
 `screen_ui` tasks are offered only for images that the router profiled as `screen`; annotated figures, diagrams and photographs are not screens. When the profile is missing or names no feasible family, routing uses `visual_description`, `text_reading`, `reference_spatial`, `counting_and_sets` and `evidence_verification`.
 
