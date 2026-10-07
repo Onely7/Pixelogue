@@ -187,7 +187,8 @@ def _run_logged(
 def _check_results(output_dir: Path, expected: int) -> None:
     rows = [
         json.loads(line)
-        for line in (output_dir / "conversations.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (output_dir / "conversations.jsonl").read_text(encoding="utf-8").split("\n")
+        if line.strip()
     ]
     counts: dict[str, int] = {}
     for row in rows:

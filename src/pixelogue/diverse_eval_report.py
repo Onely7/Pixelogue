@@ -140,9 +140,15 @@ def main() -> None:
     args = parser.parse_args()
     diagnostics = json.loads(args.diagnostics.read_text(encoding="utf-8"))
     conversations = [
-        json.loads(line) for line in args.conversations.read_text(encoding="utf-8").splitlines()
+        json.loads(line)
+        for line in args.conversations.read_text(encoding="utf-8").split("\n")
+        if line.strip()
     ]
-    manifest = [json.loads(line) for line in args.manifest.read_text(encoding="utf-8").splitlines()]
+    manifest = [
+        json.loads(line)
+        for line in args.manifest.read_text(encoding="utf-8").split("\n")
+        if line.strip()
+    ]
     summary, rows = build_report(
         diagnostics, manifest, conversations, source_prefix=args.source_prefix
     )

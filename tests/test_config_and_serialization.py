@@ -4,7 +4,9 @@ import pytest
 from pydantic import ValidationError
 
 from pixelogue.config import PixelogueConfig, allocate_quotas, load_config
+from pixelogue.contracts import PublicMessage
 from pixelogue.errors import ConfigurationError, ExternalInputError
+from pixelogue.io import read_jsonl, write_jsonl
 from pixelogue.planner import exact_schedule
 from pixelogue.serialization import strict_json_object
 
@@ -141,3 +143,15 @@ def test_exact_schedule_preserves_every_quota() -> None:
         seed=3,
         namespace="test",
     )
+
+
+def test_json_lines_keep_unicode_line_separators_inside_text(tmp_path: Path) -> None:
+    """Model text with U+2028 stays inside its record instead of splitting the line."""
+    messages = [
+        PublicMessage(message_id="q-1", turn_index=1, role="user", content="first\u2028second"),
+        PublicMessage(message_id="a-1", turn_index=1, role="assistant", content="tab\x0bvertical"),
+    ]
+    path = tmp_path / "messages.jsonl"
+    write_jsonl(path, messages)
+    assert "\u2028" in path.read_text(encoding="utf-8")
+    assert read_jsonl(path, PublicMessage) == messages

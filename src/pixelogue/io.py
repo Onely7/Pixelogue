@@ -27,9 +27,13 @@ def read_json[Model: BaseModel](path: Path, model: type[Model]) -> Model:
 
 
 def read_jsonl[Model: BaseModel](path: Path, model: type[Model]) -> list[Model]:
-    """Read independent strict JSON objects from a JSON Lines file."""
+    """Read independent strict JSON objects from a JSON Lines file.
+
+    Records end only at line feeds. ``str.splitlines`` would also break at U+2028 and other
+    separators that model text may contain inside a JSON string.
+    """
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding="utf-8").split("\n")
     except OSError as error:
         raise ExternalInputError("FILE_UNREADABLE", str(error)) from error
     output: list[Model] = []
