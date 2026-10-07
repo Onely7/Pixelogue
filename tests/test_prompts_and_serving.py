@@ -179,8 +179,8 @@ def test_chart_arithmetic_decoder_binds_the_operator_and_two_or_more_operands():
     assert {"operands", "operator"} <= set(complete["required"])
 
 
-@pytest.mark.parametrize("stage", ["consensus_source", "box_source"])
-def test_knowledge_and_box_readers_are_answer_blind(stage):
+@pytest.mark.parametrize("stage", ["consensus_source", "box_source", "premise_source"])
+def test_knowledge_box_and_presence_readers_are_answer_blind(stage):
     payload = {
         "target_language": "en",
         "question": "Which bridge is this?",
@@ -193,16 +193,17 @@ def test_knowledge_and_box_readers_are_answer_blind(stage):
         validate_stage_payload(stage, {**payload, "candidate_answer": "the Golden Gate Bridge"})
 
 
-def test_consensus_answer_parser_never_sees_the_image():
+@pytest.mark.parametrize("stage", ["consensus_answer", "premise_answer"])
+def test_answer_parsers_for_knowledge_and_presence_never_see_the_image(stage):
     payload = {
         "target_language": "en",
         "question": "Which bridge is this?",
         "candidate_answer": "This is the Golden Gate Bridge.",
         "expected_operation": {"scope_id": "canvas", "view_id": "full:view"},
     }
-    validate_stage_payload("consensus_answer", payload)
+    validate_stage_payload(stage, payload)
     with pytest.raises(ExecutionError):
-        validate_stage_payload("consensus_answer", {**payload, "image_views": [{"view_id": "v"}]})
+        validate_stage_payload(stage, {**payload, "image_views": [{"view_id": "v"}]})
 
 
 @pytest.mark.parametrize(

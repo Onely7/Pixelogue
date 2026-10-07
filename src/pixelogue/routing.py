@@ -62,7 +62,7 @@ class ImageProfile(StrictModel):
     ]
     readable_text: Literal["none", "some", "dense"]
     supported_families: Annotated[
-        tuple[Annotated[str, Field(min_length=1, max_length=64)], ...], Field(max_length=16)
+        tuple[Annotated[str, Field(min_length=1, max_length=64)], ...], Field(max_length=24)
     ]
     reason: Annotated[str, Field(min_length=1, max_length=160)]
 

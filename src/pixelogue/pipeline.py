@@ -1574,6 +1574,7 @@ class SynthesisCoordinator:
                     "geometry_answer",
                     "specialist_geometry_answer",
                     "consensus_answer",
+                    "premise_answer",
                 }
                 else (model_image,),
                 model,

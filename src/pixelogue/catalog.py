@@ -12,7 +12,7 @@ from pixelogue.errors import ConfigurationError
 from pixelogue.serialization import canonical_json, load_yaml
 from pixelogue.task_catalog import TaskCatalog
 
-TASK_CONTRACT_VERSION = "scope-operations-v3"
+TASK_CONTRACT_VERSION = "scope-operations-v4"
 
 
 @lru_cache(maxsize=1)

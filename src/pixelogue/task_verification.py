@@ -21,6 +21,7 @@ from pixelogue.geometry_verifier import GeometryAnswer, GeometrySource, verify_g
 from pixelogue.graph_verifiers import GRAPH_TASKS, GraphAnswer, GraphSource, verify_graph
 from pixelogue.knowledge_verifiers import ConsensusAnswer, ConsensusSource, verify_consensus
 from pixelogue.pattern_verifiers import PATTERN_TASKS, PatternAnswer, PatternSource, verify_pattern
+from pixelogue.premise_verifiers import PremiseAnswer, PremiseSource, verify_premise
 from pixelogue.quantitative_verifiers import (
     QUANTITATIVE_TASKS,
     QuantityAnswer,
@@ -858,6 +859,34 @@ def verify_operation(
             verdict = verify_consensus(
                 (consensus_sources[0], consensus_sources[1]),
                 (consensus_answers[0], consensus_answers[1]),
+                payload["candidate_answer"],
+            )
+        elif name == "premise_check":
+            source_payload = {
+                key: value for key, value in public.items() if key != "candidate_answer"
+            }
+            answer_payload = {
+                key: public[key]
+                for key in ("target_language", "question", "candidate_answer", "expected_operation")
+                if key in public
+            }
+            premise_sources = [
+                PremiseSource.model_validate(
+                    invoke("premise_source", source_payload, PremiseSource, index)
+                )
+                for index in range(2)
+            ]
+            premise_answers = [
+                PremiseAnswer.model_validate(
+                    invoke("premise_answer", answer_payload, PremiseAnswer, index)
+                )
+                for index in range(2)
+            ]
+            models = [*premise_sources, *premise_answers]
+            verdict = verify_premise(
+                instruction.task_id,
+                (premise_sources[0], premise_sources[1]),
+                (premise_answers[0], premise_answers[1]),
                 payload["candidate_answer"],
             )
         elif name == "box_iou_check":

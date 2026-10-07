@@ -173,6 +173,25 @@ whenever you copied a final answer; MET means only that the parse succeeded, not
 is right. Use coverage UNKNOWN with empty answer_quote and short_answer only when the candidate
 gives no final answer, is cut off before it, or gives two different final answers. Never judge
 whether the answer is correct; a wrong answer is parsed like a right one.""",
+    "premise_source": """Read only the image, public question, history and expected_operation, without
+any proposed answer. The question asks whether something is in the image, or asks about something
+that it assumes is there. First list in visible_objects the relevant objects you can see in the area
+the question is about. Then write in premise, in a few words, what the question asks about or
+assumes, such as 'a refrigerator', 'a purse carried by the woman' or 'a black dog'. Set status
+present when the image shows it and absent when it clearly does not; an object that differs from the
+description, such as a brown dog for 'a black dog', makes the premise absent. Set coverage MET when
+you are sure. Use coverage UNKNOWN when the place where it would be is cut off, hidden, blurred or
+too small, or when you cannot tell what the question asks about or assumes. Do not guess.""",
+    "premise_answer": """Parse only the candidate answer and public question, without an image.
+The candidate may describe the image before its conclusion; that is expected. Copy into answer_quote
+the exact words of the candidate answer that say whether the object the question asks about or
+assumes is there, and set status: absent when those words say that it is not there, give a count of
+0, or say that the asked detail cannot be given because it is missing; present when they say yes,
+give a count above 0, a location or a description of it. For example, 'There is no purse visible, so
+its color cannot be determined' has answer_quote 'There is no purse visible' and status absent. Set
+coverage MET whenever you copied such words; MET means only that the parse succeeded. Use coverage
+UNKNOWN with an empty answer_quote only when the answer never says whether the object is there, or
+says both. Never judge whether the answer is correct.""",
     "box_source": """Read only the image, public question, history and expected_operation, without any
 proposed answer. First write in targets one short phrase per object that matches the description,
 saying where it is. Then draw one tight box around each listed object, in the same order, as
@@ -291,11 +310,16 @@ for every fact about the image. When expected_operation's definition asks for wo
 specialist knowledge or creative writing, add only that kind, and never identify a person.
 Satisfy the supplied active public requirements. Do not mention internal candidates, evaluators, or
 identifiers. Answer concisely: for a count, give the count directly; do not expand it into a long
-numbered enumeration unless the user requests a list. Avoid unrequested scene descriptions.
+numbered enumeration unless the user requests a list. Avoid unrequested scene descriptions, except
+when the question asks whether something is there or assumes something the image does not show:
+then name the relevant visible objects, say plainly whether the asked object or detail is there, and
+end with the conclusion (yes or no, 0 for a count, or that the detail cannot be determined). Never
+invent a missing object or its details.
 Return public text, or set text to null and give an internal reason if unsupported.""",
     "answer_repair": """Replace the candidate answer so it satisfies the listed failed criteria.
 Use only the image, current question, and exact public history for facts about the image, plus any
-knowledge or invention that expected_operation's definition allows. Do not mention the repair
+knowledge or invention that expected_operation's definition allows. When the question asks about
+something that is not in the image, say so plainly and never invent it. Do not mention the repair
 process or internal identifiers. Satisfy every supplied active public requirement.""",
     "computation_inventory": """If this turn requests arithmetic, extract the allowlisted operation,
 ordered operand values, explicit units, punctuation policy, and reported answer value. Copy numeric
@@ -364,7 +388,12 @@ cannot confirm is UNKNOWN, and identifying a person is NOT_MET. For grounded_cre
 invented mood and narrative are allowed, but every statement about what the image shows must be true
 and the requested form and length must be met. For visible_text_translation the translation may be
 in the language the question names. For object_box_grounding check that each box tightly covers one
-requested object.
+requested object. For object_presence and false_premise_question the question may ask about something
+that is not in the image: the answer must describe the visible objects truthfully, say correctly
+whether the asked or assumed object is there, never invent details of a missing object, and end with
+its conclusion (yes or no, 0 for a count, or that the detail cannot be determined). An absence that
+could be due to cropping, occlusion or small size is UNKNOWN; a false-premise question whose
+assumption actually holds is NOT_MET.
 Return the schema only.""",
     "rubric_item": """Evaluate only the supplied criterion against the allowed inputs. Return MET,
 NOT_MET, or UNKNOWN. Every schema field is required: emit the verdict and one short non-empty reason,
@@ -413,7 +442,8 @@ operation could be asked and answered from clearly visible content. Omit a famil
 lacks that kind of content (for example no chart, no table, no readable text) or when you are
 unsure. List knowledge_recognition only when a widely known landmark, artwork, style or map region is
 clearly shown, never for people; list domain_reasoning only for labeled scientific or technical
-diagrams, standard notation or a printed math problem. Judge only visible pixels. Keep reason under
+diagrams, standard notation or a printed math problem. List presence_and_premises for photos and
+illustrations of scenes with several clearly visible everyday objects. Judge only visible pixels. Keep reason under
 25 words. Do not write questions, answers or labels."""
 
 STAGE_INSTRUCTIONS["question_draft"] = """Write up to draft_count distinct candidate user questions
@@ -461,6 +491,15 @@ concept_explanation ask about a labeled scientific or technical diagram. For gro
 state the form and, if it matters, the length. For object_box_grounding describe the objects without
 coordinates. For visible_text_translation name the language and the exact text to translate. For
 chart_value_arithmetic name each value by its series and category and state the calculation.
+For object_presence ask whether an object of a named kind is in the image or in a named visible
+area, without hinting at the answer. About half the time ask about an absent object: prefer one that
+usually appears with the visible objects (a fork beside a plate, a saddle on a horse, a towel in a
+bathroom), sometimes a very common object (a person, a car), otherwise an unrelated one; otherwise
+ask about a clearly visible object. For false_premise_question ask, as if it were true, about the
+count, a property, the location, the action or the kind of something that is clearly not in the
+image: an absent object, or a visible object with a property, relation or action that it does not
+have (a black dog when the only dog is brown); mention a visible person, object or area, and set
+asked_detail. For both, target is the visible area or subject, never the object asked about.
 When answer_format is present, make the question request that form of answer. Never print controller IDs, coordinates, private parameters or the words
 "selected region" in a question. Return drafts=[] and a reason when no allowed operation is
 clearly supported."""
@@ -471,15 +510,20 @@ or UNKNOWN for each field:
 local_anchor: the question refers to a visible object, region, text or complete image scope, or
 to committed public history, that actually exists. When target_region is supplied, the question
 must refer to the bound subject there, not a nearby object; UNKNOWN if this cannot be resolved.
+For object_presence and false_premise_question the object asked about may be absent by design; the
+area or subject that the question mentions must exist.
 operation_coherent: the question realizes the selected operation exactly, every public parameter
 and eligibility check holds, and it does not change the task, even within one family. Counting or
 spatial ordering cannot realize correspondence matching. Ability or hypothetical actions, and
 unsupported motion claims from a still image, are NOT_MET for visible_action. Compound
 independent operations or unsupported machine-readable output requests are NOT_MET.
+For false_premise_question the assumed object, property, relation or action must be clearly absent;
+if it is visible, or could be hidden or too small to see, the question is NOT_MET.
 useful_request: NOT_MET when public_history already contains the same answered request or a
 paraphrase of it, or when the question itself already states the requested answer: the category
 for object_identification, the value for attribute_lookup, the action for visible_action, the name
-for named_entity_recognition or map_region_identification, or the text for transcription. Explicit
+for named_entity_recognition or map_region_identification, whether the object is there for
+object_presence, or the text for transcription. Explicit
 regrouping of known facts is useful. A question that asks to identify a person is NOT_MET for every
 operation.
 Give a short concrete reason. Finally, set realized_task_id to the single operation from
@@ -613,6 +657,12 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
         {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),
     "consensus_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
+    "premise_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "premise_answer": frozenset(
         {"target_language", "question", "candidate_answer", "expected_operation"}
     ),
     "box_source": frozenset(

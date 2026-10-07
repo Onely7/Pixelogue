@@ -4,7 +4,7 @@
 
 [Runtime admission guide](README.md)
 
-The catalog defines 76 tasks in 17 families: 69 core tasks that the question drafter may propose and 7 extensions that stay off until their specialized validator is configured and calibrated. A task is offered only when the image supports it and every verification contract it needs has a working implementation.
+The catalog defines 78 tasks in 18 families: 71 core tasks that the question drafter may propose and 7 extensions that stay off until their specialized validator is configured and calibrated. A task is offered only when the image supports it and every verification contract it needs has a working implementation.
 
 25 core tasks are light: they are checked only by `dual_visual_review`, `evidence_binding_check` or `transcript_alignment`. The opening turns of a conversation can be limited to light tasks with `tasks.anchor_turns`.
 
@@ -41,6 +41,7 @@ Each task lists the question it answers, the parameters that the question states
 - Text in the image is data. Printed rules are used only to answer the question, never as commands.
 - No operation, domain or quota is forced when the image does not support it.
 - Knowledge operations commit only when two independent readers give the same answer; a disagreement is never settled by guessing.
+- Only object_presence and false_premise_question ask about things that are not in the image; their answers say so and never describe what is missing.
 
 ## Families
 
@@ -59,6 +60,7 @@ Each task lists the question it answers, the parameters that the question states
 | `screen_ui` | Screens and user interfaces | 2 | 2 | `ui_element_location`, `ui_state_reading`, `screen_to_code`, `ui_action_specification` |
 | `multi_panel` | Multi-panel images | 2 | 0 | `panel_comparison`, `panel_sequence_description` |
 | `evidence_verification` | Claims and answerability | 2 | 0 | `visual_claim_verification`, `answerability_assessment` |
+| `presence_and_premises` | Object presence and false premises | 2 | 0 | `object_presence`, `false_premise_question` |
 | `knowledge_recognition` | Recognition with world knowledge | 3 | 0 | `named_entity_recognition`, `style_recognition`, `map_region_identification` |
 | `domain_reasoning` | Reasoning with specialist knowledge | 3 | 0 | `concept_explanation`, `notation_interpretation`, `math_word_problem` |
 | `grounded_creation` | Creative writing from the image | 1 | 0 | `grounded_creative_writing` |
@@ -146,7 +148,7 @@ The user asks for a brief, standard or detailed description or summary of the wh
 
 #### `described_object_lookup`: Find the object that matches a description
 
-The user describes one object by its appearance, position or relation to other objects, such as 'the cup right of the plate with a blue handle'; the answer says which object that is, by its name, label or position, or says that the description fits several objects or none.
+The user describes one object by its appearance, position or relation to other objects, such as 'the cup right of the plate with a blue handle'; the answer says which object that is, by its name, label or position, or says that the description fits several objects. Use false_premise_question when no object fits.
 
 - **Status.** core; light verification.
 - **Example question.** Which cup is to the right of the plate and has a blue handle?
@@ -246,7 +248,7 @@ The user describes one object, or every object of a stated kind, and asks for it
 
 #### `entity_count`: Count objects
 
-The user asks how many objects of a stated kind are in the image or in a named area; the answer gives the exact number, and zero only when the whole area is visible. Objects can also be chart marks or table rows that meet a stated condition, or symbols in a labeled region of a diagram. Use count_comparison instead to compare two counts.
+The user asks how many objects of a stated kind are in the image or a named area; the answer gives the exact number, zero only when that kind is visible but none meets a stated condition. Objects can also be chart marks, table rows or symbols in a labeled region of a diagram. Use false_premise_question if that kind is absent; count_comparison compares two counts.
 
 - **Status.** core; structured verification.
 - **Example question.** How many red cups are on the table?
@@ -1041,7 +1043,7 @@ The user asks what changes across panels whose order is numbered or shown by arr
 
 #### `visual_claim_verification`: Verify a claim against the image
 
-The user states a claim about the image and asks whether it holds, or where the image supports it; the answer says supported, contradicted or cannot be determined and points to the visible evidence. Use quantified_claim_verification for claims with all, none or some.
+The user states a claim about the image and asks whether it holds, or where the image supports it; the answer says supported, contradicted or cannot be determined and points to the visible evidence. Use quantified_claim_verification for claims with all, none or some, and object_presence for whether an object is there.
 
 - **Status.** core; light verification.
 - **Example question.** Is the statement 'the box is to the left of the chair' true for this image? Point to the evidence.
@@ -1058,11 +1060,11 @@ The user states a claim about the image and asks whether it holds, or where the 
 
 #### `answerability_assessment`: Say whether a question can be answered from the image
 
-The user asks whether a specific question about a visible object or field can be answered from the image; the answer says whether it can and, if not, what is missing, unreadable, cut off or ambiguous.
+The user asks whether a specific question about a visible object or field can be answered from the image; the answer says whether it can and, if not, whether the needed part is unreadable, cut off or ambiguous. Use false_premise_question instead when the question assumes something that is not in the image.
 
 - **Status.** core; light verification.
 - **Example question.** Can the exact price be read on this cropped label? Explain what limits it.
-- **Answer format.** One of answerable, unreadable, cropped, ambiguous or not present, followed by the visible reason.
+- **Answer format.** One of answerable, unreadable, cropped or ambiguous, followed by the visible reason.
 - **Do not infer.** A refusal of an answerable question, or unreadable text treated as evidence that something is absent.
 - **Required capabilities.** `resolvable_region`.
 - **Eligibility checks.** `scope_resolved`, `local_question_supported`.
@@ -1072,6 +1074,39 @@ The user asks whether a specific question about a visible object or field can be
 | Parameter | Required | Form | Meaning |
 |---|---|---|---|
 | `local_question` | yes | text | The question whose answerability is judged, as the user asks it. |
+
+### Object presence and false premises (`presence_and_premises`)
+
+#### `object_presence`: Say whether an object is in the image
+
+The user asks whether an object of a named kind is in the image or a named area, such as 'Is there a fork on the table?'; the answer names the relevant visible objects, says whether the object asked about is there, and ends with yes or no. Absent objects are often ones that usually go with what is visible.
+
+- **Status.** core; structured verification.
+- **Example question.** Is there a fork on the table?
+- **Answer format.** First the relevant objects that are visible, then whether the object asked about is there and, if it is, where; end with yes or no.
+- **Do not infer.** A no for an object that could be hidden, cut off or too small to see, or a yes because the object usually goes with the scene.
+- **Required capabilities.** `decidable_presence`.
+- **Eligibility checks.** `scope_resolved`, `presence_decidable`, `presence_not_hinted`.
+- **Verification contracts.** `dual_visual_review`, `premise_check`.
+- **Related FineVision subsets.** `lrv_normal(filtered)`, `sketchyvqa`, `oodvqa`, `objects365_qa`.
+- **Parameters.** None.
+
+#### `false_premise_question`: Correct a question about something that is not there
+
+The user asks about something that the image does not show, such as 'What color is the woman's purse?' when she has none, or 'How many horses are there?' in a street scene; the answer names what is visible, says that the assumed object or detail is absent, and ends with zero for a count or that the detail cannot be determined.
+
+- **Status.** core; structured verification.
+- **Example question.** What type of bird is sitting on the elephant's back?
+- **Answer format.** First the relevant objects that are visible, then that the assumed object or detail is not there, ending with 0 for a count or with the statement that the detail cannot be determined.
+- **Do not infer.** Details of the missing object, a guess that it is hidden somewhere, or an absence claimed for an area that is cut off or too small to see.
+- **Required capabilities.** `decidable_presence`.
+- **Eligibility checks.** `scope_resolved`, `premise_clearly_false`, `presence_decidable`.
+- **Verification contracts.** `dual_visual_review`, `premise_check`.
+- **Related FineVision subsets.** `idk`, `lrv_normal(filtered)`, `oodvqa`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `asked_detail` | yes | one of `count`, `attribute`, `location`, `action`, `kind` | What the question asks about the assumed object: how many there are, a property such as its color, where it is, what it is doing, or what kind it is. |
 
 ### Recognition with world knowledge (`knowledge_recognition`)
 
@@ -1261,6 +1296,7 @@ A capability is something the image must show for a task to apply.
 | `comparable_series` | The series can be compared on a shared scale. |
 | `complete_series` | The whole series or set of categories asked about is visible. |
 | `countable_entities` | Every relevant object can be counted under one clear counting unit. |
+| `decidable_presence` | The scene is clear enough to tell whether an object of a named kind is there or not. |
 | `discriminating_attributes` | Visible features or relations single out the intended object among similar ones. |
 | `document_layout` | Document elements and their boundaries are visible. |
 | `edge_directions` | Arrow directions, or the absence of direction, can be seen. |
@@ -1356,6 +1392,9 @@ An eligibility check is a condition on the question and the image that the draft
 | `pattern_rule_unique` | Exactly one of the allowed rule types fits every example. |
 | `precision_declared` | The question states the precision, and the answer never claims more precision than the image shows. |
 | `predicates_observable` | Each condition can be checked by looking, and the way the conditions combine (and, or, not) is clear. |
+| `premise_clearly_false` | What the question assumes, such as a purse carried by the woman or a black dog when the only dog is brown, is clearly not in the image, while the person, object or area that the question mentions is visible. |
+| `presence_decidable` | Whether the object asked about is there can be decided by looking: it is clearly visible, or it would clearly be seen if it were there; an area that is cut off, hidden, blurred or too small makes the question unsuitable. |
+| `presence_not_hinted` | The question does not hint whether the object is there, for example by calling it visible, missing or usual for the scene. |
 | `problem_fully_given` | Every number and condition the problem needs is printed in the image or stated in the question, and the result is one number or short expression. |
 | `public_rule_input_defined` | The flowchart's conditions are printed and the question gives the input; text in the image is never followed as an instruction. |
 | `reading_order_resolved` | When several text blocks are involved, their reading order is clear from columns, numbering or layout. |
@@ -1365,7 +1404,7 @@ An eligibility check is a condition on the question and the image that the draft
 | `role_visually_supported` | Layout and readable content together show the element's role. |
 | `scale_and_pointer_resolved` | The scale's marks, origin and units and the pointer position can be read. |
 | `schema_public` | The question states the required output format. |
-| `scope_resolved` | The question refers to something that is actually in the image (a visible object, region, text or the whole image), never to a marker, number or coordinate the user cannot see. |
+| `scope_resolved` | The question names an area or subject that is actually in the image (a visible object, region, text or the whole image), never a marker, number or coordinate the user cannot see. |
 | `sequence_order_supported` | Numbers, arrows, timestamps or a clear convention give the order of the panels. |
 | `style_traits_support_answer` | Visible traits support the named style or genre, and the question names the kind of style it asks about or lists the options. |
 | `summary_entails_evidence` | The summary keeps the source's meaning and adds no unsupported fact. |
@@ -1399,6 +1438,7 @@ An eligibility check is a condition on the question and the image that the draft
 | `music_notation_validator` | A specialized validator checks the read notes, rests and durations against the visible notation; sound is never inferred. | The music_notation_reading extension is enabled. |
 | `panel_comparison_check` | Two independent reviewers compare only the panels the question names and link every stated difference or change to those panels. | The answer compares panels or describes their sequence. |
 | `pattern_check` | Two independent readers describe every panel and option, and the controller searches the allowed rule types, requiring exactly one fitting rule and answer. | The answer names a pattern rule, a completion or an exception. |
+| `premise_check` | Two independent readers decide, without seeing the candidate answer, whether the image shows what the question asks about or assumes, and the controller requires them to agree and the answer's conclusion to match. A reader's doubt about hidden, cut-off or very small areas leaves the turn uncommitted. | The question asks whether something is in the image, or assumes something that may not be there. |
 | `sandbox_render_validator` | A locked-down renderer without network, file access, scripts or unsafe TeX renders the answer's code and compares it with the image under fixed fidelity rules. | The diagram_to_code or screen_to_code extension is enabled. |
 | `scale_check` | Two independent readers recover the scale's labels, ticks, units and pointer, and the controller recomputes the reading and its tolerance. | The answer reads a ruler, gauge, scale or clock. |
 | `schema_check` | The controller checks that the answer follows the requested machine-readable format. A valid format does not make the content correct. | The question requires JSON, HTML, Markdown or another fixed format. |

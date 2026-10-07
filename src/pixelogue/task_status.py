@@ -19,6 +19,7 @@ from pixelogue.graph_verifiers import GRAPH_TASKS
 from pixelogue.io import read_jsonl, write_json
 from pixelogue.knowledge_verifiers import CONSENSUS_TASKS
 from pixelogue.pattern_verifiers import PATTERN_TASKS
+from pixelogue.premise_verifiers import PREMISE_TASKS
 from pixelogue.quantitative_verifiers import QUANTITATIVE_TASKS
 from pixelogue.table_verifiers import TABLE_TASKS
 from pixelogue.task_registry import registration
@@ -62,6 +63,8 @@ TASK_BOUNDARY_TESTS = {
     "chart_value_arithmetic": "test_arithmetic_accepts_exact_rounded_and_in_range_results",
     "object_box_grounding": "test_answer_boxes_must_match_both_blind_readers",
     "named_entity_recognition": "test_consensus_needs_both_blind_readers_to_match_the_answer",
+    "object_presence": "test_presence_answers_must_match_both_blind_readers",
+    "false_premise_question": "test_a_false_premise_must_be_absent_for_both_readers",
     "style_recognition": "test_consensus_needs_both_blind_readers_to_match_the_answer",
     "map_region_identification": "test_consensus_needs_both_blind_readers_to_match_the_answer",
     "notation_interpretation": "test_consensus_needs_both_blind_readers_to_match_the_answer",
@@ -102,6 +105,7 @@ def _test_module(task_id: str) -> str:
         (PATTERN_TASKS, "tests/test_pattern_verifiers.py"),
         (CONSENSUS_TASKS, "tests/test_knowledge_verifiers.py"),
         (BOX_TASKS, "tests/test_box_verifier.py"),
+        (PREMISE_TASKS, "tests/test_premise_verifiers.py"),
     ):
         if task_id in tasks:
             return path

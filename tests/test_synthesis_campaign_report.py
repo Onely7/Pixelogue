@@ -56,8 +56,8 @@ def test_partial_run_keeps_unprocessed_images_and_all_catalog_tasks_visible() ->
     assert not report["complete"]
     assert report["unprocessed_images"] == 1
     assert report["automatic_candidate_rate"] is None
-    assert report["catalog_tasks"] == len(report["tasks"]) == 76
-    assert report["core_catalog_tasks"] == 69
+    assert report["catalog_tasks"] == len(report["tasks"]) == 78
+    assert report["core_catalog_tasks"] == 71
     assert all(task["examples"] == [] for task in report["tasks"])
 
 

@@ -105,6 +105,11 @@ families:
     task_ids:
     - visual_claim_verification
     - answerability_assessment
+  presence_and_premises:
+    label: Object presence and false premises
+    task_ids:
+    - object_presence
+    - false_premise_question
   knowledge_recognition:
     label: Recognition with world knowledge
     task_ids:
@@ -135,6 +140,7 @@ capabilities:
   multiple_facts: At least two separate visible facts are available in the requested area.
   resolvable_region: The area can be described in words without inventing a marker or coordinate.
   multiple_entities: At least two relevant objects can be told apart.
+  decidable_presence: The scene is clear enough to tell whether an object of a named kind is there or not.
   discriminating_attributes: Visible features or relations single out the intended object among similar ones.
   spatial_layout: The positions needed for the relation can be read in the image.
   comparable_attributes: The same visible property can be seen on every compared object.
@@ -191,8 +197,8 @@ capabilities:
     A math problem and the numbers it needs are printed in the image or stated in the question.
 eligibility_checks:
   scope_resolved: >-
-    The question refers to something that is actually in the image (a visible object, region, text or
-    the whole image), never to a marker, number or coordinate the user cannot see.
+    The question names an area or subject that is actually in the image (a visible object, region, text
+    or the whole image), never a marker, number or coordinate the user cannot see.
   visible_category_supported: >-
     The visible features justify the category named in the answer; no guessed identities and no finer
     category than the appearance supports.
@@ -329,6 +335,17 @@ eligibility_checks:
     standard textbook knowledge rather than speculation.
   notation_standard_and_complete: >-
     The notation is standard for its field and every mark the answer depends on is visible.
+  premise_clearly_false: >-
+    What the question assumes, such as a purse carried by the woman or a black dog when the only dog is
+    brown, is clearly not in the image, while the person, object or area that the question mentions is
+    visible.
+  presence_decidable: >-
+    Whether the object asked about is there can be decided by looking: it is clearly visible, or it would
+    clearly be seen if it were there; an area that is cut off, hidden, blurred or too small makes the
+    question unsuitable.
+  presence_not_hinted: >-
+    The question does not hint whether the object is there, for example by calling it visible, missing or
+    usual for the scene.
   problem_fully_given: >-
     Every number and condition the problem needs is printed in the image or stated in the question, and
     the result is one number or short expression.
@@ -387,6 +404,14 @@ verification_contracts:
       Two independent readers recover the axes, legend, scale and the relevant marks, and the controller
       checks the answer and its precision against them.
     applies_when: The answer depends on a chart's or map's encoding or on plotted values.
+  premise_check:
+    contract: >-
+      Two independent readers decide, without seeing the candidate answer, whether the image shows what
+      the question asks about or assumes, and the controller requires them to agree and the answer's
+      conclusion to match. A reader's doubt about hidden, cut-off or very small areas leaves the turn
+      uncommitted.
+    applies_when: >-
+      The question asks whether something is in the image, or assumes something that may not be there.
   scale_check:
     contract: >-
       Two independent readers recover the scale's labels, ticks, units and pointer, and the controller
@@ -505,6 +530,8 @@ global_admission_rules:
 - No operation, domain or quota is forced when the image does not support it.
 - Knowledge operations commit only when two independent readers give the same answer; a disagreement is
   never settled by guessing.
+- Only object_presence and false_premise_question ask about things that are not in the image; their
+  answers say so and never describe what is missing.
 tasks:
 - id: object_identification
   family: visual_description
@@ -669,7 +696,8 @@ tasks:
   definition: >-
     The user describes one object by its appearance, position or relation to other objects, such as
     'the cup right of the plate with a blue handle'; the answer says which object that is, by its name,
-    label or position, or says that the description fits several objects or none.
+    label or position, or says that the description fits several objects. Use false_premise_question
+    when no object fits.
   required_capabilities:
   - multiple_entities
   - discriminating_attributes
@@ -859,10 +887,10 @@ tasks:
   label: Count objects
   status: core
   definition: >-
-    The user asks how many objects of a stated kind are in the image or in a named area; the answer gives
-    the exact number, and zero only when the whole area is visible. Objects can also be chart marks or
-    table rows that meet a stated condition, or symbols in a labeled region of a diagram. Use
-    count_comparison instead to compare two counts.
+    The user asks how many objects of a stated kind are in the image or a named area; the answer gives
+    the exact number, zero only when that kind is visible but none meets a stated condition. Objects can
+    also be chart marks, table rows or symbols in a labeled region of a diagram. Use
+    false_premise_question if that kind is absent; count_comparison compares two counts.
   required_capabilities:
   - closed_scope
   - countable_entities
@@ -2549,7 +2577,8 @@ tasks:
   definition: >-
     The user states a claim about the image and asks whether it holds, or where the image supports it;
     the answer says supported, contradicted or cannot be determined and points to the visible evidence.
-    Use quantified_claim_verification for claims with all, none or some.
+    Use quantified_claim_verification for claims with all, none or some, and object_presence for whether
+    an object is there.
   required_capabilities:
   - resolvable_region
   eligibility_checks:
@@ -2587,7 +2616,9 @@ tasks:
   status: core
   definition: >-
     The user asks whether a specific question about a visible object or field can be answered from the
-    image; the answer says whether it can and, if not, what is missing, unreadable, cut off or ambiguous.
+    image; the answer says whether it can and, if not, whether the needed part is unreadable, cut off or
+    ambiguous. Use false_premise_question instead when the question assumes something that is not in the
+    image.
   required_capabilities:
   - resolvable_region
   eligibility_checks:
@@ -2604,11 +2635,84 @@ tasks:
   do_not_infer: >-
     A refusal of an answerable question, or unreadable text treated as evidence that something is absent.
   answer_format: >-
-    One of answerable, unreadable, cropped, ambiguous or not present, followed by the visible reason.
+    One of answerable, unreadable, cropped or ambiguous, followed by the visible reason.
   related_finevision_subsets:
   - idk
   - vizwiz(mathv360k)
   - screenqa
+- id: object_presence
+  family: presence_and_premises
+  label: Say whether an object is in the image
+  status: core
+  definition: >-
+    The user asks whether an object of a named kind is in the image or a named area, such as 'Is there a
+    fork on the table?'; the answer names the relevant visible objects, says whether the object asked
+    about is there, and ends with yes or no. Absent objects are often ones that usually go with what is
+    visible.
+  required_capabilities:
+  - decidable_presence
+  eligibility_checks:
+  - scope_resolved
+  - presence_decidable
+  - presence_not_hinted
+  verification_contracts:
+  - dual_visual_review
+  - premise_check
+  parameters: {}
+  answer_format: >-
+    First the relevant objects that are visible, then whether the object asked about is there and, if it
+    is, where; end with yes or no.
+  example_question: Is there a fork on the table?
+  do_not_infer: >-
+    A no for an object that could be hidden, cut off or too small to see, or a yes because the object
+    usually goes with the scene.
+  related_finevision_subsets:
+  - lrv_normal(filtered)
+  - sketchyvqa
+  - oodvqa
+  - objects365_qa
+- id: false_premise_question
+  family: presence_and_premises
+  label: Correct a question about something that is not there
+  status: core
+  definition: >-
+    The user asks about something that the image does not show, such as 'What color is the woman's
+    purse?' when she has none, or 'How many horses are there?' in a street scene; the answer names what
+    is visible, says that the assumed object or detail is absent, and ends with zero for a count or that
+    the detail cannot be determined.
+  required_capabilities:
+  - decidable_presence
+  eligibility_checks:
+  - scope_resolved
+  - premise_clearly_false
+  - presence_decidable
+  verification_contracts:
+  - dual_visual_review
+  - premise_check
+  parameters:
+    asked_detail:
+      kind: choice
+      required: true
+      values:
+      - count
+      - attribute
+      - location
+      - action
+      - kind
+      description: >-
+        What the question asks about the assumed object: how many there are, a property such as its
+        color, where it is, what it is doing, or what kind it is.
+  answer_format: >-
+    First the relevant objects that are visible, then that the assumed object or detail is not there,
+    ending with 0 for a count or with the statement that the detail cannot be determined.
+  example_question: What type of bird is sitting on the elephant's back?
+  do_not_infer: >-
+    Details of the missing object, a guess that it is hidden somewhere, or an absence claimed for an area
+    that is cut off or too small to see.
+  related_finevision_subsets:
+  - idk
+  - lrv_normal(filtered)
+  - oodvqa
 - id: named_entity_recognition
   family: knowledge_recognition
   label: Name a well-known landmark or artwork

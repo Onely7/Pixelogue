@@ -61,10 +61,10 @@ CHECK_PARAMETERS = {
 def test_catalog_counts_cover_the_specification():
     catalog = task_catalog()
     assert catalog.version == "8.0"
-    assert len(catalog.tasks) == 76
-    assert sum(task.status == "core" for task in catalog.tasks) == 69
+    assert len(catalog.tasks) == 78
+    assert sum(task.status == "core" for task in catalog.tasks) == 71
     assert sum(task.status == "extension" for task in catalog.tasks) == 7
-    assert len(catalog.families) == 17
+    assert len(catalog.families) == 18
 
 
 @pytest.mark.parametrize(
@@ -152,7 +152,7 @@ def test_checks_that_need_a_stated_choice_have_an_explicit_required_parameter():
 def test_compile_exposes_admission_and_versioned_run_identity(tmp_path):
     config = load_config(Path("configs/pilot.yaml"))
     compiled = compile_configuration(config)
-    assert len(compiled["task_catalog"]["tasks"]) == 76
+    assert len(compiled["task_catalog"]["tasks"]) == 78
     assert not compiled["task_admission"]["screen_to_code"]["available"]
     assert all(
         entry["available"]

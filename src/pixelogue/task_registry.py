@@ -116,6 +116,11 @@ REGISTRATIONS = {
             supported_tasks=frozenset({"object_box_grounding"}),
         ),
         ValidatorRegistration(
+            "premise_check",
+            "1",
+            supported_tasks=frozenset({"object_presence", "false_premise_question"}),
+        ),
+        ValidatorRegistration(
             "scale_check",
             "1",
             supported_tasks=frozenset({"measurement_reading"}),

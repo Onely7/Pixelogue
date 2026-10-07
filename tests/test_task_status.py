@@ -20,9 +20,9 @@ from pixelogue.task_status import task_status_report
 def test_status_covers_all_tasks_without_claiming_unrun_cpu_checks(tmp_path: Path) -> None:
     config = load_config(Path("configs/specialist-pilot.yaml"))
     untested = task_status_report(config)
-    assert untested["summary"]["tasks"] == 76
-    assert untested["summary"]["implemented"] == 76
-    assert untested["summary"]["available"] == 69
+    assert untested["summary"]["tasks"] == 78
+    assert untested["summary"]["implemented"] == 78
+    assert untested["summary"]["available"] == 71
     assert all(item["cpu_contract_status"] == "not_recorded" for item in untested["tasks"])
     junit = tmp_path / "junit.xml"
     junit.write_text(
