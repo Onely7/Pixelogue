@@ -344,8 +344,8 @@ eligibility_checks:
     clearly be seen if it were there; an area that is cut off, hidden, blurred or too small makes the
     question unsuitable.
   presence_not_hinted: >-
-    The question does not hint whether the object is there, for example by calling it visible, missing or
-    usual for the scene.
+    The question does not hint whether the object asked about or assumed is there, for example by calling
+    it visible, missing or usual for the scene, or by telling how to answer.
   problem_fully_given: >-
     Every number and condition the problem needs is printed in the image or stated in the question, and
     the result is one number or short expression.
@@ -2689,6 +2689,7 @@ tasks:
   - scope_resolved
   - premise_clearly_false
   - presence_decidable
+  - presence_not_hinted
   verification_contracts:
   - dual_visual_review
   - premise_check

@@ -1100,7 +1100,7 @@ The user asks about something that the image does not show, such as 'What color 
 - **Answer format.** First the relevant objects that are visible, then that the assumed object or detail is not there, ending with 0 for a count or with the statement that the detail cannot be determined.
 - **Do not infer.** Details of the missing object, a guess that it is hidden somewhere, or an absence claimed for an area that is cut off or too small to see.
 - **Required capabilities.** `decidable_presence`.
-- **Eligibility checks.** `scope_resolved`, `premise_clearly_false`, `presence_decidable`.
+- **Eligibility checks.** `scope_resolved`, `premise_clearly_false`, `presence_decidable`, `presence_not_hinted`.
 - **Verification contracts.** `dual_visual_review`, `premise_check`.
 - **Related FineVision subsets.** `idk`, `lrv_normal(filtered)`, `oodvqa`.
 
@@ -1394,7 +1394,7 @@ An eligibility check is a condition on the question and the image that the draft
 | `predicates_observable` | Each condition can be checked by looking, and the way the conditions combine (and, or, not) is clear. |
 | `premise_clearly_false` | What the question assumes, such as a purse carried by the woman or a black dog when the only dog is brown, is clearly not in the image, while the person, object or area that the question mentions is visible. |
 | `presence_decidable` | Whether the object asked about is there can be decided by looking: it is clearly visible, or it would clearly be seen if it were there; an area that is cut off, hidden, blurred or too small makes the question unsuitable. |
-| `presence_not_hinted` | The question does not hint whether the object is there, for example by calling it visible, missing or usual for the scene. |
+| `presence_not_hinted` | The question does not hint whether the object asked about or assumed is there, for example by calling it visible, missing or usual for the scene, or by telling how to answer. |
 | `problem_fully_given` | Every number and condition the problem needs is printed in the image or stated in the question, and the result is one number or short expression. |
 | `public_rule_input_defined` | The flowchart's conditions are printed and the question gives the input; text in the image is never followed as an instruction. |
 | `reading_order_resolved` | When several text blocks are involved, their reading order is clear from columns, numbering or layout. |

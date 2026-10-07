@@ -8,7 +8,7 @@ conclusion. A turn commits only when both readers agree with each other and with
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field
 
@@ -25,9 +25,13 @@ class PremiseSource(StrictModel):
     """One reader's answer-blind decision on whether the asked or assumed object is present.
 
     The reader lists what it sees and names the object before deciding, and decides coverage last.
+    The visible objects are a list of short names: asked for one text field, a reader started a
+    JSON list inside the string and repeated it until the engine stopped.
     """
 
-    visible_objects: str = Field(max_length=400)
+    visible_objects: Annotated[
+        tuple[Annotated[str, Field(min_length=1, max_length=80)], ...], Field(max_length=16)
+    ]
     premise: str = Field(max_length=200)
     status: PresenceStatus
     coverage: Literal["MET", "UNKNOWN"]

@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 import pytest
 
 from pixelogue.catalog import task_catalog
 from pixelogue.contracts import GateVerdict, InstructionCandidate
+from pixelogue.drafting import (
+    DraftParameter,
+    FactKey,
+    QuestionDraft,
+    draft_task_contract,
+    plan_mismatch,
+    presence_draft_plan,
+)
 from pixelogue.premise_verifiers import (
     PREMISE_TASKS,
     PremiseAnswer,
     PremiseSource,
     verify_premise,
 )
+from pixelogue.task_evidence import ImageRegion
 from pixelogue.task_verification import verify_operation
 
 ABSENT = (
@@ -24,7 +35,7 @@ PRESENT = "The kitchen has a sink and a stove. Yes, there is a refrigerator on t
 def _reader(status: str, coverage: str = "MET") -> PremiseSource:
     return PremiseSource.model_validate(
         {
-            "visible_objects": "a person, a baseball bat, grass",
+            "visible_objects": ("a person", "a baseball bat", "grass"),
             "premise": "a refrigerator",
             "status": status,
             "coverage": coverage,
@@ -160,3 +171,49 @@ def test_presence_readers_never_see_the_candidate_answer() -> None:
         ("premise_answer", 1),
     ]
     assert [(check.name, check.verdict) for check in result] == [("premise_check", GateVerdict.MET)]
+
+
+def test_presence_draft_plans_are_seeded_and_balanced() -> None:
+    def plan(task_id: str, conversation: int) -> dict[str, str] | None:
+        return presence_draft_plan(
+            task_id, seed=7, conversation_id=f"c{conversation}", turn_index=1, call_index=0
+        )
+
+    assert plan("object_presence", 3) == plan("object_presence", 3)
+    assert plan("entity_count", 3) is None
+    presence = [plan("object_presence", index) for index in range(400)]
+    answers = Counter(item["answer"] for item in presence if item)
+    assert 160 <= answers["yes"] <= 240
+    kinds = Counter(item["absent_kind"] for item in presence if item and item["answer"] == "no")
+    assert set(kinds) == {"co_occurring", "common", "unrelated"}
+    assert kinds["co_occurring"] > kinds["common"] and kinds["co_occurring"] > kinds["unrelated"]
+    details = Counter(
+        item["asked_detail"]
+        for index in range(400)
+        if (item := plan("false_premise_question", index))
+    )
+    assert set(details) == {"count", "attribute", "location", "action", "kind"}
+
+
+def test_a_false_premise_draft_must_follow_its_planned_detail() -> None:
+    draft = QuestionDraft(
+        task_id="false_premise_question",
+        question="How many horses are next to the car?",
+        target="the car",
+        public_parameters=(DraftParameter(name="asked_detail", value="count"),),
+        scope_region=ImageRegion(left=0, top=0, right=1, bottom=1),
+        target_region=None,
+        fact_key=FactKey(subject="horses", dimension="count"),
+    )
+    assert not plan_mismatch(draft, {"asked_detail": "count", "instruction": "..."})
+    assert plan_mismatch(draft, {"asked_detail": "attribute", "instruction": "..."})
+    assert not plan_mismatch(draft, {"answer": "no", "instruction": "..."})
+    assert not plan_mismatch(draft, None)
+
+
+def test_the_drafter_never_sees_a_presence_answer_form() -> None:
+    tasks = {task.id: task for task in task_catalog().tasks}
+    for task_id in ("object_presence", "false_premise_question"):
+        assert tasks[task_id].answer_format is not None
+        assert draft_task_contract(tasks[task_id])["answer_format"] is None
+    assert draft_task_contract(tasks["text_field_extraction"])["answer_format"] is not None

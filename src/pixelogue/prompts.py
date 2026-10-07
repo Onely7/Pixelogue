@@ -175,8 +175,8 @@ gives no final answer, is cut off before it, or gives two different final answer
 whether the answer is correct; a wrong answer is parsed like a right one.""",
     "premise_source": """Read only the image, public question, history and expected_operation, without
 any proposed answer. The question asks whether something is in the image, or asks about something
-that it assumes is there. First list in visible_objects the relevant objects you can see in the area
-the question is about. Then write in premise, in a few words, what the question asks about or
+that it assumes is there. First list in visible_objects, as short names, the relevant objects you can
+see in the area the question is about. Then write in premise, in a few words, what the question asks about or
 assumes, such as 'a refrigerator', 'a purse carried by the woman' or 'a black dog'. Set status
 present when the image shows it and absent when it clearly does not; an object that differs from the
 description, such as a brown dog for 'a black dog', makes the premise absent. Set coverage MET when
@@ -393,7 +393,8 @@ that is not in the image: the answer must describe the visible objects truthfull
 whether the asked or assumed object is there, never invent details of a missing object, and end with
 its conclusion (yes or no, 0 for a count, or that the detail cannot be determined). An absence that
 could be due to cropping, occlusion or small size is UNKNOWN; a false-premise question whose
-assumption actually holds is NOT_MET.
+assumption actually holds, or a question that hints whether the object is there or tells how to
+answer, is NOT_MET.
 Return the schema only.""",
     "rubric_item": """Evaluate only the supplied criterion against the allowed inputs. Return MET,
 NOT_MET, or UNKNOWN. Every schema field is required: emit the verdict and one short non-empty reason,
@@ -491,15 +492,13 @@ concept_explanation ask about a labeled scientific or technical diagram. For gro
 state the form and, if it matters, the length. For object_box_grounding describe the objects without
 coordinates. For visible_text_translation name the language and the exact text to translate. For
 chart_value_arithmetic name each value by its series and category and state the calculation.
-For object_presence ask whether an object of a named kind is in the image or in a named visible
-area, without hinting at the answer. About half the time ask about an absent object: prefer one that
-usually appears with the visible objects (a fork beside a plate, a saddle on a horse, a towel in a
-bathroom), sometimes a very common object (a person, a car), otherwise an unrelated one; otherwise
-ask about a clearly visible object. For false_premise_question ask, as if it were true, about the
-count, a property, the location, the action or the kind of something that is clearly not in the
-image: an absent object, or a visible object with a property, relation or action that it does not
-have (a black dog when the only dog is brown); mention a visible person, object or area, and set
-asked_detail. For both, target is the visible area or subject, never the object asked about.
+When an allowed task has draft_plan, follow it exactly. For object_presence ask whether an object
+of a named kind is in the image or in a named visible area. For false_premise_question ask, as if it
+were true, about something that is clearly not in the image: an absent object, or a visible object
+with a property, relation or action that it does not have (a black dog when the only dog is brown);
+mention a visible person, object or area, and set asked_detail. For both write one short natural
+question that never says whether the object is there or how to answer; target is the visible area or
+subject, never the object asked about.
 When answer_format is present, make the question request that form of answer. Never print controller IDs, coordinates, private parameters or the words
 "selected region" in a question. Return drafts=[] and a reason when no allowed operation is
 clearly supported."""

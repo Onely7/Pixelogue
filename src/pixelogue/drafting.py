@@ -8,6 +8,7 @@ question; no evidence verdict, private label or answer is created here.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
 from collections.abc import Collection
@@ -32,6 +33,32 @@ DraftValue = Annotated[str, Field(min_length=1, max_length=512)]
 # The whole requested text unit must fit the bound region, so the drafted scope is used.
 TEXT_UNIT_TASKS = frozenset({"text_transcription"})
 _ARTICLES = frozenset({"a", "an", "the"})
+# Presence questions must not reveal their answer, so the drafter never sees their answer form.
+PRESENCE_DRAFT_TASKS = frozenset({"object_presence", "false_premise_question"})
+# Absent objects follow the random, popular and adversarial negatives of POPE; co-occurring
+# objects, the hardest kind, are chosen twice as often as each of the other two.
+ABSENT_OBJECT_KINDS = (
+    (
+        "co_occurring",
+        "an object that is not in the image but usually appears together with the visible "
+        "objects, such as a fork beside a plate or a saddle on a horse",
+    ),
+    (
+        "co_occurring",
+        "an object that is not in the image but usually appears together with the visible "
+        "objects, such as a fork beside a plate or a saddle on a horse",
+    ),
+    ("common", "a very common object that is not in the image, such as a person, a car or a chair"),
+    ("unrelated", "an object that is not in the image and has nothing to do with the scene"),
+)
+ASKED_DETAILS = ("count", "attribute", "location", "action", "kind")
+_DETAIL_WORDS = {
+    "count": "how many there are",
+    "attribute": "a property such as its color",
+    "location": "where it is",
+    "action": "what it is doing",
+    "kind": "what kind it is",
+}
 
 
 class DraftParameter(StrictModel):
@@ -111,8 +138,55 @@ def draft_task_contract(task: TaskDefinition) -> dict[str, Any]:
         "parameter_contract": parameter_contract(task),
         "required_parameter_names": list(required_parameter_names(task)),
         "bindable_parameter_names": list(bindable_parameter_names(task)),
-        "answer_format": task.answer_format,
+        "answer_format": None if task.id in PRESENCE_DRAFT_TASKS else task.answer_format,
     }
+
+
+def presence_draft_plan(
+    task_id: str, *, seed: int, conversation_id: str, turn_index: int, call_index: int
+) -> dict[str, str] | None:
+    """Choose, before drafting, what a presence or false-premise question asks about.
+
+    The choice is seeded by the run and the turn, so a run is reproducible, and it balances the
+    data: half of the presence questions name a visible object (answer yes) and half an absent
+    one of a stated kind, and false-premise questions rotate through the five asked details.
+
+    Returns:
+        ``answer``, ``absent_kind`` or ``asked_detail`` with the drafter's instruction, or
+        ``None`` for other operations.
+    """
+    if task_id not in PRESENCE_DRAFT_TASKS:
+        return None
+    digest = hashlib.sha256(
+        f"{seed}:{conversation_id}:{turn_index}:{call_index}:{task_id}".encode()
+    ).digest()
+    if task_id == "object_presence":
+        if digest[0] % 2 == 0:
+            return {
+                "answer": "yes",
+                "instruction": "Ask about an object that is clearly visible, so that the honest "
+                "answer is yes.",
+            }
+        kind, description = ABSENT_OBJECT_KINDS[digest[1] % len(ABSENT_OBJECT_KINDS)]
+        return {
+            "answer": "no",
+            "absent_kind": kind,
+            "instruction": f"Ask about {description}, so that the honest answer is no.",
+        }
+    detail = ASKED_DETAILS[digest[0] % len(ASKED_DETAILS)]
+    return {
+        "asked_detail": detail,
+        "instruction": f"Ask about {_DETAIL_WORDS[detail]} of something the image does not "
+        f"show, and set asked_detail to {detail}.",
+    }
+
+
+def plan_mismatch(draft: QuestionDraft, plan: dict[str, str] | None) -> bool:
+    """Report a false-premise draft that ignored the planned asked detail."""
+    if plan is None or "asked_detail" not in plan:
+        return False
+    values = {parameter.name: parameter.value for parameter in draft.public_parameters}
+    return values.get("asked_detail") != plan["asked_detail"]
 
 
 def _reject(reason: str, message: str) -> ExecutionError:

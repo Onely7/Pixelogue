@@ -35,6 +35,8 @@ from pixelogue.drafting import (
     QuestionDraftBatch,
     draft_task_contract,
     draft_to_candidate,
+    plan_mismatch,
+    presence_draft_plan,
 )
 from pixelogue.errors import ExecutionError
 from pixelogue.evaluation import (
@@ -668,6 +670,26 @@ class SynthesisCoordinator:
             for subject, _, dimension in [turn.instruction.request_key.partition("|")]
         ]
         offered = frozenset(route.task_ids)
+        plans = {
+            task_id: plan
+            for task_id in route.task_ids
+            if (
+                plan := presence_draft_plan(
+                    task_id,
+                    seed=self.config.seed,
+                    conversation_id=snapshot.conversation_id,
+                    turn_index=snapshot.turn_index,
+                    call_index=call_index,
+                )
+            )
+            is not None
+        }
+        allowed_tasks = []
+        for task_id in route.task_ids:
+            contract = draft_task_contract(self._draft_tasks[task_id])
+            if task_id in plans:
+                contract["draft_plan"] = plans[task_id]["instruction"]
+            allowed_tasks.append(contract)
 
         def validate_batch(batch: QuestionDraftBatch) -> None:
             reasons = []
@@ -696,10 +718,7 @@ class SynthesisCoordinator:
                     "target_language": target_language,
                     "turn_index": snapshot.turn_index,
                     "public_history": self._history(snapshot.public_history),
-                    "allowed_tasks": [
-                        draft_task_contract(self._draft_tasks[task_id])
-                        for task_id in route.task_ids
-                    ],
+                    "allowed_tasks": allowed_tasks,
                     "preferred_task_ids": list(route.task_ids),
                     "family_plan": {
                         "primary": route.primary_family,
@@ -737,6 +756,7 @@ class SynthesisCoordinator:
                 "turn_index": snapshot.turn_index,
                 "call_index": call_index,
                 "route": route.to_json(),
+                "draft_plans": plans,
                 "batch": batch.model_dump(mode="json"),
             },
         )
@@ -775,6 +795,27 @@ class SynthesisCoordinator:
                     "draft_index": draft_index,
                     "reason": error.reason,
                     "message": str(error),
+                },
+            )
+            return None
+        plan = presence_draft_plan(
+            candidate.task_id,
+            seed=self.config.seed,
+            conversation_id=conversation_id,
+            turn_index=turn_index,
+            call_index=call_index,
+        )
+        if plan_mismatch(draft, plan):
+            assert plan is not None
+            self.store.write_json_artifact(
+                "draft-rejections",
+                {
+                    "conversation_id": conversation_id,
+                    "turn_index": turn_index,
+                    "call_index": call_index,
+                    "draft_index": draft_index,
+                    "reason": "DRAFT_PLAN_MISMATCH",
+                    "message": f"asked_detail must be {plan['asked_detail']}",
                 },
             )
             return None
