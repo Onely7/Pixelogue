@@ -328,6 +328,25 @@ def test_region_decoder_cannot_open_a_region_at_the_far_edge():
         ImageRegion(left=1.0, top=0.05, right=1.0, bottom=0.95)
 
 
+def test_judges_write_the_reason_before_the_verdict():
+    """The decoder writes fields in schema order, so a judge's reason precedes its verdict."""
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="order")
+    try:
+        body = client._build_body(
+            "holistic_review",
+            {"image_views": []},
+            (),
+            RubricVerdict,
+            max_tokens=384,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    schema = body["response_format"]["json_schema"]["schema"]
+    assert list(schema["properties"]) == ["reason", "verdict"]
+
+
 def test_incomplete_document_decoder_cannot_certify_partial_source_facts():
     client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="doc")
     try:

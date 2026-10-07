@@ -308,7 +308,7 @@ def test_structured_retry_receives_bounded_correction_feedback(tmp_path: Path) -
         (
             "The previous response failed schema validation. Return one complete JSON object "
             "with every required field, unique array items, and a short non-empty reason."
-            " Required top-level fields: verdict, reason."
+            " Required top-level fields: reason, verdict."
         ),
     ]
 

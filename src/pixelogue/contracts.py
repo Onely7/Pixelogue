@@ -207,10 +207,14 @@ class TextPayload(StrictModel):
 
 
 class RubricVerdict(StrictModel):
-    """One model's output for a single applicable rubric criterion."""
+    """One model's output for a single applicable rubric criterion.
 
-    verdict: Literal["MET", "NOT_MET", "UNKNOWN"]
+    The reason comes first: constrained decoding writes fields in schema order, so the judge states
+    what it checked before it commits to a verdict.
+    """
+
     reason: Annotated[str, Field(min_length=1, max_length=REASON_MAX_LENGTH)]
+    verdict: Literal["MET", "NOT_MET", "UNKNOWN"]
 
 
 class RubricItem(StrictModel):

@@ -181,7 +181,7 @@ Before review, the controller rejects an answer that reproduces a private instru
 
 ### Step 7: review the answer as a whole
 
-Both judges make one blind `holistic_review` call each, concurrently, with the expected operation contract and the views described in Step 5. Each returns `MET`, `NOT_MET`, or `UNKNOWN` with a short concrete reason covering image facts, fulfillment of the request, consistency with history, target language, explicit formats, and safety. Empty text, private-instruction echoes, internal references, and repeated questions fail in the controller without a judge call.
+Both judges make one blind `holistic_review` call each, concurrently, with the expected operation contract and the views described in Step 5. Each returns one concrete reason of at most 25 words covering image facts, fulfillment of the request, consistency with history, target language, explicit formats, and safety, and then `MET`, `NOT_MET`, or `UNKNOWN`. The reason comes first in the schema because constrained decoding writes fields in that order: on 211 judge pairs that had split in a baseline run, a verdict written first left 175 still split or unknown and a reason written first 93, while the 33 answers the GPT reference rejected were accepted equally often (31 times) in both orders. Empty text, private-instruction echoes, internal references, and repeated questions fail in the controller without a judge call.
 
 Two `MET` votes pass and two `NOT_MET` votes fail. Every other pair is uncertain and allows at most one follow-up:
 
