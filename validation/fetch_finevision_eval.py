@@ -14,7 +14,9 @@ script reads the first row group of the first parquet shard, which keeps the ori
 bytes. It selects the lowest row whose first image already satisfies the Pixelogue ingest
 limits. When no row in that group qualifies, the first row's image is minimally derived
 (lossless PNG conversion, white padding to the minimum edge, or downscaling) and every step is
-recorded. Text-only subsets keep their first row without an image.
+recorded. Text-only subsets keep their first row without an image. Two subsets whose first row
+repeats another subset's picture skip that row, and the run fails if any two selected images
+still decode to the same pixels.
 
 Row texts and ratings are dataset annotations. They stay in the local output directory for
 task analysis and never become model inputs or committed files. The committed manifest holds
@@ -58,6 +60,9 @@ MAX_DECODED_PIXELS = 40_000_000
 MIN_SHORT_EDGE = 128
 EXTENSIONS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
 VALID_FROM = "2026-10-07T00:00:00Z"
+# Row 0 of these subsets shows the same picture as row 0 of clevr and ureader_kg_processed, so
+# the next eligible row keeps every evaluation image distinct.
+REPEATED_ROWS: dict[str, set[int]] = {"clevr_math": {0}, "ureader_qa_processed": {0}}
 DATASET_SPLIT = "finevision-185-eval-2026-10"
 RATING_COLUMNS = (
     "relevance_ratings",
@@ -655,6 +660,18 @@ def saved_record(destination: Path, number: int, subset: str) -> dict[str, Any] 
     return manifest_record(private)
 
 
+def repeated_images(destination: Path, records: Iterable[dict[str, Any]]) -> list[list[str]]:
+    """Group subsets whose evaluation images decode to identical pixels."""
+    by_pixels: dict[str, list[str]] = {}
+    for record in records:
+        if record["evaluation_image"] is None:
+            continue
+        with Image.open(destination / record["evaluation_image"]["file"]) as image:
+            pixels = f"{image.size}".encode() + image.convert("RGBA").tobytes()
+        by_pixels.setdefault(sha256(pixels), []).append(record["subset"])
+    return [sorted(subsets) for subsets in by_pixels.values() if len(subsets) > 1]
+
+
 def parse_exclusions(values: list[str]) -> dict[str, set[int]]:
     """Parse repeated SUBSET:ROW options into per-subset row sets."""
     excluded: dict[str, set[int]] = {}
@@ -683,6 +700,8 @@ def main() -> int:
     excluded = parse_exclusions(args.exclude_row)
     if set(excluded) - names:
         raise SystemExit(f"Unknown subsets in --exclude-row: {sorted(set(excluded) - names)}")
+    for subset, rows in REPEATED_ROWS.items():
+        excluded.setdefault(subset, set()).update(rows)
     fs = HfFileSystem()
     remote = {
         str(path).rsplit("/", 1)[-1]
@@ -717,6 +736,8 @@ def main() -> int:
             except Exception as error:  # noqa: BLE001 - reported per subset, then the run fails
                 failures[subset] = f"{type(error).__name__}: {error}"[:400]
                 print(json.dumps({"subset": subset, "error": failures[subset]}), flush=True)
+    if repeated := repeated_images(args.output, records.values()):
+        failures["repeated_images"] = json.dumps(repeated)
     summary = {
         "revision": REVISION,
         "subsets": len(records),
