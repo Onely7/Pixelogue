@@ -59,6 +59,7 @@ STRUCTURAL_ANSWER_FORMS = {
     "chart_answer": {
         "chart_value_lookup": frozenset({"value"}),
         "chart_comparison": frozenset({"relation"}),
+        "chart_value_arithmetic": frozenset({"value"}),
         "chart_extremum_ranking": frozenset({"rank_groups"}),
         "chart_trend_summary": frozenset({"trend", "trend_segments"}),
         "chart_series_relation": frozenset({"relation"}),
@@ -114,6 +115,7 @@ def _bind_chart_source_schema(schema: dict[str, Any], payload: dict[str, Any]) -
     forms = {
         "chart_value_lookup": ("value", 1, 1),
         "chart_comparison": ("compare", 2, 1),
+        "chart_value_arithmetic": ("arithmetic", None, None),
         "chart_extremum_ranking": ("rank", 1, None),
         "chart_trend_summary": ("trend", 1, None),
         "chart_series_relation": ("relation", 2, None),
@@ -129,6 +131,16 @@ def _bind_chart_source_schema(schema: dict[str, Any], payload: dict[str, Any]) -
             operands[field] = {**query["properties"][field], "minItems": count or 1}
             if count is not None:
                 operands[field]["maxItems"] = count
+    if verb == "arithmetic":
+        operands["operands"] = {**query["properties"]["operands"], "minItems": 2}
+        parameters = {
+            item["name"]: item["value"]
+            for item in (operation or {}).get("public_parameters", [])
+            if isinstance(item, dict)
+        }
+        if isinstance(parameters.get("operator"), str):
+            operands["operator"] = {"type": "string", "const": parameters["operator"]}
+        query["required"] = sorted(set(query["required"]) | {"operands", "operator"})
     fields = schema["properties"]
     base = {key: value for key, value in schema.items() if key not in {"properties", "$defs"}}
     # XGrammar compiles each union branch independently. Put the entire object

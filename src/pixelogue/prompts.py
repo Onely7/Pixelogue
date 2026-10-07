@@ -123,6 +123,9 @@ format is strict structured_json. Never see the proposed answer.""",
     "chart_source": """Read only the image, question, public history and bound operation.
 For chart_extremum_ranking copy the public rank_mode and rank_order into query exactly.
 max_min means the maximum and minimum groups, in that order; it never requests every rank.
+For chart_value_arithmetic set query.operation=arithmetic, copy the public operator into
+query.operator, and list every operand the question names as a series and category pair in
+query.operands, in the question's order; read each operand as a mark with its honest interval.
 Always include query.series and query.categories. For a complete ranking, copy the selected
 series identifier and every relevant category from the marks into these lists; never omit them.
 Axis ticks must be bare decimal strings in increasing numeric order, without units, %, commas
@@ -151,6 +154,26 @@ Keep signs, units and decimal places as written. Ambiguous or multiple interpret
 Do not infer values or structure from an expected chart result. coverage=MET certifies only an
 unambiguous literal parse, including a wrong reported number. Correctness is checked separately
 against blind chart readings. No image is needed to parse a plainly written number.""",
+    "consensus_source": """Answer the public question yourself, without any proposed answer.
+Use the image, public history and expected_operation. For knowledge operations use only the widely
+known world knowledge or standard specialist knowledge that the operation's definition allows; never
+identify a person. Put only the shortest complete answer in short_answer: a name, style, region,
+notation reading, or final number with its unit, with no explanation. List the visible cues you used
+in visible_evidence. If the image does not let you answer with confidence, if several answers fit
+equally, or if the answer would require identifying a person, use coverage UNKNOWN with
+short_answer empty. Do not guess.""",
+    "consensus_answer": """Parse only the candidate answer and public question, without an image.
+Copy into answer_quote the exact substring of the candidate answer that states its final answer,
+and copy that final answer alone into short_answer: the name, style, region, notation reading or
+final number with its unit, without explanation. Use coverage UNKNOWN with empty answer_quote and
+short_answer when the candidate gives no single final answer or gives several. Do not judge whether
+the answer is correct.""",
+    "box_source": """Read only the image, public question, history and expected_operation, without any
+proposed answer. Find every object the question describes and draw one tight box around each, as
+fractions from 0 to 1 of the delivered image width and height, with left < right and top < bottom.
+List the boxes from left to right. Include only objects that match the description; do not box
+look-alikes. If a target is hidden, cut off, ambiguous or too small to box, use coverage UNKNOWN
+with boxes=[].""",
     "table_lookup_source": """Read the image, public question and bound operation WITHOUT an answer.
 For a SINGLE cell in a simple table, extract ALL visible data-row labels and ALL data-column
 headers as literal string arrays in reading order, but only the requested cell's value.
@@ -255,14 +278,17 @@ visible_evidence descriptions. MET coverage requires complete evidence coverage.
 verify the actual unique visible control. For panel comparison bind each difference to both existing
 panels; no unseen state or separate image is available. Return verdict, coverage, bindings, reason.
 Unknown visual evidence requires UNKNOWN. Do not infer any other judge's decision.""",
-    "answer_generation": """Answer the current question using only the image and exact public history.
+    "answer_generation": """Answer the current question using only the image and exact public history
+for every fact about the image. When expected_operation's definition asks for world knowledge,
+specialist knowledge or creative writing, add only that kind, and never identify a person.
 Satisfy the supplied active public requirements. Do not mention internal candidates, evaluators, or
 identifiers. Answer concisely: for a count, give the count directly; do not expand it into a long
 numbered enumeration unless the user requests a list. Avoid unrequested scene descriptions.
 Return public text, or set text to null and give an internal reason if unsupported.""",
     "answer_repair": """Replace the candidate answer so it satisfies the listed failed criteria.
-Use only the image, current question, and exact public history. Do not mention the repair process or
-internal identifiers. Satisfy every supplied active public requirement.""",
+Use only the image, current question, and exact public history for facts about the image, plus any
+knowledge or invention that expected_operation's definition allows. Do not mention the repair
+process or internal identifiers. Satisfy every supplied active public requirement.""",
     "computation_inventory": """If this turn requests arithmetic, extract the allowlisted operation,
 ordered operand values, explicit units, punctuation policy, and reported answer value. Copy numeric
 spellings exactly. Mark coverage MET only for one complete expression; do not perform the quality
@@ -324,6 +350,13 @@ For object identification, compare a named category with distinguishing visible 
 related but different category is NOT_MET, and unresolved fine-grained identity is UNKNOWN.
 For visible_action, require an action or contact actually visible in the still image.
 An answer about what an object could do is unsuitable even if its design makes that plausible.
+For knowledge_recognition and domain_reasoning operations, widely known world knowledge or standard
+specialist knowledge is allowed and must be correct; a named entity, style, region or result that you
+cannot confirm is UNKNOWN, and identifying a person is NOT_MET. For grounded_creative_writing,
+invented mood and narrative are allowed, but every statement about what the image shows must be true
+and the requested form and length must be met. For visible_text_translation the translation may be
+in the language the question names. For object_box_grounding check that each box tightly covers one
+requested object.
 Return the schema only.""",
     "rubric_item": """Evaluate only the supplied criterion against the allowed inputs. Return MET,
 NOT_MET, or UNKNOWN. Every schema field is required: emit the verdict and one short non-empty reason,
@@ -370,8 +403,10 @@ visible interface controls; annotated figures, diagrams and photographs are not 
 supported_families lists the family IDs from family_definitions for which at least one listed
 operation could be asked and answered from clearly visible content. Omit a family when the image
 lacks that kind of content (for example no chart, no table, no readable text) or when you are
-unsure. Judge only visible pixels. Keep reason under 25 words. Do not write questions, answers or
-labels."""
+unsure. List knowledge_recognition only when a widely known landmark, artwork, style or map region is
+clearly shown, never for people; list domain_reasoning only for labeled scientific or technical
+diagrams, standard notation or a printed math problem. Judge only visible pixels. Keep reason under
+25 words. Do not write questions, answers or labels."""
 
 STAGE_INSTRUCTIONS["question_draft"] = """Write up to draft_count distinct candidate user questions
 for the next turn of an image-grounded conversation. Each draft realizes exactly one operation
@@ -411,8 +446,14 @@ one of which matches the image, and list them in category_set. For text transcri
 never a relative locator such as above, below or next to. For chart extrema distinguish maximum,
 minimum, both extrema and complete ranking, and preserve ties. For extractive document QA request
 the source-language span with its qualifiers. Do not request matrices or chemical diagrams as
-formula transcription. When answer_format is present, make the question request that form of
-answer. Never print controller IDs, coordinates, private parameters or the words
+formula transcription. For named_entity_recognition, style_recognition and map_region_identification
+never name or hint at the answer and never ask about a person. For notation_interpretation and
+math_word_problem make sure every needed mark or number is visible or stated in the question. For
+concept_explanation ask about a labeled scientific or technical diagram. For grounded_creative_writing
+state the form and, if it matters, the length. For object_box_grounding describe the objects without
+coordinates. For visible_text_translation name the language and the exact text to translate. For
+chart_value_arithmetic name each value by its series and category and state the calculation.
+When answer_format is present, make the question request that form of answer. Never print controller IDs, coordinates, private parameters or the words
 "selected region" in a question. Return drafts=[] and a reason when no allowed operation is
 clearly supported."""
 
@@ -429,8 +470,10 @@ unsupported motion claims from a still image, are NOT_MET for visible_action. Co
 independent operations or unsupported machine-readable output requests are NOT_MET.
 useful_request: NOT_MET when public_history already contains the same answered request or a
 paraphrase of it, or when the question itself already states the requested answer: the category
-for object_identification, the value for attribute_lookup, the action for visible_action
-or the text for transcription. Explicit regrouping of known facts is useful.
+for object_identification, the value for attribute_lookup, the action for visible_action, the name
+for named_entity_recognition or map_region_identification, or the text for transcription. Explicit
+regrouping of known facts is useful. A question that asks to identify a person is NOT_MET for every
+operation.
 Give a short concrete reason. Finally, set realized_task_id to the single operation from
 task_definitions that describes what the question asks the assistant to do; it may be the
 selected operation. Use null when the request is ambiguous, compound or matches no definition.
@@ -557,6 +600,15 @@ STAGE_ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     ),
     "chart_answer": frozenset(
         {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
+    "consensus_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
+    ),
+    "consensus_answer": frozenset(
+        {"target_language", "question", "candidate_answer", "expected_operation"}
+    ),
+    "box_source": frozenset(
+        {"target_language", "public_history", "question", "image_views", "expected_operation"}
     ),
     "table_lookup_source": frozenset(
         {"target_language", "public_history", "question", "image_views", "expected_operation"}

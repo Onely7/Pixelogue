@@ -28,6 +28,16 @@ class ImageRegion(StrictModel):
         return self
 
 
+def region_iou(left: ImageRegion, right: ImageRegion) -> float:
+    """Return the intersection over union of two regions in the same view."""
+    width = max(0.0, min(left.right, right.right) - max(left.left, right.left))
+    height = max(0.0, min(left.bottom, right.bottom) - max(left.top, right.top))
+    intersection = width * height
+    left_area = (left.right - left.left) * (left.bottom - left.top)
+    right_area = (right.right - right.left) * (right.bottom - right.top)
+    return intersection / (left_area + right_area - intersection)
+
+
 class PublicParameter(StrictModel):
     """A public operation choice or explicitly sourced factual parameter."""
 

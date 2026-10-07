@@ -150,11 +150,67 @@ def test_chart_rank_decoder_is_bound_to_the_public_objective():
     assert "rank_groups" in answer_schema["required"]
 
 
+def test_chart_arithmetic_decoder_binds_the_operator_and_two_or_more_operands():
+    client = VllmClient(ModelEndpoint(repo_id="Qwen/Qwen3.5-2B"), RuntimeConfig(), run_id="sum")
+    operation = {
+        "task_id": "chart_value_arithmetic",
+        "public_parameters": [
+            {"name": "operator", "value": "subtract"},
+            {"name": "precision", "value": "explicit_label"},
+        ],
+    }
+    try:
+        body = client._build_body(
+            "chart_source",
+            {"expected_operation": operation},
+            (),
+            ChartSource,
+            max_tokens=2048,
+            temperature=0.0,
+            seed=1,
+        )
+    finally:
+        client.client.close()
+    schema = body["response_format"]["json_schema"]["schema"]
+    complete = schema["anyOf"][0]["properties"]["query"]
+    assert complete["properties"]["operation"]["const"] == "arithmetic"
+    assert complete["properties"]["operator"] == {"type": "string", "const": "subtract"}
+    assert complete["properties"]["operands"]["minItems"] == 2
+    assert {"operands", "operator"} <= set(complete["required"])
+
+
+@pytest.mark.parametrize("stage", ["consensus_source", "box_source"])
+def test_knowledge_and_box_readers_are_answer_blind(stage):
+    payload = {
+        "target_language": "en",
+        "question": "Which bridge is this?",
+        "public_history": [],
+        "image_views": [{"view_id": "full:view"}],
+        "expected_operation": {"scope_id": "canvas", "view_id": "full:view"},
+    }
+    validate_stage_payload(stage, payload)
+    with pytest.raises(ExecutionError, match="candidate_answer"):
+        validate_stage_payload(stage, {**payload, "candidate_answer": "the Golden Gate Bridge"})
+
+
+def test_consensus_answer_parser_never_sees_the_image():
+    payload = {
+        "target_language": "en",
+        "question": "Which bridge is this?",
+        "candidate_answer": "This is the Golden Gate Bridge.",
+        "expected_operation": {"scope_id": "canvas", "view_id": "full:view"},
+    }
+    validate_stage_payload("consensus_answer", payload)
+    with pytest.raises(ExecutionError):
+        validate_stage_payload("consensus_answer", {**payload, "image_views": [{"view_id": "v"}]})
+
+
 @pytest.mark.parametrize(
     "task_id,operation,series_count,category_count",
     [
         ("chart_value_lookup", "value", 1, 1),
         ("chart_comparison", "compare", 2, 1),
+        ("chart_value_arithmetic", "arithmetic", None, None),
         ("chart_extremum_ranking", "rank", 1, None),
         ("chart_trend_summary", "trend", 1, None),
         ("chart_series_relation", "relation", 2, None),

@@ -4,28 +4,31 @@
 
 [Runtime admission guide](README.md)
 
-The catalog defines 66 tasks in 14 families: 59 core tasks that the question drafter may propose and 7 extensions that stay off until their specialized validator is configured and calibrated. A task is offered only when the image supports it and every verification contract it needs has a working implementation.
+The catalog defines 76 tasks in 17 families: 69 core tasks that the question drafter may propose and 7 extensions that stay off until their specialized validator is configured and calibrated. A task is offered only when the image supports it and every verification contract it needs has a working implementation.
 
-22 core tasks are light: they are checked only by `dual_visual_review`, `evidence_binding_check` or `transcript_alignment`. The opening turns of a conversation can be limited to light tasks with `tasks.anchor_turns`.
+25 core tasks are light: they are checked only by `dual_visual_review`, `evidence_binding_check` or `transcript_alignment`. The opening turns of a conversation can be limited to light tasks with `tasks.anchor_turns`.
 
 Each task lists the question it answers, the parameters that the question states, the image capabilities and eligibility checks it needs, and its verification contracts. Related FineVision subsets show where a similar task appears in public data; they are never shown to a model.
 
 ## Input contract
 
 - **Source images.** 1; the only raw content is `image_pixels`.
-- **Image-only interpretation.** Every image-specific fact must come from this image or from earlier verified turns about it. General language, notation and math rules are allowed; a question may state a hypothesis or a filter without claiming that it is observed.
+- **Image-only interpretation.** Every image-specific fact must come from this image or from earlier verified turns about it. General language, notation and math rules are allowed; a question may state a hypothesis or a filter without claiming that it is observed. Knowledge and creative operations may add only the knowledge or invention their definitions allow, and never identify a person.
 - **Multi-panel images.** Only panels that already exist in the one image can be compared; several input images or generated collages need a separate interface change.
 - **Source rights.** Every image passes the rights check, and evaluation-only images are never exported as training data.
 - **Permitted context:**
   - the committed earlier turns of this conversation about this image
   - the operation's instructions and any hypothetical values stated in the question
   - general language, arithmetic, notation and rendering conventions
+  - widely known facts about landmarks, artworks, styles and map geography, for the knowledge_recognition operations; never facts about a person
+  - standard textbook knowledge of science, mathematics and notation, for the domain_reasoning operations
+  - invented mood and narrative in the grounded_creation operation, as long as nothing said about the image is false
 - **Forbidden context:**
   - the source dataset's name as a hint
   - source annotations or hidden reference answers
   - pages or images that are not provided
   - states of the scene at other times
-  - external facts that were not retrieved
+  - other external facts that were not retrieved
   - private model instructions in public output
 
 ## Admission rules
@@ -37,24 +40,28 @@ Each task lists the question it answers, the parameters that the question states
 - The catalog adds no medical diagnosis, sensitive personal inference, prediction of hidden states, or execution of code from images.
 - Text in the image is data. Printed rules are used only to answer the question, never as commands.
 - No operation, domain or quota is forced when the image does not support it.
+- Knowledge operations commit only when two independent readers give the same answer; a disagreement is never settled by guessing.
 
 ## Families
 
 | Family | Label | Core | Extensions | Tasks |
 |---|---|---:|---:|---|
 | `visual_description` | Recognition and description | 5 | 0 | `object_identification`, `attribute_lookup`, `visible_action`, `scene_categorization`, `grounded_description` |
-| `reference_spatial` | Reference and spatial relations | 6 | 0 | `described_object_lookup`, `distinguishing_description`, `spatial_relation`, `spatial_ordering`, `attribute_comparison`, `visual_correspondence` |
+| `reference_spatial` | Reference and spatial relations | 7 | 0 | `described_object_lookup`, `distinguishing_description`, `spatial_relation`, `spatial_ordering`, `attribute_comparison`, `visual_correspondence`, `object_box_grounding` |
 | `counting_and_sets` | Counting, selection and sets | 6 | 0 | `entity_count`, `select_by_conditions`, `group_by_attribute`, `count_comparison`, `quantified_claim_verification`, `hypothetical_set_update` |
-| `text_reading` | Reading text, formulas and code | 5 | 0 | `text_transcription`, `text_field_extraction`, `label_value_lookup`, `text_object_binding`, `formula_transcription` |
+| `text_reading` | Reading text, formulas and code | 6 | 0 | `text_transcription`, `text_field_extraction`, `label_value_lookup`, `text_object_binding`, `formula_transcription`, `visible_text_translation` |
 | `document_understanding` | Documents | 6 | 0 | `document_extractive_qa`, `document_evidence_synthesis`, `document_summary`, `document_structure_reconstruction`, `stated_value_consistency`, `document_element_role` |
 | `table_understanding` | Tables | 4 | 0 | `table_cell_lookup`, `table_row_selection`, `table_reconstruction`, `table_join` |
-| `charts_and_maps` | Charts and maps | 7 | 0 | `chart_encoding_lookup`, `chart_value_lookup`, `chart_comparison`, `chart_extremum_ranking`, `chart_trend_summary`, `chart_series_relation`, `chart_data_reconstruction` |
+| `charts_and_maps` | Charts and maps | 8 | 0 | `chart_encoding_lookup`, `chart_value_lookup`, `chart_comparison`, `chart_value_arithmetic`, `chart_extremum_ranking`, `chart_trend_summary`, `chart_series_relation`, `chart_data_reconstruction` |
 | `quantitative_reasoning` | Numbers and measurements | 5 | 0 | `quantity_comparison`, `grounded_arithmetic`, `value_aggregation`, `unit_conversion`, `measurement_reading` |
 | `diagrams` | Diagrams and flowcharts | 5 | 1 | `diagram_element_lookup`, `diagram_connectivity`, `diagram_path_tracing`, `diagram_process_description`, `flowchart_evaluation`, `diagram_to_code` |
 | `patterns_and_geometry` | Patterns and geometry | 4 | 1 | `geometric_relations`, `pattern_rule`, `pattern_completion`, `pattern_exception`, `geometric_constraint_solving` |
 | `screen_ui` | Screens and user interfaces | 2 | 2 | `ui_element_location`, `ui_state_reading`, `screen_to_code`, `ui_action_specification` |
 | `multi_panel` | Multi-panel images | 2 | 0 | `panel_comparison`, `panel_sequence_description` |
 | `evidence_verification` | Claims and answerability | 2 | 0 | `visual_claim_verification`, `answerability_assessment` |
+| `knowledge_recognition` | Recognition with world knowledge | 3 | 0 | `named_entity_recognition`, `style_recognition`, `map_region_identification` |
+| `domain_reasoning` | Reasoning with specialist knowledge | 3 | 0 | `concept_explanation`, `notation_interpretation`, `math_word_problem` |
+| `grounded_creation` | Creative writing from the image | 1 | 0 | `grounded_creative_writing` |
 | `specialist_notation` | Music, chemistry and circuit notation | 0 | 3 | `music_notation_reading`, `chemical_structure_reading`, `circuit_structure_reading` |
 
 ## Tasks
@@ -221,11 +228,25 @@ The user asks what a visible line, arrow, number, letter or legend entry connect
 - **Related FineVision subsets.** `CoSyn_400k_graphic`, `spatialsense`, `clevr`, `ai2d_merged`.
 - **Parameters.** None.
 
+#### `object_box_grounding`: Give the box of an object
+
+The user describes one object, or every object of a stated kind, and asks for its bounding box; the answer gives one tight box per object as fractions of the image width and height. Use described_object_lookup instead to say which object a description means.
+
+- **Status.** core; structured verification.
+- **Example question.** Give the bounding box of the red car on the left.
+- **Answer format.** One JSON object of the form {"boxes": [[left, top, right, bottom]]} with one box per requested object, listed from left to right; each value is a fraction from 0 to 1 of the image width or height, with left smaller than right and top smaller than bottom.
+- **Do not infer.** Boxes for hidden or cut-off parts, or for objects that only resemble the description.
+- **Required capabilities.** `box_targets`.
+- **Eligibility checks.** `scope_resolved`, `boxes_definable`.
+- **Verification contracts.** `dual_visual_review`, `box_iou_check`.
+- **Related FineVision subsets.** `objects365_qa`, `groundui`, `drivelm`, `lvis_instruct4v`.
+- **Parameters.** None.
+
 ### Counting, selection and sets (`counting_and_sets`)
 
 #### `entity_count`: Count objects
 
-The user asks how many objects of a stated kind are in the image or in a named area; the answer gives the exact number, and zero only when the whole area is visible. Use count_comparison instead to compare two counts.
+The user asks how many objects of a stated kind are in the image or in a named area; the answer gives the exact number, and zero only when the whole area is visible. Objects can also be chart marks or table rows that meet a stated condition, or symbols in a labeled region of a diagram. Use count_comparison instead to compare two counts.
 
 - **Status.** core; structured verification.
 - **Example question.** How many red cups are on the table?
@@ -241,7 +262,7 @@ The user asks how many objects of a stated kind are in the image or in a named a
 
 #### `select_by_conditions`: List the objects that meet stated conditions
 
-The user states one or more visible conditions, such as color, shape, printed text or position, combined with and, or and not; the answer lists every object in the named area that meets them.
+The user states one or more visible conditions, such as color, shape, printed text or position, combined with and, or and not; the answer lists every object in the named area that meets them. Objects can also be chart marks, table rows or symbols in the regions of a Venn diagram.
 
 - **Status.** core; structured verification.
 - **Example question.** Which shapes are blue but not circles?
@@ -397,6 +418,23 @@ The user asks to write a visible mathematical formula in LaTeX or Unicode math; 
 | Parameter | Required | Form | Meaning |
 |---|---|---|---|
 | `notation` | yes | one of `latex`, `unicode_math` | The notation that the answer must use. |
+
+#### `visible_text_translation`: Translate visible text
+
+The user asks to translate a clearly delimited piece of visible text into a stated language; the answer gives a faithful translation that keeps names, numbers and meaning without adding content. Use text_transcription instead to copy the text in its original language.
+
+- **Status.** core; light verification.
+- **Example question.** Translate the shop sign above the door into English.
+- **Answer format.** Only the translation, optionally followed by the original text in parentheses.
+- **Do not infer.** Unreadable characters, text that is not shown, or explanations presented as part of the translation.
+- **Required capabilities.** `readable_text`, `translatable_text`.
+- **Eligibility checks.** `scope_resolved`, `text_legible`, `translation_language_stated`.
+- **Verification contracts.** `dual_visual_review`.
+- **Related FineVision subsets.** `art`, `ctw`, `est_vqa`, `chinesememe`, `k12_printing`, `tal_ocr_eng`, `svrd`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `into_language` | yes | text | The language the text is translated into, such as 'English' or 'Japanese'. |
 
 ### Documents (`document_understanding`)
 
@@ -589,6 +627,24 @@ The user asks which of two or more named bars, points or categories is larger or
 - **Verification contracts.** `dual_visual_review`, `chart_encoding_check`.
 - **Related FineVision subsets.** `chartqa`, `figureqa`, `figureqa(mathv360k)`, `plotqa`, `Unichart`, `mapqa`.
 - **Parameters.** None.
+
+#### `chart_value_arithmetic`: Calculate with chart values
+
+The user asks for the sum, difference, product, ratio or mean of two or more values read from the same chart, naming each value by its series and category; the answer gives the result, exact for printed values and inside the range the readings allow otherwise.
+
+- **Status.** core; structured verification.
+- **Example question.** What is the difference between the 2015 and the 2010 values of the blue series?
+- **Answer format.** One number with the chart's unit (no unit for a ratio). For printed values give the exact result or round it as the question states; for estimates give one value inside the range the readings allow.
+- **Do not infer.** Exact decimals made up from pixel positions, values that are not plotted, or operands from another chart.
+- **Required capabilities.** `readable_chart`, `chart_encoding`, `legible_values`.
+- **Eligibility checks.** `scope_resolved`, `encoding_resolved`, `expression_defined`, `precision_declared`.
+- **Verification contracts.** `dual_visual_review`, `chart_encoding_check`.
+- **Related FineVision subsets.** `dvqa`, `plotqa`, `chartqa`, `figureqa`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `operator` | yes | one of `add`, `subtract`, `multiply`, `divide`, `sum`, `mean` | The calculation: add, subtract, multiply or divide two values, or the sum or mean of several. |
+| `precision` | yes | one of `explicit_label`, `calibrated_estimate`, `interval` | explicit_label means every value is printed on the chart; calibrated_estimate means values read against labeled axis ticks; interval means coarse ranges. |
 
 #### `chart_extremum_ranking`: Find the largest, smallest or ranked entries
 
@@ -1017,6 +1073,128 @@ The user asks whether a specific question about a visible object or field can be
 |---|---|---|---|
 | `local_question` | yes | text | The question whose answerability is judged, as the user asks it. |
 
+### Recognition with world knowledge (`knowledge_recognition`)
+
+#### `named_entity_recognition`: Name a well-known landmark or artwork
+
+The user asks which well-known landmark, building, artwork, flag or emblem is shown; the answer names it from world knowledge and points to the visible features that identify it. People are never identified. Use object_identification instead for an ordinary category such as 'a cathedral'.
+
+- **Status.** core; structured verification.
+- **Example question.** Which famous bridge is shown in this photo?
+- **Answer format.** The name of the entity, followed by the visible features that identify it.
+- **Do not infer.** Any person's identity, a name suggested only by the question, or a guess when the visible features fit several places.
+- **Required capabilities.** `recognizable_entity`.
+- **Eligibility checks.** `scope_resolved`, `entity_widely_known`.
+- **Verification contracts.** `dual_visual_review`, `answer_consensus_check`.
+- **Related FineVision subsets.** `google_landmarks`, `densefusion_1m`, `sharegpt4v(knowledge)`, `lnqa`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `entity_kind` | yes | one of `landmark`, `building`, `artwork`, `flag_or_emblem`, `natural_feature` | The kind of entity the question asks to name. |
+
+#### `style_recognition`: Recognize a style or genre
+
+The user asks which well-known style, movement, period or genre a visible artwork, building, design or publication belongs to, optionally choosing from listed options; the answer names it and the visible traits that support it. Use scene_categorization instead for kinds of places.
+
+- **Status.** core; structured verification.
+- **Example question.** Which art movement does the brushwork of this painting suggest?
+- **Answer format.** The style or genre name, followed by the visible traits that support it.
+- **Do not infer.** The specific artist, the date of creation or a judgment of quality, unless printed.
+- **Required capabilities.** `style_traits`.
+- **Eligibility checks.** `scope_resolved`, `style_traits_support_answer`.
+- **Verification contracts.** `dual_visual_review`, `answer_consensus_check`.
+- **Related FineVision subsets.** `sharegpt4v(knowledge)`, `ocrvqa`, `google_landmarks`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `style_kind` | yes | one of `art_movement`, `architectural_style`, `design_period`, `genre` | The kind of style the question asks about. |
+
+#### `map_region_identification`: Identify a region on a map
+
+The user points to a highlighted, outlined or marked area on a map and asks which country, state, city or other region it is; the answer names it using geographic knowledge of shapes and positions. Use chart_value_lookup instead to read a value from a map's legend.
+
+- **Status.** core; structured verification.
+- **Example question.** Which country is outlined in green on this map?
+- **Answer format.** The region's name, followed by the map features that place it.
+- **Do not infer.** Borders, names or data that the map does not show, or a name chosen when the outline fits several regions.
+- **Required capabilities.** `map_geography`.
+- **Eligibility checks.** `scope_resolved`, `region_locatable`.
+- **Verification contracts.** `dual_visual_review`, `answer_consensus_check`.
+- **Related FineVision subsets.** `mapqa`, `mapqa(mathv360k)`, `scienceqa(nona_context)`, `scienceqa`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `region_level` | yes | one of `country`, `state_or_province`, `city`, `continent_or_ocean`, `other_region` | The kind of region the question asks to name. |
+
+### Reasoning with specialist knowledge (`domain_reasoning`)
+
+#### `concept_explanation`: Explain the concept a diagram shows
+
+The user asks what scientific or technical process, principle or structure a labeled diagram, schematic or figure illustrates, or what role a labeled part plays; the answer explains it with standard textbook knowledge and ties each point to the visible labels.
+
+- **Status.** core; light verification.
+- **Example question.** Using the labels in this diagram, explain how carbon moves between the air, plants and animals.
+- **Do not infer.** Facts beyond standard textbook knowledge, claims about the specific source or experiment, or medical advice.
+- **Required capabilities.** `explanatory_diagram`.
+- **Eligibility checks.** `scope_resolved`, `concept_shown_by_labels`.
+- **Verification contracts.** `dual_visual_review`, `evidence_binding_check`.
+- **Related FineVision subsets.** `ai2d_merged`, `tqa`, `CoSyn_400k_circuit`, `CoSyn_400k_chemical`, `arxivqa`.
+- **Parameters.** None.
+
+#### `notation_interpretation`: Interpret a standard notation
+
+The user asks what marks in a standard notation mean, such as a key or time signature, a functional group or molecular formula, a circuit symbol or a stem-and-leaf plot; the answer applies the notation's conventions to the visible marks and gives a short result.
+
+- **Status.** core; structured verification.
+- **Example question.** Which key does the key signature on this staff indicate?
+- **Answer format.** A short result, such as 'D major' or 'C7H14O6', followed by the marks it is based on.
+- **Do not infer.** Marks that are not visible, how the music sounds, or chemical or electrical behavior that the notation does not state.
+- **Required capabilities.** `standard_notation`.
+- **Eligibility checks.** `scope_resolved`, `notation_standard_and_complete`.
+- **Verification contracts.** `dual_visual_review`, `answer_consensus_check`.
+- **Related FineVision subsets.** `CoSyn_400k_music`, `CoSyn_400k_chemical`, `CoSyn_400k_circuit`, `tabmwp`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `notation_field` | yes | one of `music`, `chemistry`, `electronics`, `statistics`, `mathematics` | The field whose notation the question asks about. |
+
+#### `math_word_problem`: Solve a printed math problem
+
+The user asks to solve a math problem whose numbers and conditions are printed in the image or stated in the question, possibly in several steps; the answer shows the steps and gives one final number or expression. Use grounded_arithmetic instead for a single calculation.
+
+- **Status.** core; structured verification.
+- **Example question.** Solve the problem printed on the card and give the average yearly rise in millimeters.
+- **Answer format.** The steps, then a final line of the form 'Answer: <number or expression>'.
+- **Do not infer.** Numbers or conditions that are neither printed nor stated, or a rounding rule the question does not give.
+- **Required capabilities.** `printed_problem`.
+- **Eligibility checks.** `scope_resolved`, `problem_fully_given`.
+- **Verification contracts.** `dual_visual_review`, `answer_consensus_check`.
+- **Related FineVision subsets.** `CoSyn_400k_math`, `tabmwp`, `tabmwp(mathv360k)`, `mavis_math_metagen`, `infographic_vqa_llava_format`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `precision` | no | integer | The number of decimal places for a decimal result, when the question asks for rounding. |
+
+### Creative writing from the image (`grounded_creation`)
+
+#### `grounded_creative_writing`: Write a creative text about the image
+
+The user asks for a short creative text about the image, such as a caption, poem, story opening or product blurb, in a stated form and length; the answer may invent mood and narrative, but everything it says about what is shown must match the image.
+
+- **Status.** core; light verification.
+- **Example question.** Write a four-line poem about this harbor at sunset.
+- **Answer format.** Only the creative text, in the requested form and length.
+- **Do not infer.** Names, identities or real events for the people shown, or invented facts presented as observations.
+- **Required capabilities.** `multiple_facts`.
+- **Eligibility checks.** `scope_resolved`, `creative_brief_stated`.
+- **Verification contracts.** `dual_visual_review`, `evidence_binding_check`.
+- **Related FineVision subsets.** `laion_gpt4v`, `sharegpt4o`, `image_textualization(filtered)`, `wildvision`, `textcaps`.
+
+| Parameter | Required | Form | Meaning |
+|---|---|---|---|
+| `form` | yes | one of `caption`, `poem`, `story_opening`, `product_blurb`, `dialogue` | The form of the creative text. |
+| `max_words` | no | integer | The length limit in words, when the question gives one. |
+
 ### Music, chemistry and circuit notation (`specialist_notation`)
 
 #### `music_notation_reading`: Read music notation
@@ -1075,6 +1253,7 @@ A capability is something the image must show for a task to apply.
 | Capability | Meaning |
 |---|---|
 | `answer_options_visible` | All answer options for the pattern are visible. |
+| `box_targets` | Each target is fully visible with clear edges, so a tight box can be drawn around it. |
 | `calibrated_scale` | The scale's labels, tick spacing, units and pointer are visible. |
 | `chart_encoding` | The needed axes, legend, scale type and units are visible. |
 | `closed_scope` | Every member of the group asked about is fully visible, so a complete list or count is possible. |
@@ -1085,6 +1264,7 @@ A capability is something the image must show for a task to apply.
 | `discriminating_attributes` | Visible features or relations single out the intended object among similar ones. |
 | `document_layout` | Document elements and their boundaries are visible. |
 | `edge_directions` | Arrow directions, or the absence of direction, can be seen. |
+| `explanatory_diagram` | A labeled diagram, schematic or figure shows a process, structure or principle. |
 | `explicit_branch_conditions` | The condition on each branch is printed. |
 | `explicit_cross_references` | Labels, keys or wording link the parts being compared. |
 | `explicit_mapping` | A visible line, key, label or legend links the items. |
@@ -1093,6 +1273,7 @@ A capability is something the image must show for a task to apply.
 | `graph_nodes_edges` | The diagram's boxes, connections, junctions and end points can be told apart. |
 | `interpretable_predicates` | Each condition can be checked by looking. |
 | `legible_values` | The requested values are printed or can be estimated at the stated precision. |
+| `map_geography` | Coastlines, borders or a locator view show enough geography to place a region. |
 | `multiple_entities` | At least two relevant objects can be told apart. |
 | `multiple_evidence_regions` | At least two relevant parts of the same image hold evidence. |
 | `multiple_facts` | At least two separate visible facts are available in the requested area. |
@@ -1100,6 +1281,7 @@ A capability is something the image must show for a task to apply.
 | `notation_context` | The symbols, keys and notation the drawing uses are visible. |
 | `ordered_series` | The order along the chart's axis is visible. |
 | `panels_resolvable` | The image contains at least two panels that can be told apart. |
+| `printed_problem` | A math problem and the numbers it needs are printed in the image or stated in the question. |
 | `readable_chart` | The chart or map supports the requested reading. |
 | `readable_diagram` | The diagram's elements, labels and marks can be read. |
 | `readable_formula` | The formula's symbols and two-dimensional structure can be read. |
@@ -1107,15 +1289,19 @@ A capability is something the image must show for a task to apply.
 | `readable_table` | The needed rows, columns and cells can be read. |
 | `readable_text` | The relevant text can be read at the image's actual resolution. |
 | `reading_order` | The reading order of the text blocks is visible or marked. |
+| `recognizable_entity` | A well-known landmark, building, artwork, flag or emblem is shown clearly enough to recognize. |
 | `rendered_layout` | The visible layout can be redrawn with the allowed code under fixed rendering rules. |
 | `repeated_structure` | Several examples show a repeating structure. |
 | `resolvable_region` | The area can be described in words without inventing a marker or coordinate. |
 | `scene_context` | Enough of the setting is visible to say what kind of scene it is. |
 | `spatial_layout` | The positions needed for the relation can be read in the image. |
+| `standard_notation` | Marks follow a standard notation, such as a music staff, a structural formula, circuit symbols or a statistical plot. |
+| `style_traits` | Visible technique, form, ornament or layout shows a style, period or genre. |
 | `table_headers` | Row and column headers, including group headers, can be read. |
 | `table_join_keys` | The tables share a visible identifier for matching rows. |
 | `text_fields` | The labeled fields and their values can be located. |
 | `text_object_alignment` | The text can be linked to the object or region it refers to. |
+| `translatable_text` | The text to translate is readable and clearly separated from other text. |
 | `typed_operands` | The numbers needed are printed, with enough context to know what they measure. |
 | `ui_controls` | The relevant buttons, fields and other controls can be located. |
 | `ui_state_indicators` | The interface shows the state asked about explicitly. |
@@ -1136,17 +1322,21 @@ An eligibility check is a condition on the question and the image that the draft
 | `answer_evidence_present` | The visible document contains the answer; pages that are not shown do not count. |
 | `association_explicit` | A visible line, key, label or layout links the items; being close together is not enough. |
 | `attribute_visible` | The property asked about can be seen, and it is not a hidden or sensitive personal trait. |
+| `boxes_definable` | Every requested target is fully visible with clear edges, so each one gets exactly one tight box; cut-off or hidden targets make the question unsuitable. |
 | `candidate_options_public` | All answer options are visible in the image or listed in the question. |
 | `chemical_notation_resolved` | The drawing uses atom, bond and hydrogen conventions that the validator supports. |
 | `circuit_notation_resolved` | The drawing's symbols and junction conventions are supported by the validator. |
 | `claim_public_and_local` | The question quotes the claim, and the claim concerns visible content. |
 | `comparable_basis` | The compared items use the same property, unit, scale and period. |
 | `complete_scope` | The whole group or area asked about is visible, so a complete answer is possible; unreadable or cut-off parts make the question unanswerable, not empty. |
+| `concept_shown_by_labels` | The diagram's labels or structure identify the concept or process, so the explanation rests on standard textbook knowledge rather than speculation. |
 | `coordinates_verifiable` | Coordinates refer to the image as shown and to a verified target area. |
 | `count_unit_defined` | The question makes clear what counts as one item and which items are included. |
+| `creative_brief_stated` | The question states the form of the creative text and, if it matters, its length; nothing it asks for contradicts the image or concerns a person's identity. |
 | `description_claims_visible` | Every statement in the description is supported by something visible in the requested area. |
 | `edges_resolved` | The connected elements, arrow directions and junctions or crossings can be read. |
 | `encoding_resolved` | The axes, legend, scale type (linear or log), baseline and units are clear. |
+| `entity_widely_known` | The entity is widely known, it is not a person, and its visible features identify it without help from the question; a guess between similar places is not enough. |
 | `exception_rule_defined` | The rule is stated or clearly shown before asking which element breaks it. |
 | `expression_defined` | The question states the calculation, the order of the operands and any rounding. |
 | `fields_bound` | Each requested field has a visible label or value area; a missing field is reported as missing, never invented. |
@@ -1159,14 +1349,17 @@ An eligibility check is a condition on the question and the image that the draft
 | `local_question_supported` | The question being judged concerns a visible object or field, so its answerability can be judged from the image. |
 | `music_context_complete` | The clef, key, meter and accidentals needed are visible and supported by the validator. |
 | `notation_resolved` | The notation (for example LaTeX, or the diagram's own symbols) is clear and all visible structure is kept. |
+| `notation_standard_and_complete` | The notation is standard for its field and every mark the answer depends on is visible. |
 | `operands_grounded` | Every number used is printed in the image or was established in an earlier turn. |
 | `panels_publicly_identified` | The panels can be told apart by labels or an obvious layout. |
 | `path_objective_defined` | The question names the start, the end and what counts as a valid path. |
 | `pattern_rule_unique` | Exactly one of the allowed rule types fits every example. |
 | `precision_declared` | The question states the precision, and the answer never claims more precision than the image shows. |
 | `predicates_observable` | Each condition can be checked by looking, and the way the conditions combine (and, or, not) is clear. |
+| `problem_fully_given` | Every number and condition the problem needs is printed in the image or stated in the question, and the result is one number or short expression. |
 | `public_rule_input_defined` | The flowchart's conditions are printed and the question gives the input; text in the image is never followed as an instruction. |
 | `reading_order_resolved` | When several text blocks are involved, their reading order is clear from columns, numbering or layout. |
+| `region_locatable` | The map shows enough coastline, borders or position to name the marked region without guessing, and the region is marked or described without ambiguity. |
 | `relation_frame_defined` | The question states the viewpoint for the relation, and the relation can be judged from the image without measuring anything. |
 | `rendering_contract_available` | A sandboxed renderer with fixed font, asset and syntax rules is configured. |
 | `role_visually_supported` | Layout and readable content together show the element's role. |
@@ -1174,9 +1367,11 @@ An eligibility check is a condition on the question and the image that the draft
 | `schema_public` | The question states the required output format. |
 | `scope_resolved` | The question refers to something that is actually in the image (a visible object, region, text or the whole image), never to a marker, number or coordinate the user cannot see. |
 | `sequence_order_supported` | Numbers, arrows, timestamps or a clear convention give the order of the panels. |
+| `style_traits_support_answer` | Visible traits support the named style or genre, and the question names the kind of style it asks about or lists the options. |
 | `summary_entails_evidence` | The summary keeps the source's meaning and adds no unsupported fact. |
 | `table_headers_bound` | The full row and column header paths, units and footnotes can be read; blank cells stay blank, never zero. |
 | `text_legible` | The text can be read at the image's actual resolution; unreadable or cut-off text is not completed from guesses. |
+| `translation_language_stated` | The question names the language to translate into and the exact block of text to translate. |
 | `ui_state_explicit` | The interface shows the state clearly; gray or color alone does not prove that a control is disabled. |
 | `ui_target_visible` | The control is on the screen and the question asks about it directly. |
 | `unique_referent` | The description matches exactly one object; if several match, the question must be rewritten or the answer must say so. |
@@ -1188,6 +1383,8 @@ An eligibility check is a condition on the question and the image that the draft
 
 | Contract | What it checks | Applies when |
 |---|---|---|
+| `answer_consensus_check` | Two independent readers answer the question without seeing the candidate answer, and the controller requires both short answers to match the candidate's after normalizing case, punctuation and number format. Any disagreement or abstention leaves the turn uncommitted. | The answer is a short name, style, region, notation reading or number that world or specialist knowledge determines. |
+| `box_iou_check` | Two independent readers draw a box around each target without seeing the answer, and the controller matches every answer box one-to-one to each reader's boxes with an overlap of at least 0.5 (intersection over union). | The answer gives bounding boxes for visible targets. |
 | `chart_encoding_check` | Two independent readers recover the axes, legend, scale and the relevant marks, and the controller checks the answer and its precision against them. | The answer depends on a chart's or map's encoding or on plotted values. |
 | `chemical_graph_validator` | A specialized validator compares the read molecule graph with two independent extractions; it never proposes chemistry procedures. | The chemical_structure_reading extension is enabled. |
 | `circuit_graph_validator` | A specialized validator compares the read circuit topology with two independent extractions under the stated symbol and junction conventions. | The circuit_structure_reading extension is enabled. |

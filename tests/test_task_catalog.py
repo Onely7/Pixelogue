@@ -13,7 +13,13 @@ from pixelogue.catalog import load_task_catalog, task_catalog
 from pixelogue.cli import app
 from pixelogue.config import load_config
 from pixelogue.contracts import InstructionCandidate
-from pixelogue.drafting import FactKey, QuestionDraft, draft_task_contract, draft_to_candidate
+from pixelogue.drafting import (
+    DraftParameter,
+    FactKey,
+    QuestionDraft,
+    draft_task_contract,
+    draft_to_candidate,
+)
 from pixelogue.errors import ExecutionError, ExternalInputError
 from pixelogue.operations import compile_configuration
 from pixelogue.prompts import validate_stage_payload
@@ -55,10 +61,10 @@ CHECK_PARAMETERS = {
 def test_catalog_counts_cover_the_specification():
     catalog = task_catalog()
     assert catalog.version == "8.0"
-    assert len(catalog.tasks) == 66
-    assert sum(task.status == "core" for task in catalog.tasks) == 59
+    assert len(catalog.tasks) == 76
+    assert sum(task.status == "core" for task in catalog.tasks) == 69
     assert sum(task.status == "extension" for task in catalog.tasks) == 7
-    assert len(catalog.families) == 14
+    assert len(catalog.families) == 17
 
 
 @pytest.mark.parametrize(
@@ -146,9 +152,13 @@ def test_checks_that_need_a_stated_choice_have_an_explicit_required_parameter():
 def test_compile_exposes_admission_and_versioned_run_identity(tmp_path):
     config = load_config(Path("configs/pilot.yaml"))
     compiled = compile_configuration(config)
-    assert len(compiled["task_catalog"]["tasks"]) == 66
+    assert len(compiled["task_catalog"]["tasks"]) == 76
     assert not compiled["task_admission"]["screen_to_code"]["available"]
-    assert compiled["task_admission"]["object_identification"]["available"]
+    assert all(
+        entry["available"]
+        for entry in compiled["task_admission"].values()
+        if entry["status"] == "core"
+    )
     assert {"ImageProfile", "QuestionDraftBatch", "QuestionGateVote"} <= set(compiled["schemas"])
     assert "ScopedEvidenceInventory" not in compiled["schemas"]
     assert "legacy_task_migration" not in compiled
@@ -201,12 +211,14 @@ def test_generic_person_category_is_distinct_from_individual_identity():
     assert "identity" in task.do_not_infer
 
 
-def _drafted(task_id: str, target: str) -> InstructionCandidate:
+def _drafted(
+    task_id: str, target: str, parameters: tuple[DraftParameter, ...] = ()
+) -> InstructionCandidate:
     draft = QuestionDraft(
         task_id=task_id,
         question="What is the object on the left side of the image?",
         target=target,
-        public_parameters=(),
+        public_parameters=parameters,
         scope_region=REGION,
         target_region=REGION,
         fact_key=FactKey(subject=target, dimension="category"),
@@ -267,3 +279,25 @@ def test_compile_writes_the_task_reference_on_request(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["tasks_markdown"] == str(reference)
     assert reference.read_text(encoding="utf-8") == render_tasks_markdown(task_catalog())
+
+
+def test_knowledge_operations_never_identify_people_and_hide_their_answer_target() -> None:
+    tasks = {task.id: task for task in task_catalog().tasks}
+    assert "People are never identified" in tasks["named_entity_recognition"].definition
+    choices = {
+        "named_entity_recognition": ("entity_kind", "landmark"),
+        "style_recognition": ("style_kind", "architectural_style"),
+        "map_region_identification": ("region_level", "country"),
+    }
+    for task_id, (name, value) in choices.items():
+        assert tasks[task_id].family == "knowledge_recognition"
+        assert "answer_consensus_check" in tasks[task_id].verification_contracts
+        parameter = DraftParameter(name=name, value=value)
+        contract = operation_contract(_drafted(task_id, "the golden gate bridge", (parameter,)))
+        assert contract["scope"] == "the selected image region"
+        assert all(item["name"] != "target" for item in contract["public_parameters"])
+    assert "person" in tasks["named_entity_recognition"].do_not_infer
+    assert any(
+        "never facts about a person" in item
+        for item in task_catalog().input_contract.permitted_context
+    )

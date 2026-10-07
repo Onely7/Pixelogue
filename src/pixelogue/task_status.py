@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from pixelogue.box_verifier import BOX_TASKS
 from pixelogue.catalog import task_catalog
 from pixelogue.chart_verifiers import CHART_TASKS
 from pixelogue.config import PixelogueConfig
@@ -16,6 +17,7 @@ from pixelogue.document_verifiers import DOCUMENT_TASKS
 from pixelogue.finite_verifiers import FINITE_TASKS
 from pixelogue.graph_verifiers import GRAPH_TASKS
 from pixelogue.io import read_jsonl, write_json
+from pixelogue.knowledge_verifiers import CONSENSUS_TASKS
 from pixelogue.pattern_verifiers import PATTERN_TASKS
 from pixelogue.quantitative_verifiers import QUANTITATIVE_TASKS
 from pixelogue.table_verifiers import TABLE_TASKS
@@ -57,6 +59,13 @@ TASK_BOUNDARY_TESTS = {
     "table_join": "test_join_requires_unique_keys_and_complete_visible_tables",
     "chart_value_lookup": "test_exact_lookup_and_coarse_interval_do_not_invent_precision",
     "chart_comparison": "test_comparison_abstains_for_overlapping_intervals",
+    "chart_value_arithmetic": "test_arithmetic_accepts_exact_rounded_and_in_range_results",
+    "object_box_grounding": "test_answer_boxes_must_match_both_blind_readers",
+    "named_entity_recognition": "test_consensus_needs_both_blind_readers_to_match_the_answer",
+    "style_recognition": "test_consensus_needs_both_blind_readers_to_match_the_answer",
+    "map_region_identification": "test_consensus_needs_both_blind_readers_to_match_the_answer",
+    "notation_interpretation": "test_consensus_needs_both_blind_readers_to_match_the_answer",
+    "math_word_problem": "test_numbers_compare_by_value_and_unit",
     "chart_extremum_ranking": "test_complete_ranking_preserves_ties_and_trend_order",
     "chart_trend_summary": "test_complete_ranking_preserves_ties_and_trend_order",
     "chart_series_relation": "test_series_crossing_requires_line_encoding",
@@ -91,6 +100,8 @@ def _test_module(task_id: str) -> str:
         (DOCUMENT_TASKS, "tests/test_document_verifiers.py"),
         (GRAPH_TASKS, "tests/test_graph_verifiers.py"),
         (PATTERN_TASKS, "tests/test_pattern_verifiers.py"),
+        (CONSENSUS_TASKS, "tests/test_knowledge_verifiers.py"),
+        (BOX_TASKS, "tests/test_box_verifier.py"),
     ):
         if task_id in tasks:
             return path

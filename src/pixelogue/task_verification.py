@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from pixelogue.box_verifier import BoxSource, verify_boxes
 from pixelogue.catalog import task_catalog
 from pixelogue.chart_verifiers import CHART_TASKS, ChartAnswer, ChartSource, verify_chart
 from pixelogue.contracts import GateVerdict, InstructionCandidate
@@ -18,6 +19,7 @@ from pixelogue.finite_verifiers import FINITE_TASKS, FiniteAnswer, FiniteSource,
 from pixelogue.formula_verifier import FormulaSource, verify_formula
 from pixelogue.geometry_verifier import GeometryAnswer, GeometrySource, verify_geometry
 from pixelogue.graph_verifiers import GRAPH_TASKS, GraphAnswer, GraphSource, verify_graph
+from pixelogue.knowledge_verifiers import ConsensusAnswer, ConsensusSource, verify_consensus
 from pixelogue.pattern_verifiers import PATTERN_TASKS, PatternAnswer, PatternSource, verify_pattern
 from pixelogue.quantitative_verifiers import (
     QUANTITATIVE_TASKS,
@@ -831,6 +833,53 @@ def verify_operation(
                             for t in transcripts
                         ]
                     )
+        elif name == "answer_consensus_check":
+            source_payload = {
+                key: value for key, value in public.items() if key != "candidate_answer"
+            }
+            answer_payload = {
+                key: public[key]
+                for key in ("target_language", "question", "candidate_answer", "expected_operation")
+                if key in public
+            }
+            consensus_sources = [
+                ConsensusSource.model_validate(
+                    invoke("consensus_source", source_payload, ConsensusSource, index)
+                )
+                for index in range(2)
+            ]
+            consensus_answers = [
+                ConsensusAnswer.model_validate(
+                    invoke("consensus_answer", answer_payload, ConsensusAnswer, index)
+                )
+                for index in range(2)
+            ]
+            models = [*consensus_sources, *consensus_answers]
+            verdict = verify_consensus(
+                (consensus_sources[0], consensus_sources[1]),
+                (consensus_answers[0], consensus_answers[1]),
+                payload["candidate_answer"],
+            )
+        elif name == "box_iou_check":
+            source_payload = {
+                key: value for key, value in public.items() if key != "candidate_answer"
+            }
+            box_sources = [
+                BoxSource.model_validate(invoke("box_source", source_payload, BoxSource, index))
+                for index in range(2)
+            ]
+            verdict, matching = verify_boxes(
+                (box_sources[0], box_sources[1]), payload["candidate_answer"]
+            )
+            results.append(
+                OperationCheck(
+                    name,
+                    verdict,
+                    (*tuple(item.model_dump(mode="json") for item in box_sources), matching),
+                    "Blind box readings and one-to-one overlap check: " + verdict.value,
+                )
+            )
+            continue
         elif name in {"evidence_binding_check", "ui_grounding_check", "panel_comparison_check"}:
             contract_payload = {
                 **public,

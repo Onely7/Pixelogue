@@ -18,7 +18,15 @@ from pixelogue.task_registry import REGISTRATIONS, registration
 IMPLEMENTED_VERIFIERS = frozenset(REGISTRATIONS)
 # Operations whose public target would name the answer; models see only a generic scope.
 PRIVATE_TARGET_TASKS = frozenset(
-    {"attribute_lookup", "object_identification", "scene_categorization", "visible_action"}
+    {
+        "attribute_lookup",
+        "object_identification",
+        "scene_categorization",
+        "visible_action",
+        "named_entity_recognition",
+        "style_recognition",
+        "map_region_identification",
+    }
 )
 REGION_BOUNDARY = (
     "Coordinates are normalized to the exact delivered view. Keep the requested subject and "

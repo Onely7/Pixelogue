@@ -452,3 +452,70 @@ def test_reconstruction_schema_and_content_are_independent() -> None:
         GateVerdict.UNKNOWN,
         GateVerdict.NOT_MET,
     )
+
+
+def _arithmetic(
+    marks: tuple[ChartMark, ...], operator: str, *pairs: tuple[str, str]
+) -> ChartSource:
+    return _source(
+        "chart_value_arithmetic",
+        "arithmetic",
+        marks,
+        series=tuple(dict.fromkeys(series for series, _ in pairs)),
+        categories=tuple(dict.fromkeys(category for _, category in pairs)),
+        operator=operator,
+        operands=tuple({"series": series, "category": category} for series, category in pairs),
+    )
+
+
+def _number(text: str, value: str, unit: str | None = "kg") -> ChartAnswer:
+    return _answer(answer_quote=text, value=NumericValue(value=value, unit=unit))
+
+
+def test_arithmetic_accepts_exact_rounded_and_in_range_results() -> None:
+    exact = _arithmetic(
+        (_mark("A", "2010", "12"), _mark("A", "2015", "30")),
+        "subtract",
+        ("A", "2015"),
+        ("A", "2010"),
+    )
+    labels = {"operator": "subtract", "precision": "explicit_label"}
+    assert _check(exact, _number("18 kg", "18"), "18 kg", **labels)[0] is GateVerdict.MET
+    assert _check(exact, _number("17 kg", "17"), "17 kg", **labels)[0] is GateVerdict.NOT_MET
+    wrong_operator = {"operator": "add", "precision": "explicit_label"}
+    assert _check(exact, _number("18 kg", "18"), "18 kg", **wrong_operator)[0] is (
+        GateVerdict.UNKNOWN
+    )
+    ratio = _arithmetic(
+        (_mark("A", "x", "2"), _mark("A", "y", "3")), "divide", ("A", "x"), ("A", "y")
+    )
+    divide = {"operator": "divide", "precision": "explicit_label"}
+    assert _check(ratio, _number("0.67", "0.67", None), "0.67", **divide)[0] is GateVerdict.MET
+    assert _check(ratio, _number("1", "1", None), "1", **divide)[0] is GateVerdict.NOT_MET
+    estimate = _arithmetic(
+        (
+            _mark("A", "2010", "19", "21", precision="calibrated_estimate"),
+            _mark("A", "2015", "29", "31", precision="calibrated_estimate"),
+        ),
+        "mean",
+        ("A", "2010"),
+        ("A", "2015"),
+    )
+    mean = {"operator": "mean", "precision": "calibrated_estimate"}
+    assert _check(estimate, _number("25 kg", "25"), "about 25 kg", **mean)[0] is GateVerdict.MET
+    assert _check(estimate, _number("28 kg", "28"), "about 28 kg", **mean)[0] is (
+        GateVerdict.NOT_MET
+    )
+    zero_divisor = _arithmetic(
+        (
+            _mark("A", "x", "4", "6", precision="calibrated_estimate"),
+            _mark("A", "y", "0", "2", precision="calibrated_estimate"),
+        ),
+        "divide",
+        ("A", "x"),
+        ("A", "y"),
+    )
+    estimated_ratio = {"operator": "divide", "precision": "calibrated_estimate"}
+    assert _check(zero_divisor, _number("3", "3", None), "3", **estimated_ratio)[0] is (
+        GateVerdict.UNKNOWN
+    )

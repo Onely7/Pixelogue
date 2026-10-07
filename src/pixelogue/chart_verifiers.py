@@ -20,6 +20,7 @@ CHART_TASKS = frozenset(
     {
         "chart_value_lookup",
         "chart_comparison",
+        "chart_value_arithmetic",
         "chart_extremum_ranking",
         "chart_trend_summary",
         "chart_series_relation",
@@ -85,12 +86,24 @@ class ChartMark(StrictModel):
         return self
 
 
-class ChartQuery(StrictModel):
-    """Public lookup, comparison or series operation."""
+class ChartOperand(StrictModel):
+    """One mark named by the question as an arithmetic operand."""
 
-    operation: Literal["value", "compare", "rank", "trend", "relation", "reconstruct"]
+    series: str = Field(min_length=1)
+    category: str = Field(min_length=1)
+
+
+ChartOperator = Literal["add", "subtract", "multiply", "divide", "sum", "mean"]
+
+
+class ChartQuery(StrictModel):
+    """Public lookup, comparison, arithmetic or series operation."""
+
+    operation: Literal["value", "compare", "arithmetic", "rank", "trend", "relation", "reconstruct"]
     series: tuple[str, ...] = ()
     categories: tuple[str, ...] = ()
+    operator: ChartOperator | None = None
+    operands: Annotated[tuple[ChartOperand, ...], Field(max_length=32)] = ()
     rank_order: Literal["ascending", "descending"] = "descending"
     rank_mode: Literal["all", "max", "min", "max_min"] = "all"
     relation: Literal["intersection", "dominance", "variation"] | None = None
@@ -243,6 +256,47 @@ def _relation(left: ChartMark, right: ChartMark) -> str | None:
     if a[0] == a[1] == b[0] == b[1]:
         return "equal"
     return None
+
+
+def _arithmetic(
+    operator: str, intervals: list[tuple[Fraction, Fraction]]
+) -> tuple[Fraction, Fraction] | None:
+    """Return the range of the result over every value the operand ranges allow."""
+    if operator in {"add", "subtract", "multiply", "divide"} and len(intervals) != 2:
+        return None
+    if operator in {"sum", "mean"} and len(intervals) < 2:
+        return None
+    if operator in {"add", "sum", "mean"}:
+        low = sum((item[0] for item in intervals), Fraction(0))
+        high = sum((item[1] for item in intervals), Fraction(0))
+        count = len(intervals) if operator == "mean" else 1
+        return low / count, high / count
+    (a_low, a_high), (b_low, b_high) = intervals
+    if operator == "subtract":
+        return a_low - b_high, a_high - b_low
+    if operator == "divide":
+        if b_low <= 0 <= b_high:
+            return None
+        values = [a_low / b_low, a_low / b_high, a_high / b_low, a_high / b_high]
+    else:
+        values = [a_low * b_low, a_low * b_high, a_high * b_low, a_high * b_high]
+    return min(values), max(values)
+
+
+def _arithmetic_matches(
+    value: Fraction, decimals: int, result: tuple[Fraction, Fraction], operand_decimals: int
+) -> bool:
+    """Accept an exact result, a stated rounding of it, or a value inside an estimated range.
+
+    A rounded exact result needs at least two decimals and as many as the most precise
+    operand, so a ratio such as 2/3 may be 0.67 but not 1. An estimate may not claim more than
+    two decimals beyond the readings it comes from.
+    """
+    half = Fraction(1, 2 * 10**decimals)
+    low, high = result
+    if low == high:
+        return value == low or (decimals >= max(2, operand_decimals) and abs(value - low) <= half)
+    return decimals <= operand_decimals + 2 and low - half <= value <= high + half
 
 
 def _rank(marks: tuple[ChartMark, ...], descending: bool) -> tuple[tuple[str, ...], ...] | None:
@@ -516,6 +570,33 @@ def verify_chart(
         if a is None or b is None:
             return unknown
         expected, observed = _relation(a, b), answer.relation
+    elif task_id == "chart_value_arithmetic" and query.operation == "arithmetic":
+        operator = public_parameters.get("operator")
+        operands = tuple(by_key.get((item.series, item.category)) for item in query.operands)
+        if (
+            operator is None
+            or query.operator != operator
+            or answer.value is None
+            or any(mark is None for mark in operands)
+        ):
+            return unknown
+        marks = tuple(mark for mark in operands if mark is not None)
+        if any(mark.precision != public_parameters.get("precision") for mark in marks):
+            return unknown
+        if operator in {"add", "subtract", "sum", "mean"} and answer.value.unit != source.axis.unit:
+            return unknown
+        result = _arithmetic(str(operator), [_interval(mark) for mark in marks])
+        try:
+            value = parse_numeric_lexeme(answer.value.value)
+        except ExecutionError:
+            return unknown
+        if result is None:
+            return unknown
+        decimals = len(answer.value.value.split(".")[-1]) if "." in answer.value.value else 0
+        expected = True
+        observed = _arithmetic_matches(
+            value, decimals, result, max(mark.decimal_places for mark in marks)
+        )
     elif task_id == "chart_extremum_ranking" and query.operation == "rank":
         if len(query.series) != 1 or not source.closed:
             return unknown

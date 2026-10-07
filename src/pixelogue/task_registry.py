@@ -67,11 +67,12 @@ REGISTRATIONS = {
         ),
         ValidatorRegistration(
             "chart_encoding_check",
-            "3",
+            "4",
             supported_tasks=frozenset(
                 {
                     "chart_value_lookup",
                     "chart_comparison",
+                    "chart_value_arithmetic",
                     "chart_extremum_ranking",
                     "chart_trend_summary",
                     "chart_series_relation",
@@ -95,6 +96,24 @@ REGISTRATIONS = {
                     "flowchart_evaluation",
                 }
             ),
+        ),
+        ValidatorRegistration(
+            "answer_consensus_check",
+            "1",
+            supported_tasks=frozenset(
+                {
+                    "named_entity_recognition",
+                    "style_recognition",
+                    "map_region_identification",
+                    "notation_interpretation",
+                    "math_word_problem",
+                }
+            ),
+        ),
+        ValidatorRegistration(
+            "box_iou_check",
+            "1",
+            supported_tasks=frozenset({"object_box_grounding"}),
         ),
         ValidatorRegistration(
             "scale_check",

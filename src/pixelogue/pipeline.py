@@ -1573,6 +1573,7 @@ class SynthesisCoordinator:
                     "pattern_answer",
                     "geometry_answer",
                     "specialist_geometry_answer",
+                    "consensus_answer",
                 }
                 else (model_image,),
                 model,
